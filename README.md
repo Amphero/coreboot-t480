@@ -1,6 +1,22 @@
 # coreboot T480
 
+> GitHub: [radleylewis/t480_coreboot](https://www.github.com/radleylewis/t480_coreboot)
+
+Clone the repo first — all steps below assume you are working from within it:
+
+```bash
+git clone https://www.github.com/radleylewis/t480_coreboot
+cd t480_coreboot
+```
+
 Builds coreboot with MrChromebox EDK2 for the ThinkPad T480. Uses lbmk (libreboot's build toolchain) to prepare the ME and GbE blobs in a first stage, then compiles coreboot with a full UEFI payload in a second stage. Everything runs in a container (no host dependencies beyond Podman).
+
+## What you need
+
+- Podman (preferred) or Docker
+- A SPI programmer (e.g. CH341A) with a SOIC-8 clip
+- Your T480's MAC address (`ip link show` on the running machine, or check your router)
+- `libreboot-26.01rev1_t480_vfsp_16mb.tar.xz` from the [libreboot releases page](https://libreboot.org/download.html)
 
 ---
 
