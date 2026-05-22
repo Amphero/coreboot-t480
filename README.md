@@ -1,4 +1,4 @@
-# coreboot T480
+# Coreboot + EDK2 on the ThinkPad T480
 
 > GitHub: [radleylewis/t480_coreboot](https://www.github.com/radleylewis/t480_coreboot)
 
