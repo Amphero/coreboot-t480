@@ -1,0 +1,34 @@
+CONFIG_VENDOR_LENOVO=y
+CONFIG_BOARD_LENOVO_T480=y
+CONFIG_IFD_BIN_PATH="binaries/ifd.bin"
+CONFIG_ME_BIN_PATH="binaries/me.bin"
+CONFIG_GBE_BIN_PATH="binaries/gbe.bin"
+CONFIG_HAVE_IFD_BIN=y
+CONFIG_HAVE_ME_BIN=y
+CONFIG_HAVE_GBE_BIN=y
+CONFIG_PAYLOAD_EDK2=y
+CONFIG_EDK2_BOOTSPLASH_FILE="/opt/coreboot/splash.bmp"
+CONFIG_EDK2_FOLLOW_BGRT_SPEC=y
+CONFIG_MAINBOARD_SMBIOS_PRODUCT_NAME="ThinkPad T480"
+CONFIG_CBFS_SIZE=0xDC0000
+CONFIG_SMMSTORE=y
+CONFIG_SMMSTORE_V2=y
+CONFIG_SMMSTORE_SIZE=0x40000
+CONFIG_EDK2_SECURE_BOOT_SUPPORT=y
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
+
+# --- Network identity: MAC address ---------------------------------------------
+# Injected into the GbE region at build time (not a Kconfig option -> '#' comment).
+# build-firmware.py reads this value as the default; `--mac AA:BB:..` overrides it.
+# Put YOUR machine's MAC here (read it via `ip link show`, see README).
+# The build refuses to run while the placeholder below is still in place.
+# MAC=XX:XX:XX:XX:XX:XX
+
+# --- Optionale Devicetree-Geräte des T480-Ports (y/n) ---------------------------
+# Der Build (build/apply-devicetree.sh, läuft VOR `make`) fügt jedes auf
+# =y gesetzte Gerät in src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb nach
+# "device ref hda on end" ein bzw. entfernt es bei =n (deklarativ, clean-build-fest).
+# NAME (groß) -> devicetree-Alias (klein). Als '#'-Kommentar: Kconfig ignoriert es.
+# DT_DEVICE SMBUS=y       # device ref smbus on end     (PCI 1f.4)  — Default: y
+# DT_DEVICE HECI1=n       # device ref heci1 on end     (PCI 16.0)  — Default: n
+# DT_DEVICE FAST_SPI=n    # device ref fast_spi on end  (PCI 1f.5)  — Default: n
