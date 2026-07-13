@@ -1,0 +1,146 @@
+# coreboot T480 build with EDK2/UEFI payload  —  PHASE 2 (BUILD, fully OFFLINE)
+#
+# This Dockerfile compiles the firmware from the PRE-FETCHED sources produced by
+# PHASE 1 (./fetch.sh). It makes NO network access and is meant to be built with:
+#
+#   podman build --network=none \
+#       --build-arg MAC_ADDRESS="xx:xx:xx:xx:xx:xx" \
+#       -f build/Dockerfile.offline -t coreboot-t480 \
+#       sources/<pinned|latest>            # <-- build context IS the sources tree
+#
+# This is the sole build recipe (the workspace no longer carries the upstream
+# radleylewis online Dockerfile). defconfig, splash.bmp and apply-devicetree.sh
+# come from the build context: ./fetch.sh copies them from config/ + build/ into
+# sources/<mode>/ before this runs.
+#
+# (scripts/build-firmware.py does exactly this and adds --network=none.)
+#
+# Requirements met entirely by the build context (sources/<mode>/):
+#   coreboot/            full checkout @ pinned commit, submodules populated,
+#                        util/crossgcc/tarballs/ pre-filled (no toolchain download)
+#   edk2/mrchromebox/    MrChromebox EDK2 clone (+ submodules), pre-placed into
+#                        coreboot's edk2 workspace so it is NOT cloned online
+#   lbmk/                libreboot build kit, cache pre-populated (offline inject)
+#   libreboot/*.tar.xz   the libreboot release tarball
+#   defconfig, splash.bmp
+#
+# FROM image (coreboot-t480-deps) carries every apt/pip dependency and is built
+# once, WITH network, by ./fetch.sh. Nothing here runs apt-get.
+
+# ---------- Stage 1: libreboot injection (OFFLINE) ----------
+# Runs `mk inject` using the pre-populated lbmk cache to produce a ROM with a
+# correctly deguarded ME (lbmk's T480 delta + me_cleaner) and the GbE MAC set.
+# Every download `mk inject` would normally do was pre-fetched in PHASE 1, so
+# this stage needs no network.
+FROM coreboot-t480-deps AS libreboot
+
+ARG MAC_ADDRESS
+RUN test -n "$MAC_ADDRESS" || { echo "ERROR: MAC_ADDRESS build arg is required"; exit 1; }
+
+# lbmk (with its populated cache/, src/, elf/, vendorfiles/) and the tarball.
+COPY lbmk /opt/lbmk
+COPY libreboot /opt/lbmk-libreboot
+RUN chown -R builder:builder /opt/lbmk /opt/lbmk-libreboot
+
+USER builder
+WORKDIR /opt/lbmk
+# lbmk refuses to run as root; git needs an identity + ownership allowance.
+RUN git config --global user.name "builder" && \
+    git config --global user.email "builder@localhost" && \
+    git config --global --add safe.directory '*'
+
+# Offline inject: XBMK_CACHE defaults to /opt/lbmk/cache (pre-populated in PHASE 1).
+RUN set -e; \
+    TB="$(ls /opt/lbmk-libreboot/*.tar.xz | head -1)"; \
+    test -n "$TB" || { echo "ERROR: no libreboot tarball in build context"; exit 1; }; \
+    cp "$TB" /opt/lbmk/; \
+    LTB="/opt/lbmk/$(basename "$TB")"; \
+    echo "== lbmk inject (offline) $(basename "$TB") setmac $MAC_ADDRESS =="; \
+    XBMK_THREADS="$(nproc)" ./mk inject "$LTB" setmac "$MAC_ADDRESS"; \
+    tar -xf "$LTB"; \
+    ROM="$(ls bin/*/seagrub_*_libgfxinit_corebootfb_usqwerty.rom 2>/dev/null | head -1)"; \
+    test -n "$ROM" || { echo "ERROR: injected ROM not found"; ls -R bin || true; exit 1; }; \
+    cp "$ROM" /opt/lbmk/injected.rom; \
+    echo "== injected ROM: $ROM =="
+# (write to /opt/lbmk — owned by 'builder'; /opt itself is root-owned)
+
+# ---------- Stage 2: coreboot + EDK2 build (OFFLINE) ----------
+FROM coreboot-t480-deps
+
+# coreboot: full checkout with submodules + crossgcc tarballs already present.
+COPY coreboot /opt/coreboot
+# defconfig + optional splash (glob form does not fail if splash is absent).
+COPY defconfig /opt/coreboot/defconfig
+COPY splash.bmp* /opt/coreboot/
+# Config-driven devicetree toggles (reads the "# DT_DEVICE NAME=y/n" markers in
+# defconfig, edits the board devicetree.cb before `make`).
+COPY apply-devicetree.sh /opt/apply-devicetree.sh
+# Pre-place the MrChromebox EDK2 clone into coreboot's edk2 workspace. Because
+# the directory already exists, coreboot's edk2 Makefile skips the online
+# `git clone` (any `git fetch origin` it still attempts fails harmlessly offline;
+# the origin/<branch> ref and all submodules are already present locally).
+COPY edk2/mrchromebox /opt/coreboot/payloads/external/edk2/workspace/mrchromebox
+# The deguarded/MAC-injected ROM from stage 1 — source of ifd.bin/me.bin/gbe.bin.
+COPY --from=libreboot /opt/lbmk/injected.rom /opt/libreboot.rom
+
+# Expose "Restore AC power after loss" in the EDK2 setup menu and default Intel
+# ME to disabled (patch default_value directly; symbol may not exist as Kconfig).
+RUN sed -i 's/\t\t&me_state,/\t\t\&power_on_after_fail,\n\t\t\&me_state,/' \
+      /opt/coreboot/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c && \
+    sed -i 's/\.default_value\t= CONFIG(CSE_DEFAULT_CFR_OPTION_STATE_DISABLED),/.default_value\t= 1,/' \
+      /opt/coreboot/src/soc/intel/common/block/include/intelblocks/cfr.h
+
+# Config-driven: enable/disable the optional devicetree devices (smbus/heci1/
+# fast_spi) per the "# DT_DEVICE NAME=y/n" markers in defconfig, before `make`.
+RUN sh /opt/apply-devicetree.sh /opt/coreboot
+
+RUN chown -R builder:builder /opt/coreboot /opt/libreboot.rom
+
+USER builder
+WORKDIR /opt/coreboot
+RUN git config --global user.name "builder" && \
+    git config --global user.email "builder@localhost" && \
+    git config --global --add safe.directory '*'
+
+RUN echo "" && echo "======= STEP 1 - extracting blobs from libreboot ROM =======" && echo ""
+RUN mkdir -p binaries && \
+    make -C util/ifdtool && \
+    util/ifdtool/ifdtool -x -p sklkbl /opt/libreboot.rom && \
+    mv flashregion_0_flashdescriptor.bin binaries/ifd.bin && \
+    mv flashregion_2_intel_me.bin binaries/me.bin && \
+    mv flashregion_3_gbe.bin binaries/gbe.bin && \
+    rm -f flashregion_*.bin
+
+RUN echo "" && echo "======= STEP 2 - loading defconfig =======" && echo ""
+# If splash.bmp was not provided, strip the two splash options from defconfig.
+RUN [ -f /opt/coreboot/splash.bmp ] || \
+    sed -i '/CONFIG_EDK2_BOOTSPLASH_FILE/d; /CONFIG_EDK2_FOLLOW_BGRT_SPEC/d' /opt/coreboot/defconfig
+RUN cp defconfig .config && make olddefconfig
+
+RUN echo "" && echo "======= STEP 3 - building cross-compiler (from pre-fetched tarballs) =======" && echo ""
+# No retry loop here (unlike the online build): with the tarballs pre-fetched
+# this must succeed in one pass. If it tries to download, --network=none makes it
+# fail fast — which correctly signals a gap in PHASE 1 rather than looping forever.
+RUN make crossgcc-i386 CPUS="$(nproc)"
+
+# Pin the EDK2 revision coreboot checks out to the branch PHASE 1 actually
+# pre-placed in workspace/mrchromebox. Needed for `latest`: coreboot's Kconfig
+# default may name a different uefipayload_* branch (e.g. 26.06 defaults to
+# uefipayload_2603) than the newest branch we resolved/fetched. Placed AFTER
+# crossgcc so this fix never invalidates the (slow) toolchain cache. No-op for
+# pinned (the pre-placed branch already equals coreboot's default there).
+ARG EDK2_BRANCH
+RUN if [ -n "$EDK2_BRANCH" ]; then \
+      if grep -q '^CONFIG_EDK2_TAG_OR_REV=' .config; then \
+        sed -i 's|^\(CONFIG_EDK2_TAG_OR_REV=\).*|\1"origin/'"$EDK2_BRANCH"'"|' .config; \
+      else \
+        echo "CONFIG_EDK2_TAG_OR_REV=\"origin/$EDK2_BRANCH\"" >> .config; \
+      fi; \
+      echo "== EDK2 branch pinned to origin/$EDK2_BRANCH =="; \
+    fi
+
+RUN echo "" && echo "======= STEP 4 - building coreboot =======" && echo ""
+RUN make -j"$(nproc)"
+
+RUN echo "" && echo "======= DONE - /opt/coreboot/build/coreboot.rom is ready =======" && echo ""
+CMD ["bash"]
