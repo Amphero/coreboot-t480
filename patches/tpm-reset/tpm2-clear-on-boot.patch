@@ -1,0 +1,123 @@
+tpm-reset: clear the TPM 2.0 via TPM2_Clear on every boot (T480 reset ROM)
+
+Adds a ramstage BS_POST_DEVICE/BS_ON_ENTRY hook to the lenovo/sklkbl_thinkpad
+(t480) board that runs tpm_setup(0) -> tlcl2_clear_control(false) ->
+tlcl_force_clear(), i.e. TPM2_ClearControl + TPM2_Clear via the platform
+hierarchy. Applied ONLY to the Reset-ROM produced by build-firmware.py's
+--tpm-reset flag; the normal ROM is built without it.
+
+Generic patch — verified to apply to coreboot pinned (2a2ab9e0) and latest (26.06).
+---
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Makefile.mk b/src/mainboard/lenovo/sklkbl_thinkpad/Makefile.mk
+index eebe6f45..8d6c1c75 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Makefile.mk
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Makefile.mk
+@@ -9,6 +9,7 @@ ramstage-$(CONFIG_VARIANT_HAS_DGPU) += dgpu.c
+ ramstage-y += variants/$(VARIANT_DIR)/gpio.c
+ ramstage-y += variants/$(VARIANT_DIR)/hda_verb.c
+ ramstage-y += ramstage.c
++ramstage-y += tpm_reset_clear.c
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += variants/$(VARIANT_DIR)/gma-mainboard.ads
+ 
+ subdirs-y += variants/$(VARIANT_DIR)
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/tpm_reset_clear.c b/src/mainboard/lenovo/sklkbl_thinkpad/tpm_reset_clear.c
+new file mode 100644
+index 00000000..9426b7b3
+--- /dev/null
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/tpm_reset_clear.c
+@@ -0,0 +1,95 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * --tpm-reset — one-shot TPM 2.0 clear on every boot.
++ *
++ * This file is added ONLY to the Reset-ROM produced by build-firmware.py's
++ * --tpm-reset flag (via patches/tpm-reset/tpm2-clear-on-boot.patch); the normal
++ * ROM is built without it. On every ramstage boot it unconditionally clears the
++ * T480's discrete TPM 2.0, which recovers a TPM wedged in a vendor-BIOS state —
++ * e.g. "MFG mode", a set owner-auth, or a latched disableClear.
++ *
++ * WARNING: TPM2_Clear is irreversible. It changes the storage and endorsement
++ * primary seeds and evicts every owner object, so anything sealed to the TPM
++ * (LUKS / BitLocker keys, attestation keys, ...) is gone afterwards. Because
++ * this ROM clears on EVERY boot, boot it exactly once, verify, then reflash the
++ * normal ROM.
++ *
++ * Sequence (each step logged with its rc; all steps non-fatal — clearing the
++ * TPM must never hang the boot):
++ *
++ *   1. tpm_setup(0)              Initialise the TSS stack (tlcl_lib_init) and
++ *                               start the TPM (TPM2_Startup). coreboot's own
++ *                               init_tpm_dev() already ran TPM2_Startup(CLEAR)
++ *                               this boot (BS_DEV_INIT/BS_ON_EXIT, enabled by
++ *                               CONFIG_TPM_INIT_RAMSTAGE=y), so this second
++ *                               startup returns TPM_INVALID_POSTINIT. That is
++ *                               benign — the TPM is up — so we normalise it to
++ *                               success and carry on.
++ *   2. tlcl2_clear_control(false)  Clear a possibly-latched disableClear via
++ *                               TPM2_ClearControl. (coreboot hardcodes the
++ *                               ClearControl "disable" field to 0, i.e. it
++ *                               always RE-ENABLES clear regardless of the
++ *                               argument passed here.) No generic tlcl_*
++ *                               wrapper exists for ClearControl, so the TPM2
++ *                               entry point is called directly; the board is
++ *                               unconditionally TPM2 (MAINBOARD_HAS_TPM2).
++ *   3. tlcl_force_clear()        Issue TPM2_Clear, authorised via the platform
++ *                               hierarchy (TPM_RH_PLATFORM). platformAuth is
++ *                               empty after TPM2_Startup(CLEAR) per the TPM 2.0
++ *                               spec, so firmware always holds platform
++ *                               authorisation — no owner/lockout auth and no
++ *                               physical presence required (physical presence
++ *                               is a no-op on coreboot's TPM2 path anyway).
++ *
++ * Hook point BS_POST_DEVICE/BS_ON_ENTRY is the first boot-state step after
++ * BS_DEV_INIT/BS_ON_EXIT, where coreboot brings up and starts the TPM, so the
++ * memory-mapped TIS is live and the TPM is started by the time we clear it.
++ */
++
++#include <bootstate.h>
++#include <console/console.h>
++#include <security/tpm/tspi.h>
++#include <security/tpm/tss.h>
++#include <types.h>
++
++static void tpm_reset_clear(void *unused)
++{
++	tpm_result_t rc;
++
++	printk(BIOS_INFO,
++	       "TPM-RESET: one-shot TPM2_Clear starting — this firmware clears the TPM on EVERY boot\n");
++
++	/*
++	 * Step 1: make sure the TSS stack is initialised and the TPM is
++	 * started. A second TPM2_Startup this boot returns INVALID_POSTINIT,
++	 * which only means coreboot already started the TPM — treat as success.
++	 */
++	rc = tpm_setup(0);
++	if (rc == TPM_INVALID_POSTINIT) {
++		printk(BIOS_INFO,
++		       "TPM-RESET: step1 tpm_setup rc=%#x (INVALID_POSTINIT: TPM already started this boot — OK)\n",
++		       rc);
++		rc = TPM_SUCCESS;
++	} else {
++		printk(BIOS_INFO, "TPM-RESET: step1 tpm_setup rc=%#x\n", rc);
++	}
++
++	/* Step 2: re-enable clear (undo a possibly latched disableClear). */
++	rc = tlcl2_clear_control(false);
++	printk(BIOS_INFO, "TPM-RESET: step2 tlcl2_clear_control(false) rc=%#x\n", rc);
++
++	/* Step 3: the actual TPM2_Clear, via the platform hierarchy. */
++	rc = tlcl_force_clear();
++	printk(BIOS_INFO, "TPM-RESET: step3 tlcl_force_clear rc=%#x\n", rc);
++
++	if (rc == TPM_SUCCESS)
++		printk(BIOS_INFO,
++		       "TPM-RESET: done — TPM cleared. Shut down and reflash the normal ROM now.\n");
++	else
++		printk(BIOS_ERR,
++		       "TPM-RESET: FAILED (rc=%#x) — inspect the step codes above; booting anyway.\n",
++		       rc);
++}
++
++BOOT_STATE_INIT_ENTRY(BS_POST_DEVICE, BS_ON_ENTRY, tpm_reset_clear, NULL);
