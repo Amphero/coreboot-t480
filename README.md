@@ -1,6 +1,11 @@
 <h1 align="center">coreboot for the ThinkPad T480</h1>
 
-<p align="center"><img src="config/splash.png" alt="boot splash" width="480"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/splash-dark.png">
+    <img src=".github/splash-light.png" alt="boot splash" width="200">
+  </picture>
+</p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
