@@ -152,10 +152,12 @@ The firmware starts in Setup Mode. Enroll your own keys from Linux:
 ```bash
 sudo pacman -S sbctl
 sudo timedatectl set-ntp true
-sbctl create-keys
-sbctl sign -s /boot/EFI/...      # sign your bootloader/kernel
-sbctl enroll-keys -m
-sbctl status
+sudo sbctl create-keys
+sudo sbctl verify                # lists every boot file that still needs a signature
+sudo sbctl sign -s /boot/vmlinuz-linux              # sign each unsigned file it listed
+sudo sbctl sign -s /boot/EFI/BOOT/BOOTX64.EFI
+sudo sbctl enroll-keys -m
+sbctl status                     # should report "Secure Boot: Enabled" after a reboot
 ```
 
 To keep the settings of a previous coreboot install (keys, boot entries),
