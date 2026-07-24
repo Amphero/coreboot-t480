@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Makefile - thin convenience wrappers around the actual build scripts.
 #
 # This repo is NOT a classic software project: the real build logic lives in

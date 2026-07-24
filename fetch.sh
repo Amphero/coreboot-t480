@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
 # fetch.sh  -  PHASE 1 (FETCH).  Host wrapper; only needs `podman`.
 #
 # Builds the build-environment image (coreboot-t480-deps) and runs the fetch
@@ -32,7 +33,7 @@ for a in "$@"; do
     pinned|latest) MODE="$a" ;;
     --refresh)      REFRESH=1 ;;
     --rebuild-deps) REBUILD_DEPS=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '3,31p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $a" >&2; exit 2 ;;
   esac
 done

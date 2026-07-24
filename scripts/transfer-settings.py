@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 transfer-settings.py - carries the settings (UEFI variables incl. Secure Boot
 keys) over from an ORIGINAL firmware (chip dump with your configured state)

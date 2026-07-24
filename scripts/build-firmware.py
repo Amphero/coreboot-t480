@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 build-firmware.py  -  build the T480 coreboot+EDK2 firmware (PHASE 2, OFFLINE).
 

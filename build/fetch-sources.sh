@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
 # fetch-sources.sh  -  PHASE 1 (FETCH).  Runs INSIDE the coreboot-t480-deps
 # container WITH network. Downloads every source the offline build (PHASE 2)
 # needs into /sources/<BUILD_MODE>/ so PHASE 2 can run with --network=none.

@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# SPDX-License-Identifier: GPL-3.0-only
 # apply-devicetree.sh - toggles the optional devicetree devices of the T480 port
 # according to the "# DT_DEVICE NAME=y/n" markers in the config file (defconfig).
 #

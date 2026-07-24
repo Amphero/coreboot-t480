@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # coreboot T480 build with EDK2/UEFI payload  -  PHASE 2 (BUILD, fully OFFLINE)
 #
 # This Dockerfile compiles the firmware from the PRE-FETCHED sources produced by

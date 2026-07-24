@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 setup-dev-env.py  -  convenient front-end for PHASE 1 (FETCH).
 

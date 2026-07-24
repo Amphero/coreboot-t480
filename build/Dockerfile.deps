@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # coreboot-t480-deps  -  build-environment base image (PHASE 1 artifact)
 #
 # This image contains ONLY the toolchain / OS packages needed to build the
