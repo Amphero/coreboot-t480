@@ -5,8 +5,7 @@ UEFI with Secure Boot (your own keys, enrolled with sbctl) and a working
 discrete TPM 2.0.
 
 Forked from [radleylewis/t480_coreboot](https://github.com/radleylewis/t480_coreboot).
-The board config and the splash screen are from there, the build system around
-it is new.
+The board config is from there, the build system around it is new.
 
 Tested on a Type 20L5 (mainboard NM-B501). The SPI flash is a Winbond W25Q128,
 16 MB, at position U49.
