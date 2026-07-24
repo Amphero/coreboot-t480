@@ -1,7 +1,7 @@
-# coreboot-t480-deps  —  build-environment base image (PHASE 1 artifact)
+# coreboot-t480-deps  -  build-environment base image (PHASE 1 artifact)
 #
 # This image contains ONLY the toolchain / OS packages needed to build the
-# firmware — no sources. It is built ONCE with network access during the fetch
+# firmware - no sources. It is built ONCE with network access during the fetch
 # phase (./fetch.sh). The actual firmware build (PHASE 2) does `FROM
 # coreboot-t480-deps`, adds the pre-fetched ./sources/<mode>/ tree and compiles
 # with `--network=none`.
@@ -10,7 +10,7 @@
 #   * coreboot's build/EDK2 dependencies (build-essential, gnat, nasm, acpica,
 #     uuid-dev, imagemagick, innoextract, pefile, ...)
 #   * libreboot/lbmk's full Debian dependency list (config/dependencies/debian)
-#     — needed by `./mk inject` (me_cleaner, deguard, ifdtool, nvmutil, Intel-ME
+#     - needed by `./mk inject` (me_cleaner, deguard, ifdtool, nvmutil, Intel-ME
 #     extraction via innoextract/p7zip/pycryptodome, efitools, ...).
 #
 # Keeping the union here means neither build stage ever needs `apt-get` (i.e. no

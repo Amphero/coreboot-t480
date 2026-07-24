@@ -1,4 +1,4 @@
-# coreboot T480 build with EDK2/UEFI payload  —  PHASE 2 (BUILD, fully OFFLINE)
+# coreboot T480 build with EDK2/UEFI payload  -  PHASE 2 (BUILD, fully OFFLINE)
 #
 # This Dockerfile compiles the firmware from the PRE-FETCHED sources produced by
 # PHASE 1 (./fetch.sh). It makes NO network access and is meant to be built with:
@@ -62,7 +62,7 @@ RUN set -e; \
     test -n "$ROM" || { echo "ERROR: injected ROM not found"; ls -R bin || true; exit 1; }; \
     cp "$ROM" /opt/lbmk/injected.rom; \
     echo "== injected ROM: $ROM =="
-# (write to /opt/lbmk — owned by 'builder'; /opt itself is root-owned)
+# (write to /opt/lbmk - owned by 'builder'; /opt itself is root-owned)
 
 # ---------- Stage 2: coreboot + EDK2 build (OFFLINE) ----------
 FROM coreboot-t480-deps
@@ -80,7 +80,7 @@ COPY apply-devicetree.sh /opt/apply-devicetree.sh
 # `git clone` (any `git fetch origin` it still attempts fails harmlessly offline;
 # the origin/<branch> ref and all submodules are already present locally).
 COPY edk2/mrchromebox /opt/coreboot/payloads/external/edk2/workspace/mrchromebox
-# The deguarded/MAC-injected ROM from stage 1 — source of ifd.bin/me.bin/gbe.bin.
+# The deguarded/MAC-injected ROM from stage 1 - source of ifd.bin/me.bin/gbe.bin.
 COPY --from=libreboot /opt/lbmk/injected.rom /opt/libreboot.rom
 
 # Expose "Restore AC power after loss" in the EDK2 setup menu and default Intel
@@ -120,7 +120,7 @@ RUN cp defconfig .config && make olddefconfig
 RUN echo "" && echo "======= STEP 3 - building cross-compiler (from pre-fetched tarballs) =======" && echo ""
 # No retry loop here (unlike the online build): with the tarballs pre-fetched
 # this must succeed in one pass. If it tries to download, --network=none makes it
-# fail fast — which correctly signals a gap in PHASE 1 rather than looping forever.
+# fail fast - which correctly signals a gap in PHASE 1 rather than looping forever.
 RUN make crossgcc-i386 CPUS="$(nproc)"
 
 # Pin the EDK2 revision coreboot checks out to the branch PHASE 1 actually

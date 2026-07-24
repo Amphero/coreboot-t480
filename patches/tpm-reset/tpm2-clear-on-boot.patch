@@ -6,7 +6,7 @@ tlcl_force_clear(), i.e. TPM2_ClearControl + TPM2_Clear via the platform
 hierarchy. Applied ONLY to the Reset-ROM produced by build-firmware.py's
 --tpm-reset flag; the normal ROM is built without it.
 
-Generic patch — verified to apply to coreboot pinned (2a2ab9e0) and latest (26.06).
+Generic patch - verified to apply to coreboot pinned (2a2ab9e0) and latest (26.06).
 ---
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Makefile.mk b/src/mainboard/lenovo/sklkbl_thinkpad/Makefile.mk
 index eebe6f45..8d6c1c75 100644
@@ -29,12 +29,12 @@ index 00000000..9426b7b3
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
-+ * --tpm-reset — one-shot TPM 2.0 clear on every boot.
++ * --tpm-reset - one-shot TPM 2.0 clear on every boot.
 + *
 + * This file is added ONLY to the Reset-ROM produced by build-firmware.py's
 + * --tpm-reset flag (via patches/tpm-reset/tpm2-clear-on-boot.patch); the normal
 + * ROM is built without it. On every ramstage boot it unconditionally clears the
-+ * T480's discrete TPM 2.0, which recovers a TPM wedged in a vendor-BIOS state —
++ * T480's discrete TPM 2.0, which recovers a TPM wedged in a vendor-BIOS state -
 + * e.g. "MFG mode", a set owner-auth, or a latched disableClear.
 + *
 + * WARNING: TPM2_Clear is irreversible. It changes the storage and endorsement
@@ -43,7 +43,7 @@ index 00000000..9426b7b3
 + * this ROM clears on EVERY boot, boot it exactly once, verify, then reflash the
 + * normal ROM.
 + *
-+ * Sequence (each step logged with its rc; all steps non-fatal — clearing the
++ * Sequence (each step logged with its rc; all steps non-fatal - clearing the
 + * TPM must never hang the boot):
 + *
 + *   1. tpm_setup(0)              Initialise the TSS stack (tlcl_lib_init) and
@@ -52,7 +52,7 @@ index 00000000..9426b7b3
 + *                               this boot (BS_DEV_INIT/BS_ON_EXIT, enabled by
 + *                               CONFIG_TPM_INIT_RAMSTAGE=y), so this second
 + *                               startup returns TPM_INVALID_POSTINIT. That is
-+ *                               benign — the TPM is up — so we normalise it to
++ *                               benign - the TPM is up - so we normalise it to
 + *                               success and carry on.
 + *   2. tlcl2_clear_control(false)  Clear a possibly-latched disableClear via
 + *                               TPM2_ClearControl. (coreboot hardcodes the
@@ -66,7 +66,7 @@ index 00000000..9426b7b3
 + *                               hierarchy (TPM_RH_PLATFORM). platformAuth is
 + *                               empty after TPM2_Startup(CLEAR) per the TPM 2.0
 + *                               spec, so firmware always holds platform
-+ *                               authorisation — no owner/lockout auth and no
++ *                               authorisation - no owner/lockout auth and no
 + *                               physical presence required (physical presence
 + *                               is a no-op on coreboot's TPM2 path anyway).
 + *
@@ -86,17 +86,17 @@ index 00000000..9426b7b3
 +	tpm_result_t rc;
 +
 +	printk(BIOS_INFO,
-+	       "TPM-RESET: one-shot TPM2_Clear starting — this firmware clears the TPM on EVERY boot\n");
++	       "TPM-RESET: one-shot TPM2_Clear starting - this firmware clears the TPM on EVERY boot\n");
 +
 +	/*
 +	 * Step 1: make sure the TSS stack is initialised and the TPM is
 +	 * started. A second TPM2_Startup this boot returns INVALID_POSTINIT,
-+	 * which only means coreboot already started the TPM — treat as success.
++	 * which only means coreboot already started the TPM - treat as success.
 +	 */
 +	rc = tpm_setup(0);
 +	if (rc == TPM_INVALID_POSTINIT) {
 +		printk(BIOS_INFO,
-+		       "TPM-RESET: step1 tpm_setup rc=%#x (INVALID_POSTINIT: TPM already started this boot — OK)\n",
++		       "TPM-RESET: step1 tpm_setup rc=%#x (INVALID_POSTINIT: TPM already started this boot - OK)\n",
 +		       rc);
 +		rc = TPM_SUCCESS;
 +	} else {
@@ -113,10 +113,10 @@ index 00000000..9426b7b3
 +
 +	if (rc == TPM_SUCCESS)
 +		printk(BIOS_INFO,
-+		       "TPM-RESET: done — TPM cleared. Shut down and reflash the normal ROM now.\n");
++		       "TPM-RESET: done - TPM cleared. Shut down and reflash the normal ROM now.\n");
 +	else
 +		printk(BIOS_ERR,
-+		       "TPM-RESET: FAILED (rc=%#x) — inspect the step codes above; booting anyway.\n",
++		       "TPM-RESET: FAILED (rc=%#x) - inspect the step codes above; booting anyway.\n",
 +		       rc);
 +}
 +

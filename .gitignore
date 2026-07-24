@@ -3,6 +3,6 @@
 /roms/*.rom
 /podman-image/
 
-# flash dumps, backups, reference material — carries machine identity (MAC, serial, UEFI vars)
+# flash dumps, backups, reference material - carries machine identity (MAC, serial, UEFI vars)
 *.bin
 /firmware/

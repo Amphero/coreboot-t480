@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# apply-devicetree.sh — toggles the optional devicetree devices of the T480 port
+# apply-devicetree.sh - toggles the optional devicetree devices of the T480 port
 # according to the "# DT_DEVICE NAME=y/n" markers in the config file (defconfig).
 #
 # Runs in the offline build (Dockerfile.offline) BEFORE `make` and edits
@@ -11,7 +11,7 @@
 #
 # Declarative + idempotent: the devicetree is brought to exactly the config
 # state (managed devices are removed first, then the ones set to =y are
-# re-inserted) — running it multiple times changes nothing.
+# re-inserted) - running it multiple times changes nothing.
 #
 #   sh apply-devicetree.sh <coreboot-tree>     # reads <tree>/defconfig
 set -eu
@@ -27,7 +27,7 @@ NL=$(printf '\nx'); NL=${NL%x}          # a real newline
 
 # Devices managed by this script (marker NAME -> devicetree alias = lowercase).
 # Only these aliases are allowed (they exist in the Skylake chipset: smbus 1f.4,
-# heci1 16.0, fast_spi 1f.5) — everything else is ignored.
+# heci1 16.0, fast_spi 1f.5) - everything else is ignored.
 MANAGED="smbus heci1 fast_spi"
 
 # 1) Remove all managed device lines (declarative, idempotent):
@@ -43,7 +43,7 @@ for kv in $specs; do
 	ref=$(printf '%s' "$name" | tr 'A-Z' 'a-z')
 	case " $MANAGED " in
 		*" $ref "*) : ;;
-		*) echo "apply-devicetree: unknown device '$name' — ignored" >&2; continue ;;
+		*) echo "apply-devicetree: unknown device '$name' - ignored" >&2; continue ;;
 	esac
 	[ "$val" = "y" ] && enabled="$enabled $ref"
 done

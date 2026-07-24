@@ -1,4 +1,4 @@
-# Makefile — thin convenience wrappers around the actual build scripts.
+# Makefile - thin convenience wrappers around the actual build scripts.
 #
 # This repo is NOT a classic software project: the real build logic lives in
 # fetch.sh (PHASE 1) and scripts/*.py (PHASE 2). This Makefile only delegates
@@ -11,7 +11,7 @@
 #   make pinned ARGS=--tpm-reset  # additionally a reset ROM (TPM2_Clear) -> README.md
 #   make pinned ARGS=--no-tpm     # without TPM
 #
-# Any further build-firmware.py flags via ARGS="…":
+# Any further build-firmware.py flags via ARGS="...":
 #   make latest ARGS="--tpm-reset --no-rng"
 
 BASE ?=
@@ -21,7 +21,7 @@ PY   := python3
 .PHONY: pinned latest fetch fetch-pinned fetch-latest help
 
 ## pinned / latest: the standard firmware (TPM + Setup Mode + RNG).
-## Extra ROMs/options via ARGS=… (e.g. ARGS=--tpm-reset for a reset ROM).
+## Extra ROMs/options via ARGS=... (e.g. ARGS=--tpm-reset for a reset ROM).
 pinned:
 	$(PY) scripts/build-firmware.py --mode pinned $(ARGS)
 

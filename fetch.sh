@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fetch.sh  —  PHASE 1 (FETCH).  Host wrapper; only needs `podman`.
+# fetch.sh  -  PHASE 1 (FETCH).  Host wrapper; only needs `podman`.
 #
 # Builds the build-environment image (coreboot-t480-deps) and runs the fetch
 # INSIDE it WITH network, populating ./sources/<BUILD_MODE>/ with EVERYTHING the
@@ -14,7 +14,7 @@
 #
 # Optional per-component overrides (win in BOTH modes), via env:
 #   COREBOOT_REF=<commit|tag>  EDK2_BRANCH=uefipayload_JJMM  LBMK_REF=<tag|commit>
-#   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/…_t480_vfsp_16mb.tar.xz
+#   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/..._t480_vfsp_16mb.tar.xz
 #
 # Flags: --refresh  --rebuild-deps
 set -euo pipefail
@@ -52,7 +52,7 @@ if [ -n "${LIBREBOOT_TARBALL:-}" ]; then
   case "$bn" in
     libreboot-*_t480_vfsp_16mb.tar.xz)
       : "${LIBREBOOT_VERSION:=$(printf '%s' "$bn" | sed 's/^libreboot-\(.*\)_t480_vfsp_16mb\.tar\.xz$/\1/')}" ;;
-    *) [ -n "${LIBREBOOT_VERSION:-}" ] || die "unexpected tarball name; please set LIBREBOOT_VERSION=…" ;;
+    *) [ -n "${LIBREBOOT_VERSION:-}" ] || die "unexpected tarball name; please set LIBREBOOT_VERSION=..." ;;
   esac
   cp -f "$LIBREBOOT_TARBALL" "$SRC/libreboot/$bn"
   [ -f "$LIBREBOOT_TARBALL.sha512" ] && cp -f "$LIBREBOOT_TARBALL.sha512" "$SRC/libreboot/$bn.sha512" || true
@@ -63,7 +63,7 @@ fi
 
 # --- build the deps image (network) -----------------------------------------
 if [ "$REBUILD_DEPS" = "1" ] || ! podman image exists "$DEPS_IMAGE"; then
-  echo "fetch.sh: building build-environment image '$DEPS_IMAGE' (once, with network) …"
+  echo "fetch.sh: building build-environment image '$DEPS_IMAGE' (once, with network) ..."
   podman build -t "$DEPS_IMAGE" -f "$BUILD/Dockerfile.deps" "$BUILD" \
     || die "deps image build failed"
 else
@@ -73,7 +73,7 @@ fi
 # --- run the fetch inside the deps image (network ON, as the host user) ------
 # --userns=keep-id: run as the host uid so (a) files under ./sources are owned
 # by you and (b) lbmk runs non-root (it refuses uid 0).
-echo "fetch.sh: PHASE 1 in the container (BUILD_MODE=$MODE, network on) …"
+echo "fetch.sh: PHASE 1 in the container (BUILD_MODE=$MODE, network on) ..."
 podman run --rm \
   --userns=keep-id \
   -e HOME=/tmp/fetchhome \
@@ -88,7 +88,7 @@ podman run --rm \
   -v "$BUILD":/work:ro,z \
   "$DEPS_IMAGE" \
   bash /work/fetch-sources.sh \
-  || die "PHASE 1 (fetch-sources.sh) failed — see output above."
+  || die "PHASE 1 (fetch-sources.sh) failed - see output above."
 
 # --- freeze the build config next to the sources (self-contained context) ----
 cp -f "$CONFIG/defconfig" "$SRC/defconfig"
@@ -96,5 +96,5 @@ cp -f "$BUILD/apply-devicetree.sh" "$SRC/apply-devicetree.sh"   # config-driven 
 [ -f "$CONFIG/splash.bmp" ] && cp -f "$CONFIG/splash.bmp" "$SRC/splash.bmp" || true
 
 echo
-echo "fetch.sh: ✅ sources/$MODE ready. Continue with the offline build:"
+echo "fetch.sh: sources/$MODE ready. Continue with the offline build:"
 echo "    python3 scripts/build-firmware.py --mode $MODE"

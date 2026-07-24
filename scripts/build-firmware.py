@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-build-firmware.py  —  build the T480 coreboot+EDK2 firmware (PHASE 2, OFFLINE).
+build-firmware.py  -  build the T480 coreboot+EDK2 firmware (PHASE 2, OFFLINE).
 
 Two-phase flow:
   PHASE 1  ./fetch.sh [pinned|latest]        (once, with network -> sources/<mode>/)
@@ -9,12 +9,12 @@ Two-phase flow:
 This script builds exclusively from sources/<mode>/ and runs both the image
 build and the variant passes with **--network=none** (verifiably offline).
 Finished ROMs + the versions.lock that was used end up in roms/.
-Flashing: externally via CH341A — see README.md.
+Flashing: externally via CH341A - see README.md.
 
 Examples:
   python3 scripts/build-firmware.py                         # pinned: TPM + Setup Mode + RNG (final firmware)
   python3 scripts/build-firmware.py --mode latest           # from sources/latest/
-  python3 scripts/build-firmware.py --tpm-reset             # additionally a reset ROM (TPM2_Clear) — see README.md
+  python3 scripts/build-firmware.py --tpm-reset             # additionally a reset ROM (TPM2_Clear) - see README.md
   python3 scripts/build-firmware.py --no-tpm               # disable the TPM (OS sees no TPM)
   python3 scripts/build-firmware.py --auto-enroll           # MS keys automatically (no Setup Mode)
   python3 scripts/build-firmware.py --no-rng                # leave out EFI_RNG_PROTOCOL (RDRAND)
@@ -22,7 +22,7 @@ Examples:
   python3 scripts/build-firmware.py --mac AA:BB:CC:DD:EE:FF
   python3 scripts/build-firmware.py --rebuild-base          # rebuild the offline image from scratch
 
-Afterwards set up Secure Boot with sbctl (README.md) — IMPORTANT:
+Afterwards set up Secure Boot with sbctl (README.md) - IMPORTANT:
 CMOS battery connected + correct clock, otherwise key enrolling fails!
 """
 import argparse, subprocess, sys, hashlib, shutil, datetime, re
@@ -60,18 +60,18 @@ def image_exists(name):
 
 # ---------------------------------------------------------------- PHASE 1 checks
 def require_sources(mode):
-    """sources/<mode>/ from PHASE 1 must be present — no silent fallback."""
+    """sources/<mode>/ from PHASE 1 must be present - no silent fallback."""
     src = SOURCES / mode
     lock = src / "versions.lock"
     if not lock.exists():
-        sys.exit(f"❌ sources/{mode}/ is missing (no versions.lock).\n"
+        sys.exit(f"ERROR: sources/{mode}/ is missing (no versions.lock).\n"
                  f"   Run PHASE 1 first:  ./fetch.sh {mode}")
     for need in ("coreboot", "edk2/mrchromebox", "lbmk", "defconfig"):
         if not (src / need).exists():
-            sys.exit(f"❌ sources/{mode}/{need} is missing — PHASE 1 fetch incomplete.\n"
+            sys.exit(f"ERROR: sources/{mode}/{need} is missing - PHASE 1 fetch incomplete.\n"
                      f"   Re-fetch:  ./fetch.sh {mode} --refresh")
     if not image_exists(DEPS_IMAGE):
-        sys.exit(f"❌ build-environment image '{DEPS_IMAGE}' is missing.\n"
+        sys.exit(f"ERROR: build-environment image '{DEPS_IMAGE}' is missing.\n"
                  f"   PHASE 1 builds it:  ./fetch.sh {mode}")
     return src
 
@@ -80,12 +80,12 @@ def verify_checksums(src):
     """Verify PHASE 1's sha256sums.txt (hard integrity check before the build)."""
     sums = src / "sha256sums.txt"
     if not sums.exists():
-        sys.exit(f"❌ {sums} is missing — PHASE 1 incomplete. ./fetch.sh <mode> --refresh")
+        sys.exit(f"ERROR: {sums} is missing - PHASE 1 incomplete. ./fetch.sh <mode> --refresh")
     print(f"[integrity] sha256sum -c {sums.relative_to(PROJECT)}")
     r = subprocess.run(["sha256sum", "-c", "sha256sums.txt"], cwd=src)
     if r.returncode != 0:
-        sys.exit("❌ SHA256 check failed — sources corrupt. ./fetch.sh <mode> --refresh")
-    print("   SHA256: OK ✓")
+        sys.exit("ERROR: SHA256 check failed - sources corrupt. ./fetch.sh <mode> --refresh")
+    print("   SHA256: OK")
 
 
 def sync_build_config(src):
@@ -126,9 +126,9 @@ def lock_get(src, key):
 def build_base(src, image, mac, force):
     """Build the offline image: context = sources/<mode>/, --network=none."""
     if image_exists(image) and not force:
-        print(f"[base] image '{image}' exists — skipping (--rebuild-base to rebuild).")
+        print(f"[base] image '{image}' exists - skipping (--rebuild-base to rebuild).")
         return
-    print(f"[base] OFFLINE build '{image}' (MAC={mac}, --network=none) — first run ~30-60 min (crossgcc) …")
+    print(f"[base] OFFLINE build '{image}' (MAC={mac}, --network=none) - first run ~30-60 min (crossgcc) ...")
     cmd = ["podman", "build", "--network=none", "--build-arg", f"MAC_ADDRESS={mac}"]
     # Pass the EDK2 branch from versions.lock through to coreboot (CONFIG_EDK2_TAG_OR_REV)
     # so the pre-placed clone is used instead of coreboot's possibly different default.
@@ -142,7 +142,7 @@ def build_base(src, image, mac, force):
 def container_build(image, no_tpm, setup_mode, enable_rng, outname, reset_patch=None):
     """Produce a variant inside the existing image (fast, crossgcc is reused). OFFLINE.
 
-    reset_patch: optional clear patch (patches/tpm-reset/…). If set, it is applied before
+    reset_patch: optional clear patch (patches/tpm-reset/...). If set, it is applied before
     `make` -> a reset ROM that clears the TPM 2.0 via TPM2_Clear on EVERY boot; afterwards
     the ramstage is checked to prove the hook is really in there."""
     steps = ['set -e', 'git config --global --add safe.directory "*"']
@@ -206,12 +206,12 @@ def verify(rom):
     mac = ":".join(f"{b:02x}" for b in data[0x1000:0x1006])
     ok = len(data) == 16 * 1024 * 1024
     print(f"\n=== {rom.name} ===")
-    print(f"  size  : {len(data)} bytes  {'(16 MB ✓)' if ok else '✗ NOT 16 MB!'}")
+    print(f"  size  : {len(data)} bytes  {'(16 MB, ok)' if ok else 'NOT 16 MB!'}")
     print(f"  MD5   : {hashlib.md5(data).hexdigest()}")
     print(f"  MAC   : {mac}")
     print(f"  path  : {rom}")
     if not ok:
-        sys.exit("  ✗ wrong size — build failed?")
+        sys.exit("  wrong size - build failed?")
 
 
 def main():
@@ -223,7 +223,7 @@ def main():
     ap.add_argument("--no-tpm", action="store_true",
                     help="disable the TPM (OS sees no TPM). Default: TPM is ON")
     ap.add_argument("--tpm-reset", action="store_true",
-                    help="ADDITIONALLY produce a reset ROM (…_tpmreset.rom): clears the TPM 2.0 on EVERY "
+                    help="ADDITIONALLY produce a reset ROM (..._tpmreset.rom): clears the TPM 2.0 on EVERY "
                          "boot via TPM2_Clear. Flow: flash the reset ROM, boot once, then flash the normal "
                          "ROM. Details/warnings: README.md. (Not combinable with --no-tpm/--plain.)")
     ap.add_argument("--auto-enroll", action="store_true", help="MS keys automatically (no Setup Mode)")
@@ -233,28 +233,28 @@ def main():
     ap.add_argument("--rebuild-base", action="store_true", help="rebuild the offline image from scratch")
     ap.add_argument("--version", help="version string for the ROM name "
                     "(default: pinned -> 'pinned' (frozen); latest -> date YYYYMMDD, e.g. 20260709)")
-    ap.add_argument("--output", help="override the output file name entirely (default: coreboot_t480_<version>[…].rom)")
+    ap.add_argument("--output", help="override the output file name entirely (default: coreboot_t480_<version>[...].rom)")
     args = ap.parse_args()
 
     mac = (args.mac or config_mac() or "").lower()
     if not re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
-        sys.exit("❌ Invalid/missing MAC ('%s'). Put it into config/defconfig as '# MAC=AA:BB:CC:DD:EE:FF' "
+        sys.exit("ERROR: Invalid/missing MAC ('%s'). Put it into config/defconfig as '# MAC=AA:BB:CC:DD:EE:FF' "
                  "or pass --mac AA:BB:.." % mac)
 
     # --tpm-reset needs an active TPM (it clears it, after all) and the variant path.
     if args.tpm_reset and args.no_tpm:
-        sys.exit("❌ --tpm-reset clears the TPM and therefore needs it active — not combinable with --no-tpm.")
+        sys.exit("ERROR: --tpm-reset clears the TPM and therefore needs it active - not combinable with --no-tpm.")
     if args.tpm_reset and args.plain:
-        sys.exit("❌ --tpm-reset is not combinable with --plain (plain = raw base ROM without a variant).")
+        sys.exit("ERROR: --tpm-reset is not combinable with --plain (plain = raw base ROM without a variant).")
     reset_patch = None
     if args.tpm_reset:
         reset_patch = PATCHDIR / f"tpm2-clear-on-boot_{args.mode}.patch"
         if not reset_patch.exists():
             reset_patch = PATCHDIR / "tpm2-clear-on-boot.patch"
         if not reset_patch.exists():
-            sys.exit(f"❌ reset patch missing in {PATCHDIR}/ (tpm2-clear-on-boot[_{args.mode}].patch)")
+            sys.exit(f"ERROR: reset patch missing in {PATCHDIR}/ (tpm2-clear-on-boot[_{args.mode}].patch)")
 
-    # PHASE 1 must have run — no silent fallback to online/another mode.
+    # PHASE 1 must have run - no silent fallback to online/another mode.
     src = require_sources(args.mode)
     verify_checksums(src)
     sync_build_config(src)
@@ -296,10 +296,10 @@ def main():
         container_build(image, no_tpm, setup_mode, enable_rng, reset_out, reset_patch=reset_patch)
         verify(ROMS / reset_out)
 
-    print("\n✅ Done (built offline from sources/%s). Flash externally via CH341A — see README.md." % args.mode)
-    print("   Then set up Secure Boot via sbctl — CMOS battery connected + correct clock!")
+    print("\nDone (built offline from sources/%s). Flash externally via CH341A - see README.md." % args.mode)
+    print("   Then set up Secure Boot via sbctl - CMOS battery connected + correct clock!")
     if reset_out:
-        print(f"\n⚠️  TPM-RESET (details: README.md): flash {reset_out} first + boot ONCE")
+        print(f"\nNOTE: TPM-RESET (details: README.md): flash {reset_out} first + boot ONCE")
         print(f"    (it clears the TPM on every boot!), verify, THEN flash {out}.")
 
 

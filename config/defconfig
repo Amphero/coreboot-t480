@@ -29,6 +29,6 @@ CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
 # set to =y into src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb after
 # "device ref hda on end", and removes it on =n (declarative, clean-build-safe).
 # NAME (upper case) -> devicetree alias (lower case). As a '#' comment Kconfig ignores it.
-# DT_DEVICE SMBUS=y       # device ref smbus on end     (PCI 1f.4)  — default: y
-# DT_DEVICE HECI1=n       # device ref heci1 on end     (PCI 16.0)  — default: n
-# DT_DEVICE FAST_SPI=n    # device ref fast_spi on end  (PCI 1f.5)  — default: n
+# DT_DEVICE SMBUS=y       # device ref smbus on end     (PCI 1f.4)  - default: y
+# DT_DEVICE HECI1=n       # device ref heci1 on end     (PCI 16.0)  - default: n
+# DT_DEVICE FAST_SPI=n    # device ref fast_spi on end  (PCI 1f.5)  - default: n

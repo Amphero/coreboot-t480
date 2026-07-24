@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-setup-dev-env.py  —  convenient front-end for PHASE 1 (FETCH).
+setup-dev-env.py  -  convenient front-end for PHASE 1 (FETCH).
 
 Checks the host requirements (only podman) and then runs ./fetch.sh, which
 builds the build-environment image and downloads ALL sources completely into
@@ -21,14 +21,14 @@ FETCH   = PROJECT / "fetch.sh"
 
 
 def check_tools():
-    print("[1/2] checking host requirements …")
+    print("[1/2] checking host requirements ...")
     if not shutil.which("podman"):
         sys.exit("   podman is missing. Install:  sudo pacman -S podman\n"
                  "   (rootless needs /etc/subuid + /etc/subgid entries for your user)")
     user = getpass.getuser()
     subuid = Path("/etc/subuid")
     if subuid.exists() and user not in subuid.read_text():
-        print(f"   ⚠ note: no /etc/subuid entry for '{user}' — rootless podman may need:")
+        print(f"   note: no /etc/subuid entry for '{user}' - rootless podman may need:")
         print(f"     sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 {user}")
     if not FETCH.exists():
         sys.exit(f"   {FETCH} is missing?!")
@@ -40,7 +40,7 @@ def run_fetch(mode, refresh):
     cmd = ["bash", str(FETCH), mode] + (["--refresh"] if refresh else [])
     r = subprocess.run(cmd, cwd=PROJECT)
     if r.returncode != 0:
-        sys.exit("   ❌ fetch failed — see output above.")
+        sys.exit("   ERROR: fetch failed - see output above.")
 
 
 if __name__ == "__main__":
@@ -53,5 +53,5 @@ if __name__ == "__main__":
     print(f"Project: {PROJECT}\n")
     check_tools()
     run_fetch(args.mode, args.refresh)
-    print(f"\n✅ dev environment + sources/{args.mode} ready.")
+    print(f"\ndev environment + sources/{args.mode} ready.")
     print(f"   Next:  python3 scripts/build-firmware.py --mode {args.mode} --help")
