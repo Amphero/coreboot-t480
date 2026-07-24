@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.svg">
-    <img src=".github/logo-light.svg" alt="coreboot logo" width="200">
+    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.png">
+    <img src=".github/logo-light.png" alt="coreboot logo" width="200">
   </picture>
 </p>
 
