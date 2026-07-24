@@ -1,40 +1,40 @@
 #!/usr/bin/env python3
 """
-build-firmware.py  —  T480 coreboot+EDK2-Firmware bauen (PHASE 2, OFFLINE).
+build-firmware.py  —  build the T480 coreboot+EDK2 firmware (PHASE 2, OFFLINE).
 
-Zwei-Phasen-Ablauf:
-  PHASE 1  ./fetch.sh [pinned|latest]        (einmalig, mit Netz -> sources/<mode>/)
-  PHASE 2  python3 scripts/build-firmware.py --mode <pinned|latest>   (OHNE Netz)
+Two-phase flow:
+  PHASE 1  ./fetch.sh [pinned|latest]        (once, with network -> sources/<mode>/)
+  PHASE 2  python3 scripts/build-firmware.py --mode <pinned|latest>   (NO network)
 
-Dieses Skript baut ausschließlich aus sources/<mode>/ und betreibt sowohl den
-Image-Build als auch die Varianten-Läufe mit **--network=none** (verifizierbar
-offline). Fertige ROMs + die verwendete versions.lock landen in roms/.
-Flashen: extern per CH341A — siehe README.md.
+This script builds exclusively from sources/<mode>/ and runs both the image
+build and the variant passes with **--network=none** (verifiably offline).
+Finished ROMs + the versions.lock that was used end up in roms/.
+Flashing: externally via CH341A — see README.md.
 
-Beispiele:
-  python3 scripts/build-firmware.py                         # pinned: TPM + Setup Mode + RNG (finale Firmware)
-  python3 scripts/build-firmware.py --mode latest           # aus sources/latest/
-  python3 scripts/build-firmware.py --tpm-reset             # zusätzlich ein Reset-ROM (TPM2_Clear) — siehe README.md
-  python3 scripts/build-firmware.py --no-tpm               # TPM deaktivieren (OS sieht kein TPM)
-  python3 scripts/build-firmware.py --auto-enroll           # MS-Keys automatisch (kein Setup Mode)
-  python3 scripts/build-firmware.py --no-rng                # EFI_RNG_PROTOCOL (RDRAND) weglassen
-  python3 scripts/build-firmware.py --plain                 # nur die rohe Image-ROM
+Examples:
+  python3 scripts/build-firmware.py                         # pinned: TPM + Setup Mode + RNG (final firmware)
+  python3 scripts/build-firmware.py --mode latest           # from sources/latest/
+  python3 scripts/build-firmware.py --tpm-reset             # additionally a reset ROM (TPM2_Clear) — see README.md
+  python3 scripts/build-firmware.py --no-tpm               # disable the TPM (OS sees no TPM)
+  python3 scripts/build-firmware.py --auto-enroll           # MS keys automatically (no Setup Mode)
+  python3 scripts/build-firmware.py --no-rng                # leave out EFI_RNG_PROTOCOL (RDRAND)
+  python3 scripts/build-firmware.py --plain                 # just the raw image ROM
   python3 scripts/build-firmware.py --mac AA:BB:CC:DD:EE:FF
-  python3 scripts/build-firmware.py --rebuild-base          # Offline-Image von Grund auf neu
+  python3 scripts/build-firmware.py --rebuild-base          # rebuild the offline image from scratch
 
-Danach Secure Boot mit sbctl einrichten (README.md) — WICHTIG:
-CMOS-Batterie angeschlossen + korrekte Uhrzeit, sonst scheitert das Key-Enrollen!
+Afterwards set up Secure Boot with sbctl (README.md) — IMPORTANT:
+CMOS battery connected + correct clock, otherwise key enrolling fails!
 """
 import argparse, subprocess, sys, hashlib, shutil, datetime, re
 from pathlib import Path
 
 PROJECT    = Path(__file__).resolve().parent.parent
-BUILD      = PROJECT / "build"         # Build-Rezepte: Dockerfile.offline/.deps, apply-devicetree.sh
-CONFIG     = PROJECT / "config"        # Board-Konfig + Boot-Logo: defconfig, splash.bmp
+BUILD      = PROJECT / "build"         # build recipes: Dockerfile.offline/.deps, apply-devicetree.sh
+CONFIG     = PROJECT / "config"        # board config + boot logo: defconfig, splash.bmp
 ROMS       = PROJECT / "roms"
 SOURCES    = PROJECT / "sources"
-PATCHDIR   = PROJECT / "patches" / "tpm-reset"   # Clear-Patch für das optionale --tpm-reset
-IMAGE_PREFIX = "coreboot-t480"       # Offline-Image PRO MODUS: coreboot-t480-pinned / -latest
+PATCHDIR   = PROJECT / "patches" / "tpm-reset"   # clear patch for the optional --tpm-reset
+IMAGE_PREFIX = "coreboot-t480"       # offline image PER MODE: coreboot-t480-pinned / -latest
 DEPS_IMAGE = "coreboot-t480-deps"
 
 FDF ="/opt/coreboot/payloads/external/edk2/workspace/mrchromebox/UefiPayloadPkg/UefiPayloadPkg.fdf"
@@ -46,7 +46,7 @@ def run(cmd, **kw):
 
 
 def config_mac():
-    """MAC-Default aus config/defconfig lesen (Marker-Zeile '# MAC=AA:BB:..')."""
+    """Read the MAC default from config/defconfig (marker line '# MAC=AA:BB:..')."""
     for line in (CONFIG / "defconfig").read_text().splitlines():
         m = re.match(r"\s*#\s*MAC\s*=\s*([0-9A-Fa-f:]{17})\b", line)
         if m:
@@ -60,38 +60,38 @@ def image_exists(name):
 
 # ---------------------------------------------------------------- PHASE 1 checks
 def require_sources(mode):
-    """Die sources/<mode>/ müssen aus PHASE 1 vorhanden sein — kein stiller Fallback."""
+    """sources/<mode>/ from PHASE 1 must be present — no silent fallback."""
     src = SOURCES / mode
     lock = src / "versions.lock"
     if not lock.exists():
-        sys.exit(f"❌ sources/{mode}/ fehlt (keine versions.lock).\n"
-                 f"   Erst PHASE 1 ausführen:  ./fetch.sh {mode}")
+        sys.exit(f"❌ sources/{mode}/ is missing (no versions.lock).\n"
+                 f"   Run PHASE 1 first:  ./fetch.sh {mode}")
     for need in ("coreboot", "edk2/mrchromebox", "lbmk", "defconfig"):
         if not (src / need).exists():
-            sys.exit(f"❌ sources/{mode}/{need} fehlt — PHASE-1-Fetch unvollständig.\n"
-                     f"   Neu holen:  ./fetch.sh {mode} --refresh")
+            sys.exit(f"❌ sources/{mode}/{need} is missing — PHASE 1 fetch incomplete.\n"
+                     f"   Re-fetch:  ./fetch.sh {mode} --refresh")
     if not image_exists(DEPS_IMAGE):
-        sys.exit(f"❌ Build-Umgebungs-Image '{DEPS_IMAGE}' fehlt.\n"
-                 f"   Wird von PHASE 1 gebaut:  ./fetch.sh {mode}")
+        sys.exit(f"❌ build-environment image '{DEPS_IMAGE}' is missing.\n"
+                 f"   PHASE 1 builds it:  ./fetch.sh {mode}")
     return src
 
 
 def verify_checksums(src):
-    """sha256sums.txt aus PHASE 1 prüfen (harte Integritätskontrolle vor dem Build)."""
+    """Verify PHASE 1's sha256sums.txt (hard integrity check before the build)."""
     sums = src / "sha256sums.txt"
     if not sums.exists():
-        sys.exit(f"❌ {sums} fehlt — PHASE 1 unvollständig. ./fetch.sh <mode> --refresh")
-    print(f"[integrität] sha256sum -c {sums.relative_to(PROJECT)}")
+        sys.exit(f"❌ {sums} is missing — PHASE 1 incomplete. ./fetch.sh <mode> --refresh")
+    print(f"[integrity] sha256sum -c {sums.relative_to(PROJECT)}")
     r = subprocess.run(["sha256sum", "-c", "sha256sums.txt"], cwd=src)
     if r.returncode != 0:
-        sys.exit("❌ SHA256-Prüfung fehlgeschlagen — Quellen korrupt. ./fetch.sh <mode> --refresh")
+        sys.exit("❌ SHA256 check failed — sources corrupt. ./fetch.sh <mode> --refresh")
     print("   SHA256: OK ✓")
 
 
 def sync_build_config(src):
-    """Aktuelles config/defconfig (+splash.bmp) in sources/<mode>/ spiegeln.
-    So greifen lokale defconfig-Tweaks beim Offline-Build (Context = sources/<mode>/),
-    ohne dass PHASE 1 neu laufen muss. Wirkt sich erst mit --rebuild-base aus."""
+    """Mirror the current config/defconfig (+splash.bmp) into sources/<mode>/.
+    That way local defconfig tweaks reach the offline build (context = sources/<mode>/)
+    without re-running PHASE 1. Takes effect only with --rebuild-base."""
     shutil.copy2(CONFIG / "defconfig", src / "defconfig")
     shutil.copy2(BUILD / "apply-devicetree.sh", src / "apply-devicetree.sh")  # config-driven devicetree toggles
     sp = CONFIG / "splash.bmp"
@@ -103,20 +103,20 @@ def sync_build_config(src):
 
 
 def log_versions(src):
-    """Verwendete Versionen loggen und als versions_<mode>.lock ins roms/ kopieren
-    (pro Modus getrennt, damit pinned/latest sich nicht gegenseitig überschreiben)."""
+    """Log the versions in use and copy them to roms/ as versions_<mode>.lock
+    (separate per mode so pinned/latest don't overwrite each other)."""
     lock = src / "versions.lock"
-    print("\n=== verwendete Versionen (versions.lock) ===")
+    print("\n=== versions in use (versions.lock) ===")
     print("\n".join("   " + l for l in lock.read_text().splitlines() if l and not l.startswith("#")))
     ROMS.mkdir(parents=True, exist_ok=True)
     dest = ROMS / f"versions_{src.name}.lock"
     shutil.copy2(lock, dest)
-    print(f"   -> kopiert nach {dest.relative_to(PROJECT)}")
+    print(f"   -> copied to {dest.relative_to(PROJECT)}")
 
 
 # ---------------------------------------------------------------- PHASE 2 build
 def lock_get(src, key):
-    """Wert aus sources/<mode>/versions.lock lesen (leer, wenn nicht vorhanden)."""
+    """Read a value from sources/<mode>/versions.lock (empty if absent)."""
     for line in (src / "versions.lock").read_text().splitlines():
         if line.startswith(f"{key}=") and not line.startswith("#"):
             return line.split("=", 1)[1].strip()
@@ -124,14 +124,14 @@ def lock_get(src, key):
 
 
 def build_base(src, image, mac, force):
-    """Offline-Image bauen: Context = sources/<mode>/, --network=none."""
+    """Build the offline image: context = sources/<mode>/, --network=none."""
     if image_exists(image) and not force:
-        print(f"[base] Image '{image}' vorhanden — überspringe (--rebuild-base zum Neubau).")
+        print(f"[base] image '{image}' exists — skipping (--rebuild-base to rebuild).")
         return
-    print(f"[base] OFFLINE-Build '{image}' (MAC={mac}, --network=none) — erster Lauf ~30-60 min (crossgcc) …")
+    print(f"[base] OFFLINE build '{image}' (MAC={mac}, --network=none) — first run ~30-60 min (crossgcc) …")
     cmd = ["podman", "build", "--network=none", "--build-arg", f"MAC_ADDRESS={mac}"]
-    # EDK2-Branch aus versions.lock an coreboot durchreichen (CONFIG_EDK2_TAG_OR_REV),
-    # damit der vorplatzierte Klon genutzt wird statt coreboots evtl. anderem Default.
+    # Pass the EDK2 branch from versions.lock through to coreboot (CONFIG_EDK2_TAG_OR_REV)
+    # so the pre-placed clone is used instead of coreboot's possibly different default.
     edk2_branch = lock_get(src, "EDK2_BRANCH")
     if edk2_branch:
         cmd += ["--build-arg", f"EDK2_BRANCH={edk2_branch}"]
@@ -140,15 +140,15 @@ def build_base(src, image, mac, force):
 
 
 def container_build(image, no_tpm, setup_mode, enable_rng, outname, reset_patch=None):
-    """Variante im vorhandenen Image erzeugen (schnell, crossgcc wird wiederverwendet). OFFLINE.
+    """Produce a variant inside the existing image (fast, crossgcc is reused). OFFLINE.
 
-    reset_patch: optionaler Clear-Patch (patches/tpm-reset/…). Ist er gesetzt, wird er vor
-    `make` angewandt -> Reset-ROM, das das TPM 2.0 bei JEDEM Boot per TPM2_Clear zurücksetzt;
-    danach wird am Ramstage nachgewiesen, dass der Hook wirklich drin ist."""
+    reset_patch: optional clear patch (patches/tpm-reset/…). If set, it is applied before
+    `make` -> a reset ROM that clears the TPM 2.0 via TPM2_Clear on EVERY boot; afterwards
+    the ramstage is checked to prove the hook is really in there."""
     steps = ['set -e', 'git config --global --add safe.directory "*"']
     if setup_mode:
-        # EnrollDefaultKeys-DXE auskommentieren -> Firmware startet im Setup Mode.
-        # dirty tree -> coreboots edk2-Makefile ueberspringt 'git checkout -f', Patch ueberlebt.
+        # Comment out the EnrollDefaultKeys DXE -> firmware starts in Setup Mode.
+        # dirty tree -> coreboot's edk2 Makefile skips 'git checkout -f', the patch survives.
         steps.append(rf'sed -i "/EnrollDefaultKeys\/EnrollDefaultKeys\.inf/ s/^/#/" {FDF}')
     steps.append('cd /opt/coreboot')
     config_changed = False
@@ -159,8 +159,8 @@ def container_build(image, no_tpm, setup_mode, enable_rng, outname, reset_patch=
         ]
         config_changed = True
     if enable_rng:
-        # EFI_RNG_PROTOCOL (RDRAND): RngDxe+Hash2 haengen an NETWORK_DRIVER_ENABLE, der schwere
-        # TCP/IP-Stack an NETWORK_ENABLE (bleibt aus) -> nur ~2,5 KB, kein Netzwerk-Stack.
+        # EFI_RNG_PROTOCOL (RDRAND): RngDxe+Hash2 hang off NETWORK_DRIVER_ENABLE, the heavy
+        # TCP/IP stack off NETWORK_ENABLE (stays off) -> only ~2.5 KB, no network stack.
         steps.append(
             r'''grep -q 'NETWORK_DRIVER_ENABLE=TRUE' .config || sed -i 's|^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"|CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\1 -D NETWORK_DRIVER_ENABLE=TRUE"|' .config'''
         )
@@ -168,22 +168,22 @@ def container_build(image, no_tpm, setup_mode, enable_rng, outname, reset_patch=
     if config_changed:
         steps.append('make olddefconfig')
     if reset_patch:
-        # Clear-Patch NUR fuer das Reset-ROM; muss sauber passen, sonst Abbruch.
+        # Clear patch ONLY for the reset ROM; must apply cleanly, otherwise abort.
         steps += [
-            f'echo "[tpm-reset] wende Clear-Patch an: {reset_patch.name}"',
-            f'git apply --check /reset/{reset_patch.name} || {{ echo "FEHLER: Clear-Patch {reset_patch.name} passt nicht auf diese Basis (API-Drift?)"; exit 1; }}',
+            f'echo "[tpm-reset] applying clear patch: {reset_patch.name}"',
+            f'git apply --check /reset/{reset_patch.name} || {{ echo "ERROR: clear patch {reset_patch.name} does not apply to this base (API drift?)"; exit 1; }}',
             f'git apply /reset/{reset_patch.name}',
         ]
     steps += ['make -j"$(nproc)"']
     if reset_patch:
-        # nachweisen, dass der Clear-Hook wirklich im Ramstage steckt (sonst waere das
-        # "Reset"-ROM ein stilles No-Op).
+        # prove the clear hook really is in the ramstage (otherwise the "reset"
+        # ROM would be a silent no-op).
         steps += [
             'RD=build/cbfs/fallback/ramstage.debug; [ -f "$RD" ] || RD="$(find build -name ramstage.debug -print -quit)"',
-            'test -n "$RD" || { echo "FEHLER: ramstage.debug nicht gefunden"; exit 1; }',
-            'nm "$RD" 2>/dev/null | grep -q tpm_reset_clear || { echo "FEHLER: Hook-Symbol tpm_reset_clear fehlt im Reset-Ramstage"; exit 1; }',
-            'strings "$RD" | grep -q "TPM-RESET:" || { echo "FEHLER: TPM-RESET-Logstrings fehlen im Reset-Ramstage"; exit 1; }',
-            'echo "[tpm-reset] Reset-ROM: Hook nachweislich enthalten (nm + strings)"',
+            'test -n "$RD" || { echo "ERROR: ramstage.debug not found"; exit 1; }',
+            'nm "$RD" 2>/dev/null | grep -q tpm_reset_clear || { echo "ERROR: hook symbol tpm_reset_clear missing from reset ramstage"; exit 1; }',
+            'strings "$RD" | grep -q "TPM-RESET:" || { echo "ERROR: TPM-RESET log strings missing from reset ramstage"; exit 1; }',
+            'echo "[tpm-reset] reset ROM: hook verifiably present (nm + strings)"',
         ]
     steps += [f'cp build/coreboot.rom /out/{outname}', f'echo BUILT {outname}']
     script = "\n".join(steps)
@@ -206,55 +206,55 @@ def verify(rom):
     mac = ":".join(f"{b:02x}" for b in data[0x1000:0x1006])
     ok = len(data) == 16 * 1024 * 1024
     print(f"\n=== {rom.name} ===")
-    print(f"  Größe : {len(data)} Bytes  {'(16 MB ✓)' if ok else '✗ NICHT 16 MB!'}")
+    print(f"  size  : {len(data)} bytes  {'(16 MB ✓)' if ok else '✗ NOT 16 MB!'}")
     print(f"  MD5   : {hashlib.md5(data).hexdigest()}")
     print(f"  MAC   : {mac}")
-    print(f"  Pfad  : {rom}")
+    print(f"  path  : {rom}")
     if not ok:
-        sys.exit("  ✗ Größe falsch — Build fehlgeschlagen?")
+        sys.exit("  ✗ wrong size — build failed?")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="T480 coreboot+EDK2 Firmware bauen (Phase 2, offline)",
+    ap = argparse.ArgumentParser(description="Build the T480 coreboot+EDK2 firmware (phase 2, offline)",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--mode", default="pinned", choices=["pinned", "latest"],
-                    help="welche sources/<mode>/ verwenden (Default pinned = HW-getestet)")
-    ap.add_argument("--mac", help="MAC überschreiben (Default: Marker '# MAC=' aus config/defconfig)")
+                    help="which sources/<mode>/ to use (default pinned = HW-tested)")
+    ap.add_argument("--mac", help="override the MAC (default: marker '# MAC=' in config/defconfig)")
     ap.add_argument("--no-tpm", action="store_true",
-                    help="TPM deaktivieren (OS sieht kein TPM). Default: TPM ist AN (der T480-TPM ist repariert)")
+                    help="disable the TPM (OS sees no TPM). Default: TPM is ON")
     ap.add_argument("--tpm-reset", action="store_true",
-                    help="ZUSÄTZLICH ein Reset-ROM erzeugen (…_tpmreset.rom): cleart das TPM 2.0 bei JEDEM "
-                         "Boot per TPM2_Clear. Ablauf: Reset-ROM flashen, einmal booten, dann das normale "
-                         "ROM flashen. Details/Warnungen: README.md. (Nicht mit --no-tpm/--plain kombinierbar.)")
-    ap.add_argument("--auto-enroll", action="store_true", help="MS-Keys automatisch (kein Setup Mode)")
+                    help="ADDITIONALLY produce a reset ROM (…_tpmreset.rom): clears the TPM 2.0 on EVERY "
+                         "boot via TPM2_Clear. Flow: flash the reset ROM, boot once, then flash the normal "
+                         "ROM. Details/warnings: README.md. (Not combinable with --no-tpm/--plain.)")
+    ap.add_argument("--auto-enroll", action="store_true", help="MS keys automatically (no Setup Mode)")
     ap.add_argument("--no-rng", action="store_true",
-                    help="EFI_RNG_PROTOCOL (RDRAND) NICHT einbauen (Default: RNG ist drin, ~2,5 KB, KEIN Netzwerk-Stack)")
-    ap.add_argument("--plain", action="store_true", help="nur rohe Image-ROM (SB, TPM, Auto-Enroll)")
-    ap.add_argument("--rebuild-base", action="store_true", help="Offline-Image von Grund auf neu bauen")
-    ap.add_argument("--version", help="Versionsstring für den ROM-Namen "
-                    "(Default: pinned -> 'pinned' (eingefroren); latest -> Datum JJJJMMTT, z.B. 20260709)")
-    ap.add_argument("--output", help="Ausgabedateiname komplett überschreiben (Default: coreboot_t480_<version>[…].rom)")
+                    help="do NOT include EFI_RNG_PROTOCOL (RDRAND) (default: RNG is in, ~2.5 KB, NO network stack)")
+    ap.add_argument("--plain", action="store_true", help="just the raw image ROM (SB, TPM, auto-enroll)")
+    ap.add_argument("--rebuild-base", action="store_true", help="rebuild the offline image from scratch")
+    ap.add_argument("--version", help="version string for the ROM name "
+                    "(default: pinned -> 'pinned' (frozen); latest -> date YYYYMMDD, e.g. 20260709)")
+    ap.add_argument("--output", help="override the output file name entirely (default: coreboot_t480_<version>[…].rom)")
     args = ap.parse_args()
 
     mac = (args.mac or config_mac() or "").lower()
     if not re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
-        sys.exit("❌ Ungültige/fehlende MAC ('%s'). In config/defconfig als '# MAC=AA:BB:CC:DD:EE:FF' "
-                 "hinterlegen oder --mac AA:BB:.. angeben." % mac)
+        sys.exit("❌ Invalid/missing MAC ('%s'). Put it into config/defconfig as '# MAC=AA:BB:CC:DD:EE:FF' "
+                 "or pass --mac AA:BB:.." % mac)
 
-    # --tpm-reset braucht ein aktives TPM (es cleart es ja) und den Varianten-Pfad.
+    # --tpm-reset needs an active TPM (it clears it, after all) and the variant path.
     if args.tpm_reset and args.no_tpm:
-        sys.exit("❌ --tpm-reset cleart das TPM und braucht es daher aktiv — nicht mit --no-tpm kombinierbar.")
+        sys.exit("❌ --tpm-reset clears the TPM and therefore needs it active — not combinable with --no-tpm.")
     if args.tpm_reset and args.plain:
-        sys.exit("❌ --tpm-reset ist nicht mit --plain kombinierbar (plain = rohe Basis-ROM ohne Variante).")
+        sys.exit("❌ --tpm-reset is not combinable with --plain (plain = raw base ROM without a variant).")
     reset_patch = None
     if args.tpm_reset:
         reset_patch = PATCHDIR / f"tpm2-clear-on-boot_{args.mode}.patch"
         if not reset_patch.exists():
             reset_patch = PATCHDIR / "tpm2-clear-on-boot.patch"
         if not reset_patch.exists():
-            sys.exit(f"❌ Reset-Patch fehlt in {PATCHDIR}/ (tpm2-clear-on-boot[_{args.mode}].patch)")
+            sys.exit(f"❌ reset patch missing in {PATCHDIR}/ (tpm2-clear-on-boot[_{args.mode}].patch)")
 
-    # PHASE 1 muss gelaufen sein — kein stilles Zurückfallen auf Online/anderen Modus.
+    # PHASE 1 must have run — no silent fallback to online/another mode.
     src = require_sources(args.mode)
     verify_checksums(src)
     sync_build_config(src)
@@ -263,44 +263,44 @@ def main():
     image = f"{IMAGE_PREFIX}-{args.mode}"          # coreboot-t480-pinned / coreboot-t480-latest
     build_base(src, image, mac, args.rebuild_base)
 
-    # Namens-„Version": pinned ist eingefroren (wird nicht aktueller) -> fester Name 'pinned';
-    # latest entwickelt sich weiter -> Datum (JJJJMMTT). Beides via --version überschreibbar.
+    # Name "version": pinned is frozen (never gets newer) -> fixed name 'pinned';
+    # latest keeps evolving -> date (YYYYMMDD). Both overridable via --version.
     ver = args.version or ("pinned" if args.mode == "pinned"
                            else datetime.date.today().strftime("%Y%m%d"))
     if args.plain:
         out = args.output or f"coreboot_t480_{ver}_plain.rom"
         extract_plain(image, out)
     else:
-        no_tpm = args.no_tpm      # Default: TPM AN (der reparierte T480-TPM ist jetzt Standard)
+        no_tpm = args.no_tpm      # default: TPM ON
         setup_mode = not args.auto_enroll
-        enable_rng = not args.no_rng          # RNG ist jetzt Default (mit --no-rng abschaltbar)
+        enable_rng = not args.no_rng          # RNG is the default (disable with --no-rng)
         if args.output:
             out = args.output
         else:
-            # Default = TPM + Setup Mode + RNG -> nur das Datum. Nur ABWEICHUNGEN
-            # vom Default landen als Tag im Namen (sonst wäre der Default-Name „verrauscht").
-            dev = (("_no-tpm"  if no_tpm         else "")   # TPM deaktiviert (Default ist AN)
-                   + ("_msenroll" if not setup_mode else "")  # MS-Keys auto statt Setup Mode
-                   + ("_no-rng"   if not enable_rng else ""))  # RNG weggelassen
+            # Default = TPM + Setup Mode + RNG -> just the date. Only DEVIATIONS
+            # from the default end up as tags in the name (else the default name gets noisy).
+            dev = (("_no-tpm"  if no_tpm         else "")   # TPM disabled (default is ON)
+                   + ("_msenroll" if not setup_mode else "")  # MS keys auto instead of Setup Mode
+                   + ("_no-rng"   if not enable_rng else ""))  # RNG left out
             out = f"coreboot_t480_{ver}{dev}.rom"
-        print(f"[variante] mode={args.mode}  version={ver}  no_tpm={no_tpm}  setup_mode={setup_mode}  enable_rng={enable_rng}  ->  {out}")
+        print(f"[variant] mode={args.mode}  version={ver}  no_tpm={no_tpm}  setup_mode={setup_mode}  enable_rng={enable_rng}  ->  {out}")
         container_build(image, no_tpm, setup_mode, enable_rng, out)
 
     verify(ROMS / out)
 
-    # Optional: zusätzlich ein Reset-ROM (gleiche Konfig + Clear-Patch) aus DEMSELBEN Image.
+    # Optional: additionally a reset ROM (same config + clear patch) from the SAME image.
     reset_out = None
     if reset_patch and not args.plain:
         reset_out = f"{out[:-4]}_tpmreset.rom"
-        print(f"\n[tpm-reset] erzeuge zusätzlich Reset-ROM (Clear bei JEDEM Boot): {reset_out}")
+        print(f"\n[tpm-reset] additionally building the reset ROM (clear on EVERY boot): {reset_out}")
         container_build(image, no_tpm, setup_mode, enable_rng, reset_out, reset_patch=reset_patch)
         verify(ROMS / reset_out)
 
-    print("\n✅ Fertig (offline gebaut aus sources/%s). Flashen extern per CH341A — siehe README.md." % args.mode)
-    print("   Danach Secure Boot per sbctl — CMOS-Batterie an + korrekte Uhrzeit!")
+    print("\n✅ Done (built offline from sources/%s). Flash externally via CH341A — see README.md." % args.mode)
+    print("   Then set up Secure Boot via sbctl — CMOS battery connected + correct clock!")
     if reset_out:
-        print(f"\n⚠️  TPM-RESET (Details: README.md): erst {reset_out} flashen + EINMAL booten")
-        print(f"    (cleart das TPM bei jedem Boot!), verifizieren, DANN {out} flashen.")
+        print(f"\n⚠️  TPM-RESET (details: README.md): flash {reset_out} first + boot ONCE")
+        print(f"    (it clears the TPM on every boot!), verify, THEN flash {out}.")
 
 
 if __name__ == "__main__":

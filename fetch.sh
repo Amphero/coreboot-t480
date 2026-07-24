@@ -20,8 +20,8 @@
 set -euo pipefail
 
 PROJECT="$(cd "$(dirname "$0")" && pwd)"
-BUILD="$PROJECT/build"        # Build-Rezepte: Dockerfile.deps/.offline, fetch-sources.sh, apply-devicetree.sh
-CONFIG="$PROJECT/config"      # Board-Konfig + Boot-Logo: defconfig, splash.bmp
+BUILD="$PROJECT/build"        # build recipes: Dockerfile.deps/.offline, fetch-sources.sh, apply-devicetree.sh
+CONFIG="$PROJECT/config"      # board config + boot logo: defconfig, splash.bmp
 DEPS_IMAGE="coreboot-t480-deps"
 
 MODE="${BUILD_MODE:-pinned}"
@@ -33,13 +33,13 @@ for a in "$@"; do
     --refresh)      REFRESH=1 ;;
     --rebuild-deps) REBUILD_DEPS=1 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
-    *) echo "Unbekanntes Argument: $a" >&2; exit 2 ;;
+    *) echo "Unknown argument: $a" >&2; exit 2 ;;
   esac
 done
-[ "$MODE" = "pinned" ] || [ "$MODE" = "latest" ] || { echo "BUILD_MODE muss pinned|latest sein" >&2; exit 2; }
+[ "$MODE" = "pinned" ] || [ "$MODE" = "latest" ] || { echo "BUILD_MODE must be pinned|latest" >&2; exit 2; }
 
-die(){ printf '\n\033[1;31mfetch.sh FEHLER: %s\033[0m\n' "$*" >&2; exit 1; }
-command -v podman >/dev/null || die "podman fehlt (sudo pacman -S podman)"
+die(){ printf '\n\033[1;31mfetch.sh ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
+command -v podman >/dev/null || die "podman is missing (sudo pacman -S podman)"
 
 SRC="$PROJECT/sources/$MODE"
 mkdir -p "$SRC/libreboot"
@@ -47,33 +47,33 @@ mkdir -p "$SRC/libreboot"
 # --- optional externally-provided libreboot tarball -------------------------
 PROVIDED=0
 if [ -n "${LIBREBOOT_TARBALL:-}" ]; then
-  [ -f "$LIBREBOOT_TARBALL" ] || die "LIBREBOOT_TARBALL='$LIBREBOOT_TARBALL' existiert nicht"
+  [ -f "$LIBREBOOT_TARBALL" ] || die "LIBREBOOT_TARBALL='$LIBREBOOT_TARBALL' does not exist"
   bn="$(basename "$LIBREBOOT_TARBALL")"
   case "$bn" in
     libreboot-*_t480_vfsp_16mb.tar.xz)
       : "${LIBREBOOT_VERSION:=$(printf '%s' "$bn" | sed 's/^libreboot-\(.*\)_t480_vfsp_16mb\.tar\.xz$/\1/')}" ;;
-    *) [ -n "${LIBREBOOT_VERSION:-}" ] || die "Tarball-Name unerwartet; bitte LIBREBOOT_VERSION=… setzen" ;;
+    *) [ -n "${LIBREBOOT_VERSION:-}" ] || die "unexpected tarball name; please set LIBREBOOT_VERSION=…" ;;
   esac
   cp -f "$LIBREBOOT_TARBALL" "$SRC/libreboot/$bn"
   [ -f "$LIBREBOOT_TARBALL.sha512" ] && cp -f "$LIBREBOOT_TARBALL.sha512" "$SRC/libreboot/$bn.sha512" || true
   [ -f "$LIBREBOOT_TARBALL.sig" ]    && cp -f "$LIBREBOOT_TARBALL.sig"    "$SRC/libreboot/$bn.sig"    || true
   PROVIDED=1
-  echo "fetch.sh: nutze bereitgestellten Tarball $bn (Version ${LIBREBOOT_VERSION:-?})"
+  echo "fetch.sh: using provided tarball $bn (version ${LIBREBOOT_VERSION:-?})"
 fi
 
 # --- build the deps image (network) -----------------------------------------
 if [ "$REBUILD_DEPS" = "1" ] || ! podman image exists "$DEPS_IMAGE"; then
-  echo "fetch.sh: baue Build-Umgebungs-Image '$DEPS_IMAGE' (einmalig, mit Netz) …"
+  echo "fetch.sh: building build-environment image '$DEPS_IMAGE' (once, with network) …"
   podman build -t "$DEPS_IMAGE" -f "$BUILD/Dockerfile.deps" "$BUILD" \
-    || die "Deps-Image-Build fehlgeschlagen"
+    || die "deps image build failed"
 else
-  echo "fetch.sh: '$DEPS_IMAGE' vorhanden (--rebuild-deps zum Neubau)."
+  echo "fetch.sh: '$DEPS_IMAGE' exists (--rebuild-deps to rebuild)."
 fi
 
 # --- run the fetch inside the deps image (network ON, as the host user) ------
 # --userns=keep-id: run as the host uid so (a) files under ./sources are owned
 # by you and (b) lbmk runs non-root (it refuses uid 0).
-echo "fetch.sh: PHASE 1 im Container (BUILD_MODE=$MODE, Netz an) …"
+echo "fetch.sh: PHASE 1 in the container (BUILD_MODE=$MODE, network on) …"
 podman run --rm \
   --userns=keep-id \
   -e HOME=/tmp/fetchhome \
@@ -88,7 +88,7 @@ podman run --rm \
   -v "$BUILD":/work:ro,z \
   "$DEPS_IMAGE" \
   bash /work/fetch-sources.sh \
-  || die "PHASE 1 (fetch-sources.sh) fehlgeschlagen — siehe Ausgabe oben."
+  || die "PHASE 1 (fetch-sources.sh) failed — see output above."
 
 # --- freeze the build config next to the sources (self-contained context) ----
 cp -f "$CONFIG/defconfig" "$SRC/defconfig"
@@ -96,5 +96,5 @@ cp -f "$BUILD/apply-devicetree.sh" "$SRC/apply-devicetree.sh"   # config-driven 
 [ -f "$CONFIG/splash.bmp" ] && cp -f "$CONFIG/splash.bmp" "$SRC/splash.bmp" || true
 
 echo
-echo "fetch.sh: ✅ sources/$MODE bereit. Weiter mit dem Offline-Build:"
+echo "fetch.sh: ✅ sources/$MODE ready. Continue with the offline build:"
 echo "    python3 scripts/build-firmware.py --mode $MODE"

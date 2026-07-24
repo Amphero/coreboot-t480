@@ -29,7 +29,7 @@ git config --global --add safe.directory '*'        2>/dev/null || true
 git config --global advice.detachedHead false       2>/dev/null || true
 
 log(){ printf '\n\033[1;36m[fetch:%s] %s\033[0m\n' "$MODE" "$*"; }
-die(){ printf '\n\033[1;31m[fetch:%s] FEHLER: %s\033[0m\n' "$MODE" "$*" >&2; exit 1; }
+die(){ printf '\n\033[1;31m[fetch:%s] ERROR: %s\033[0m\n' "$MODE" "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- coreboot upstream
 CB_URL="https://review.coreboot.org/coreboot.git"
@@ -69,38 +69,38 @@ resolve_pinned(){
 resolve_latest(){
   # coreboot: newest release tag YY.MM[.p]  (NOT master snapshots)
   if [ -z "${COREBOOT_REF:-}" ]; then
-    log "ermittle neuestes coreboot-Release-Tag …"
+    log "resolving newest coreboot release tag …"
     COREBOOT_REF="$(git ls-remote --tags --refs "$CB_GH" 2>/dev/null \
       | sed -n 's#.*refs/tags/\([0-9][0-9]\.[0-9][0-9]\(\.[0-9]\+\)\?\)$#\1#p' \
       | sortver | tail -1)" || true
-    [ -n "$COREBOOT_REF" ] || die "konnte kein coreboot-Release-Tag ermitteln (Netz?)"
+    [ -n "$COREBOOT_REF" ] || die "could not resolve a coreboot release tag (network?)"
   fi
   # edk2: newest uefipayload_* branch. Two naming schemes coexist —
   # old uefipayload_YYYYMM (e.g. 202309) and new uefipayload_YYMM (e.g. 2605) —
   # so normalise a 4-digit YYMM to 20YYMM before the numeric date sort, else the
   # 6-digit 2023xx would wrongly rank above the 4-digit 26xx.
   if [ -z "${EDK2_BRANCH:-}" ]; then
-    log "ermittle neuesten MrChromebox uefipayload_* Branch …"
+    log "resolving newest MrChromebox uefipayload_* branch …"
     EDK2_BRANCH="$(git ls-remote --heads "$EDK2_URL" 2>/dev/null \
       | sed -n 's#.*refs/heads/\(uefipayload_[0-9]\+\)$#\1#p' \
       | while read -r b; do n="${b#uefipayload_}"; [ "${#n}" -eq 4 ] && n="20$n"; echo "$n $b"; done \
       | sort -k1,1n | tail -1 | awk '{print $2}')" || true
-    [ -n "$EDK2_BRANCH" ] || die "konnte keinen uefipayload_* Branch ermitteln (Netz?)"
+    [ -n "$EDK2_BRANCH" ] || die "could not resolve a uefipayload_* branch (network?)"
   fi
   # lbmk: newest release tag (new scheme YY.MM[revN])
   if [ -z "${LBMK_REF:-}" ]; then
-    log "ermittle neuestes lbmk-Release-Tag …"
+    log "resolving newest lbmk release tag …"
     LBMK_REF="$(git ls-remote --tags --refs "$LBMK_URL" 2>/dev/null \
       | sed -n 's#.*refs/tags/\([0-9][0-9]\.[0-9][0-9]\(rev[0-9]\+\)\?\)$#\1#p' \
       | sortver | tail -1)" || true
-    [ -n "$LBMK_REF" ] || die "konnte kein lbmk-Release-Tag ermitteln (Netz?)"
+    [ -n "$LBMK_REF" ] || die "could not resolve an lbmk release tag (network?)"
   fi
   # libreboot: newest stable release that ships the t480_vfsp_16mb tarball.
   # Mirror dir listings look like href="./26.01rev1/" (note the ./ prefix); we
   # strip an optional ./ and trailing /, keep only YY.MM[suffix] release dirs,
   # sort newest-first and pick the first that actually has the t480 tarball.
   if [ -z "${LIBREBOOT_VERSION:-}" ]; then
-    log "ermittle neuestes libreboot-Stable mit t480_vfsp_16mb …"
+    log "resolving newest libreboot stable with t480_vfsp_16mb …"
     local base idx vers v
     for base in "${LR_MIRRORS[@]}"; do
       idx="$(curl -fsL "$base/stable/" 2>/dev/null || true)"
@@ -113,12 +113,12 @@ resolve_latest(){
         fi
       done
     done
-    [ -n "${LIBREBOOT_VERSION:-}" ] || die "konnte kein libreboot-Stable mit t480_vfsp_16mb ermitteln"
+    [ -n "${LIBREBOOT_VERSION:-}" ] || die "could not find a libreboot stable with t480_vfsp_16mb"
   fi
 }
 
 if [ "$MODE" = "latest" ] && [ -f "$LOCK" ] && [ "$REFRESH" != "1" ]; then
-  log "vorhandene versions.lock eingefroren (--refresh zum Neu-Auflösen):"
+  log "existing versions.lock is frozen (--refresh to re-resolve):"
   # shellcheck disable=SC1090
   . "$LOCK"
 elif [ "$MODE" = "pinned" ]; then
@@ -153,37 +153,37 @@ LIBREBOOT_TARBALL=$LIBREBOOT_TARBALL
 LBMK_REF=$LBMK_REF
 LBMK_COMMIT=$LBMK_COMMIT
 EOF
-log "aufgelöste Versionen:"; sed 's/^/    /' "$LOCK"
+log "resolved versions:"; sed 's/^/    /' "$LOCK"
 
 # =====================================================================
 # 2) coreboot  (source + selected submodules + crossgcc toolchain tarballs)
 # =====================================================================
 CB="$SRC/coreboot"
 if [ -f "$CB/.stamp-fetch" ] && [ "$REFRESH" != "1" ]; then
-  log "coreboot bereits geholt — überspringe"
+  log "coreboot already fetched — skipping"
 else
-  log "coreboot $COREBOOT_REF holen (+ Submodule) …"
+  log "fetching coreboot $COREBOOT_REF (+ submodules) …"
   rm -rf "$CB"; mkdir -p "$CB"
   git -C "$CB" init -q
   git -C "$CB" remote add origin "$CB_URL"
   # shallow fetch of the exact commit/tag (review.coreboot.org serves SHAs)
   git -C "$CB" fetch -q --depth 1 origin "$COREBOOT_REF" \
     || git -C "$CB" fetch -q --depth 1 "$CB_GH" "$COREBOOT_REF" \
-    || die "coreboot fetch von $COREBOOT_REF fehlgeschlagen"
+    || die "coreboot fetch of $COREBOOT_REF failed"
   git -C "$CB" checkout -q FETCH_HEAD
   for m in "${CB_SUBMODULES[@]}"; do
-    log "  Submodul $m …"
+    log "  submodule $m …"
     git -C "$CB" submodule update --init --checkout -- "$m" \
-      || die "coreboot-Submodul $m fehlgeschlagen"
+      || die "coreboot submodule $m failed"
   done
-  log "coreboot crossgcc-Tarballs vorladen (buildgcc -f) …"
+  log "pre-loading coreboot crossgcc tarballs (buildgcc -f) …"
   ( cd "$CB/util/crossgcc" \
       && ./buildgcc -f \
       && ./buildgcc -f -P IASL \
       && ./buildgcc -f -P NASM ) \
-    || die "crossgcc-Tarball-Download (buildgcc -f) fehlgeschlagen"
+    || die "crossgcc tarball download (buildgcc -f) failed"
   ls "$CB/util/crossgcc/tarballs/"*.tar.* >/dev/null 2>&1 \
-    || die "keine crossgcc-Tarballs in util/crossgcc/tarballs/"
+    || die "no crossgcc tarballs in util/crossgcc/tarballs/"
   touch "$CB/.stamp-fetch"
 fi
 
@@ -195,15 +195,15 @@ fi
 # =====================================================================
 ED="$SRC/edk2/mrchromebox"
 if [ -f "$SRC/edk2/.stamp-fetch" ] && [ "$REFRESH" != "1" ]; then
-  log "edk2 bereits geholt — überspringe"
+  log "edk2 already fetched — skipping"
 else
-  log "edk2 Branch $EDK2_BRANCH klonen (+ Submodule) …"
+  log "cloning edk2 branch $EDK2_BRANCH (+ submodules) …"
   rm -rf "$SRC/edk2"; mkdir -p "$SRC/edk2"
   git clone -q --branch "$EDK2_BRANCH" --single-branch --recurse-submodules -j"$NPROC" \
-    "$EDK2_URL" "$ED" || die "edk2-Klon ($EDK2_BRANCH) fehlgeschlagen"
+    "$EDK2_URL" "$ED" || die "edk2 clone ($EDK2_BRANCH) failed"
   git -C "$ED" checkout -q --detach "origin/$EDK2_BRANCH"
   git -C "$ED" submodule update --init --checkout --recursive \
-    || die "edk2-Submodule fehlgeschlagen"
+    || die "edk2 submodules failed"
   touch "$SRC/edk2/.stamp-fetch"
 fi
 
@@ -214,31 +214,31 @@ LRDIR="$SRC/libreboot"
 mkdir -p "$LRDIR"
 TB="$LRDIR/$LIBREBOOT_TARBALL"
 if [ "${LIBREBOOT_TARBALL_PROVIDED:-0}" = "1" ] && [ -f "$TB" ]; then
-  log "libreboot-Tarball extern bereitgestellt: $LIBREBOOT_TARBALL"
+  log "libreboot tarball provided externally: $LIBREBOOT_TARBALL"
 elif [ -f "$TB" ] && [ "$REFRESH" != "1" ]; then
-  log "libreboot-Tarball bereits vorhanden — überspringe Download"
+  log "libreboot tarball already present — skipping download"
 else
-  log "libreboot-Tarball $LIBREBOOT_TARBALL laden …"
+  log "downloading libreboot tarball $LIBREBOOT_TARBALL …"
   ok=0
   for base in "${LR_MIRRORS[@]}"; do
     url="$base/stable/$LIBREBOOT_VERSION/roms/$LIBREBOOT_TARBALL"
     if curl -fLo "$TB" "$url" \
        && curl -fLo "$TB.sha512" "$url.sha512" \
        && curl -fLo "$TB.sig"    "$url.sig"; then ok=1; break; fi
-    log "  Mirror $base fehlgeschlagen, nächster …"
+    log "  mirror $base failed, trying next …"
   done
-  [ "$ok" = "1" ] || die "kein libreboot-Mirror lieferte $LIBREBOOT_TARBALL (LIBREBOOT_TARBALL=… nutzen)"
+  [ "$ok" = "1" ] || die "no libreboot mirror served $LIBREBOOT_TARBALL (use LIBREBOOT_TARBALL=…)"
 fi
 # Integrity (sha512) is mandatory; authenticity (gpg) is best-effort.
 if [ -f "$TB.sha512" ]; then
   ( cd "$LRDIR" && sha512sum -c "$(basename "$TB").sha512" ) \
-    || die "libreboot-Tarball SHA512-Mismatch — korrupt!"
+    || die "libreboot tarball SHA512 mismatch — corrupt!"
   log "libreboot SHA512 ok"
 fi
 if [ -f "$TB.sig" ]; then
   gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$LEAH_KEY" 2>/dev/null || true
-  if gpg --verify "$TB.sig" "$TB" 2>/dev/null; then log "libreboot GPG-Signatur ok (Leah Rowe)"
-  else log "libreboot GPG nicht verifiziert (Key fehlt) — SHA512 hat Integrität bestätigt"; fi
+  if gpg --verify "$TB.sig" "$TB" 2>/dev/null; then log "libreboot GPG signature ok (Leah Rowe)"
+  else log "libreboot GPG not verified (key missing) — SHA512 already confirmed integrity"; fi
 fi
 
 # =====================================================================
@@ -250,28 +250,28 @@ fi
 # =====================================================================
 LB="$SRC/lbmk"
 if [ -f "$LB/.stamp-populated" ] && [ "$REFRESH" != "1" ]; then
-  log "lbmk bereits populiert — überspringe"
+  log "lbmk already populated — skipping"
 else
-  log "lbmk $LBMK_REF klonen …"
+  log "cloning lbmk $LBMK_REF …"
   rm -rf "$LB"
   git clone -q "$LBMK_URL" "$LB" || git clone -q "$LBMK_BKUP" "$LB" \
-    || die "lbmk-Klon fehlgeschlagen"
-  git -C "$LB" checkout -q "$LBMK_REF" || die "lbmk-Checkout $LBMK_REF fehlgeschlagen"
-  log "lbmk populieren: ./mk inject (einmalig, online) — lädt coreboot-Tree, me_cleaner, deguard, Intel-ME-Blob …"
+    || die "lbmk clone failed"
+  git -C "$LB" checkout -q "$LBMK_REF" || die "lbmk checkout $LBMK_REF failed"
+  log "populating lbmk: ./mk inject (once, online) — pulls the coreboot tree, me_cleaner, deguard, Intel ME blob …"
   cp "$TB" "/tmp/$LIBREBOOT_TARBALL"
   ( cd "$LB" && XBMK_THREADS="$NPROC" ./mk inject "/tmp/$LIBREBOOT_TARBALL" setmac "$POPULATE_MAC" ) \
-    || die "lbmk populate-inject fehlgeschlagen (siehe Log oben)"
+    || die "lbmk populate inject failed (see log above)"
   rm -f "/tmp/$LIBREBOOT_TARBALL"
   # sanity: the tools + ME blob the offline inject relies on must now exist
-  [ -x "$LB/elf/coreboot/default/ifdtool" ] || die "lbmk: ifdtool nicht gebaut"
-  [ -n "$(ls -A "$LB/cache" 2>/dev/null)" ] || die "lbmk: cache/ leer — populate hat nichts gecached"
+  [ -x "$LB/elf/coreboot/default/ifdtool" ] || die "lbmk: ifdtool not built"
+  [ -n "$(ls -A "$LB/cache" 2>/dev/null)" ] || die "lbmk: cache/ empty — populate cached nothing"
   touch "$LB/.stamp-populated"
 fi
 
 # =====================================================================
 # 6) checksums  (sha256 of every downloaded tarball; verified in PHASE 2)
 # =====================================================================
-log "sha256sums.txt erzeugen …"
+log "generating sha256sums.txt …"
 ( cd "$SRC"
   : > sha256sums.txt
   sha256sum "libreboot/$LIBREBOOT_TARBALL" >> sha256sums.txt
@@ -280,6 +280,6 @@ log "sha256sums.txt erzeugen …"
   done
 )
 
-log "PHASE 1 fertig. Inhalt von $SRC:"
+log "PHASE 1 done. Contents of $SRC:"
 du -sh "$SRC"/* 2>/dev/null | sed 's/^/    /' || true
-printf '\n\033[1;32m[fetch:%s] ✅ sources/%s bereit für den Offline-Build.\033[0m\n' "$MODE" "$MODE"
+printf '\n\033[1;32m[fetch:%s] ✅ sources/%s ready for the offline build.\033[0m\n' "$MODE" "$MODE"

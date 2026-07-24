@@ -1,54 +1,54 @@
 #!/usr/bin/env sh
-# apply-devicetree.sh — schaltet die optionalen Devicetree-Geräte des T480-Ports
-# gemäß den "# DT_DEVICE NAME=y/n"-Markern in der Konfig-Datei (defconfig).
+# apply-devicetree.sh — toggles the optional devicetree devices of the T480 port
+# according to the "# DT_DEVICE NAME=y/n" markers in the config file (defconfig).
 #
-# Wird im Offline-Build (Dockerfile.offline) VOR `make` ausgeführt und editiert
+# Runs in the offline build (Dockerfile.offline) BEFORE `make` and edits
 #   src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb
-# innerhalb von "device domain 0 on ... end", direkt nach "device ref hda on end".
-# So ist die Auswahl über die Konfig-Datei steuerbar UND clean-build-fest/
-# reproduzierbar (kein manueller Edit im coreboot-Checkout, den ein Clean-Build
-# verwerfen würde).
+# inside "device domain 0 on ... end", right after "device ref hda on end".
+# That keeps the selection driven by the config file AND clean-build-safe/
+# reproducible (no manual edit in the coreboot checkout that a clean build
+# would throw away).
 #
-# Deklarativ + idempotent: der Devicetree wird exakt auf den Konfig-Stand
-# gebracht (verwaltete Geräte werden erst entfernt, dann die auf =y gesetzten
-# wieder eingefügt) — mehrfaches Ausführen ändert nichts.
+# Declarative + idempotent: the devicetree is brought to exactly the config
+# state (managed devices are removed first, then the ones set to =y are
+# re-inserted) — running it multiple times changes nothing.
 #
-#   sh apply-devicetree.sh <coreboot-tree>     # liest <tree>/defconfig
+#   sh apply-devicetree.sh <coreboot-tree>     # reads <tree>/defconfig
 set -eu
 
 CB="${1:?Usage: apply-devicetree.sh <coreboot-tree>}"
 CFG="$CB/defconfig"
 DT="$CB/src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb"
-[ -f "$CFG" ] || { echo "apply-devicetree: '$CFG' fehlt" >&2; exit 1; }
-[ -f "$DT" ]  || { echo "apply-devicetree: '$DT' fehlt" >&2; exit 1; }
+[ -f "$CFG" ] || { echo "apply-devicetree: '$CFG' is missing" >&2; exit 1; }
+[ -f "$DT" ]  || { echo "apply-devicetree: '$DT' is missing" >&2; exit 1; }
 
 TAB=$(printf '\t')
-NL=$(printf '\nx'); NL=${NL%x}          # ein echtes Newline
+NL=$(printf '\nx'); NL=${NL%x}          # a real newline
 
-# Von diesem Skript verwaltete Geräte (Marker-NAME -> devicetree-Alias = lowercase).
-# Nur diese Aliase sind erlaubt (existieren im Skylake-Chipset: smbus 1f.4,
-# heci1 16.0, fast_spi 1f.5) — alles andere wird ignoriert.
+# Devices managed by this script (marker NAME -> devicetree alias = lowercase).
+# Only these aliases are allowed (they exist in the Skylake chipset: smbus 1f.4,
+# heci1 16.0, fast_spi 1f.5) — everything else is ignored.
 MANAGED="smbus heci1 fast_spi"
 
-# 1) Alle verwalteten Geräte-Zeilen entfernen (deklarativ, idempotent):
+# 1) Remove all managed device lines (declarative, idempotent):
 for ref in $MANAGED; do
 	sed -i "/^[[:space:]]*device ref ${ref} on end[[:space:]]*\$/d" "$DT"
 done
 
-# 2) Aktivierte (=y) Geräte in Konfig-Reihenfolge sammeln:
+# 2) Collect enabled (=y) devices in config order:
 enabled=""
-specs=$(grep -E '^# DT_DEVICE ' "$CFG" | awk '{print $3}' || true)   # z.B. SMBUS=y
+specs=$(grep -E '^# DT_DEVICE ' "$CFG" | awk '{print $3}' || true)   # e.g. SMBUS=y
 for kv in $specs; do
 	name=${kv%%=*}; val=${kv#*=}
 	ref=$(printf '%s' "$name" | tr 'A-Z' 'a-z')
 	case " $MANAGED " in
 		*" $ref "*) : ;;
-		*) echo "apply-devicetree: unbekanntes Gerät '$name' — ignoriert" >&2; continue ;;
+		*) echo "apply-devicetree: unknown device '$name' — ignored" >&2; continue ;;
 	esac
 	[ "$val" = "y" ] && enabled="$enabled $ref"
 done
 
-# 3) Aktivierte Geräte nach "device ref hda on end" einfügen (mit 2 Tabs Einrückung):
+# 3) Insert enabled devices after "device ref hda on end" (indented with 2 tabs):
 TEXT=""
 for ref in $enabled; do
 	line="${TAB}${TAB}device ref ${ref} on end"
@@ -56,13 +56,13 @@ for ref in $enabled; do
 done
 if [ -n "$TEXT" ]; then
 	grep -qE '^[[:space:]]*device ref hda on end[[:space:]]*$' "$DT" || {
-		echo "apply-devicetree: Einfügepunkt 'device ref hda on end' nicht gefunden" >&2; exit 1; }
+		echo "apply-devicetree: insertion point 'device ref hda on end' not found" >&2; exit 1; }
 	awk -v ins="$TEXT" '
 		{ print }
 		/^[[:space:]]*device ref hda on end[[:space:]]*$/ && !d { print ins; d=1 }
 	' "$DT" > "$DT.tmp" && mv "$DT.tmp" "$DT"
 fi
 
-echo "apply-devicetree: aktiviert ->${enabled:- (keine)}"
-echo "apply-devicetree: domain-0-Endgeräte im devicetree.cb:"
+echo "apply-devicetree: enabled ->${enabled:- (none)}"
+echo "apply-devicetree: domain-0 leaf devices in devicetree.cb:"
 grep -nE 'device ref (hda|smbus|heci1|fast_spi) on end' "$DT" | sed 's/^/    /'
