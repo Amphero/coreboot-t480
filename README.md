@@ -1,6 +1,11 @@
-# coreboot for the ThinkPad T480
+<h1 align="center">coreboot for the ThinkPad T480</h1>
 
 <p align="center"><img src="config/splash.png" alt="boot splash" width="480"></p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/platform-ThinkPad%20T480-red" alt="Platform: ThinkPad T480">
+</p>
 
 coreboot with MrChromebox's EDK2 payload for the ThinkPad T480. You get a real
 UEFI with Secure Boot (your own keys, enrolled with sbctl) and a working
@@ -12,12 +17,12 @@ The board config is from there, the build system around it is new.
 Tested on a Type 20L5 (mainboard NM-B501). The SPI flash is a Winbond W25Q128,
 16 MB, at position U49.
 
-## Disclaimer
-
-Flashing firmware can permanently brick your laptop. Everything in this repo is
-provided WITHOUT ANY WARRANTY and without liability for any damage, as stated
-in the LICENSE (GPL-3.0, sections 15 and 16). You flash at your own risk. Keep
-a backup of your original flash and never flash anything you cannot restore.
+> [!WARNING]
+> Flashing firmware can permanently brick your laptop. Everything in this repo
+> is provided WITHOUT ANY WARRANTY and without liability for any damage, as
+> stated in the [LICENSE](LICENSE) (GPL-3.0, sections 15 and 16). You flash at
+> your own risk. Keep a backup of your original flash and never flash anything
+> you cannot restore.
 
 ## What you need
 
@@ -63,13 +68,13 @@ Then put it in the `# MAC=` line of `config/defconfig`, or pass
 
 ### Options
 
-```
---tpm-reset      also build a ROM that clears a stuck TPM (see below)
---no-tpm         build without TPM support
---auto-enroll    enroll Microsoft's Secure Boot keys instead of Setup Mode
---no-rng         leave out the RNG
---rebuild-base   rebuild from scratch after editing config/defconfig
-```
+| Flag | Effect |
+|------|--------|
+| `--tpm-reset` | also build a ROM that clears a stuck TPM (see below) |
+| `--no-tpm` | build without TPM support |
+| `--auto-enroll` | enroll Microsoft's Secure Boot keys instead of Setup Mode |
+| `--no-rng` | leave out the RNG |
+| `--rebuild-base` | rebuild from scratch after editing `config/defconfig` |
 
 The markers at the end of `config/defconfig` toggle optional devices (SMBus for
 the touchpad, HECI1, Fast SPI). A custom boot logo goes into
@@ -92,7 +97,9 @@ sudo flashrom -p ch341a_spi -v roms/coreboot_t480_pinned.rom
 
 After flashing: reconnect the CMOS battery, boot, set the clock
 (`sudo timedatectl set-ntp true`) and add `reboot=pci` to the kernel cmdline.
-The clock matters, Secure Boot key enrollment silently fails if it's wrong.
+
+> [!NOTE]
+> The clock matters. Secure Boot key enrollment silently fails if it's wrong.
 
 Internal flashing works too (boot with `iomem=relaxed`), but a failed write
 bricks the machine, so keep the programmer at hand:
@@ -138,9 +145,10 @@ If the TPM is stuck in a vendor-BIOS state (MFG mode, owner auth set,
 disableClear latched), build with `--tpm-reset`. That produces a second ROM
 that clears the TPM on every boot via TPM2_Clear.
 
-TPM2_Clear wipes everything sealed to the TPM (LUKS keys etc.) and cannot be
-undone. Flash the reset ROM, boot Linux exactly once, check the result, then
-flash the normal ROM back:
+> [!CAUTION]
+> TPM2_Clear wipes everything sealed to the TPM (LUKS keys etc.) and cannot be
+> undone. The reset ROM clears on every boot: flash it, boot Linux exactly
+> once, check the result, then flash the normal ROM back.
 
 ```bash
 python3 scripts/build-firmware.py --mode pinned --tpm-reset
@@ -168,6 +176,6 @@ everything can be rebuilt later.
 
 ## License
 
-GPL-3.0, inherited from the upstream project. The sources fetched during the
-build (coreboot, EDK2, libreboot) have their own licenses and are not part of
-this repo.
+[GPL-3.0](LICENSE), inherited from the upstream project. The sources fetched
+during the build (coreboot, EDK2, libreboot) have their own licenses and are
+not part of this repo.
