@@ -1,5 +1,7 @@
 # coreboot for the ThinkPad T480
 
+<p align="center"><img src="config/splash.png" alt="boot splash" width="480"></p>
+
 coreboot with MrChromebox's EDK2 payload for the ThinkPad T480. You get a real
 UEFI with Secure Boot (your own keys, enrolled with sbctl) and a working
 discrete TPM 2.0.
