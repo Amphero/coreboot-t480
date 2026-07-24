@@ -54,6 +54,34 @@ The ROM ends up in `roms/coreboot_t480_pinned.rom`. The first build takes
 `pinned` uses versions that were tested on real hardware. `latest` fetches the
 newest upstream versions instead. Untested, keep a backup ready.
 
+<details>
+<summary>Manual build without the scripts</summary>
+<br>
+
+The first step only exists as a script, it downloads too much to type by hand.
+But once `sources/<mode>/` is filled you can run the build itself manually:
+
+```bash
+# build-environment image (only needed if it doesn't exist yet)
+podman build -t coreboot-t480-deps -f build/Dockerfile.deps build
+
+# offline build; the build context is the sources dir, the MAC comes from config/defconfig
+MAC=$(grep -oE '# MAC=\S+' config/defconfig | cut -d= -f2)
+podman build --network=none --build-arg MAC_ADDRESS="$MAC" \
+    -f build/Dockerfile.offline -t coreboot-t480-pinned sources/pinned
+
+# copy the ROM out of the image
+mkdir -p roms
+podman run --rm --network=none -v "$PWD/roms":/out:z --user root \
+    coreboot-t480-pinned bash -c 'cp /opt/coreboot/build/coreboot.rom /out/coreboot.rom'
+```
+
+This gives you the base image (TPM on, Microsoft keys auto-enrolled). The
+default variant (TPM + Setup Mode + RNG) is what `build-firmware.py` adds on
+top, so for the final ROM use the script.
+
+</details>
+
 ### Your MAC address
 
 The build writes the MAC of the onboard NIC into the GbE region. Read it out:
@@ -143,6 +171,24 @@ rest of the chip alone:
 ```bash
 sudo flashrom -p internal --fmap -i COREBOOT -w roms/coreboot_t480_pinned.rom
 ```
+
+<details>
+<summary>Copy the SMMSTORE by hand (dd)</summary>
+<br>
+
+The SMMSTORE region sits at offset 0x250000 and is 0x40000 bytes. To copy it
+from a backup into a fresh ROM without the script:
+
+```bash
+cp roms/coreboot_t480_pinned.rom new_with_settings.rom
+dd if=backup.bin of=new_with_settings.rom bs=1 conv=notrunc \
+   skip=$((0x250000)) seek=$((0x250000)) count=$((0x40000))
+```
+
+`skip` is the read offset in the backup, `seek` the write offset in the new
+file, `count` the size.
+
+</details>
 
 ## TPM reset
 
