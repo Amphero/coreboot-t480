@@ -121,7 +121,14 @@ simple `y`/`n`:
 ```
 
 A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
-Both need `--rebuild-base`.
+ImageMagick turns any image into the right format:
+
+```bash
+magick yourimage.png -type TrueColor -compress None BMP3:config/splash.bmp
+```
+
+The logo is centered per the BGRT spec, so keep it no larger than the panel
+(1920x1080). Both need `--rebuild-base`.
 
 ## Flashing
 
