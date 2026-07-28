@@ -160,6 +160,10 @@ sudo flashrom -p internal --ifd -i bios -w roms/coreboot_t480_pinned.rom
 sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_pinned.rom
 ```
 
+If flashrom aborts with "Laptop detected", use
+`-p internal:laptop=this_is_not_a_laptop`. Once coreboot is on the chip,
+flashrom finds the coreboot table and usually needs no override.
+
 If flashrom says the BIOS region is read-only, flash externally.
 
 ## Secure Boot
