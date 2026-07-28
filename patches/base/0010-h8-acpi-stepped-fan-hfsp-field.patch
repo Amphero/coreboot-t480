@@ -1,0 +1,84 @@
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index 439ede5a..bf9a0c39 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -80,4 +80,14 @@ config H8_HAS_2ND_THERMAL_ZONE
+ 	bool
+ 	default n
+ 
++config H8_FAN_STEPPED
++	bool
++	default n
++	help
++	  Map the whole EC fan register (HFSP, offset 0x2f) instead of only
++	  its disengage and automatic bits, and expose a five-level active
++	  cooling thermal zone. The selecting board must provide the FANx_HFSP
++	  and FANx_THRESHOLD_* values in <variant/thermal.h>. Without this
++	  option the generated ASL is unchanged.
++
+ endif # EC_LENOVO_H8
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index 1d7bfe45..0a3783df 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -313,6 +313,19 @@ Device(EC)
+ 		^HKEY.RTAB (0xA)
+ 	}
+ 
++#if CONFIG(H8_FAN_STEPPED)
++	/*
++	 * Same byte as FAND/FANA above, addressable as a whole:
++	 * bits 0-2 = manual level 0-7, bit 6 = disengage, bit 7 = EC automatic.
++	 * A second Field on the same OperationRegion is legal ASL.
++	 */
++	Field (ERAM, ByteAcc, NoLock, Preserve)
++	{
++		Offset (0x2f),
++				HFSP, 8,
++	}
++#endif
++
+ 	/*
+ 	 * Set FAN disengage:
+ 	 * Arg0: 1: Run at full speed
+@@ -320,6 +333,17 @@ Device(EC)
+ 	 */
+ 	Method (FANE, 1, Serialized)
+ 	{
++#if CONFIG(H8_FAN_STEPPED)
++		/*
++		 * Level 7 is the fastest *regulated* speed; 0x40 (disengage)
++		 * would bypass the EC limiter entirely. 0x80 = EC automatic.
++		 */
++		If (Arg0) {
++			HFSP = 0x07
++		} Else {
++			HFSP = 0x80
++		}
++#else
+ 		If (Arg0) {
+ 			FAND = 1
+ 			FANA = 0
+@@ -327,8 +351,22 @@ Device(EC)
+ 			FAND = 0
+ 			FANA = 1
+ 		}
++#endif
+ 	}
+ 
++#if CONFIG(H8_FAN_STEPPED)
++	/*
++	 * Set a manual FAN level:
++	 * Arg0: 0x00-0x07: fixed level (0 = fan OFF while the EC curve is
++	 *                  disabled - never use it as a resting state)
++	 *       0x80:      hand control back to the EC automatic
++	 */
++	Method (FANL, 1, Serialized)
++	{
++		HFSP = Arg0
++	}
++#endif
++
+ #include "ac.asl"
+ #include "battery.asl"
+ #include "sleepbutton.asl"
