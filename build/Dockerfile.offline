@@ -84,12 +84,20 @@ COPY edk2/mrchromebox /opt/coreboot/payloads/external/edk2/workspace/mrchromebox
 # The deguarded/MAC-injected ROM from stage 1 - source of ifd.bin/me.bin/gbe.bin.
 COPY --from=libreboot /opt/lbmk/injected.rom /opt/libreboot.rom
 
-# Expose "Restore AC power after loss" in the EDK2 setup menu and default Intel
-# ME to disabled (patch default_value directly; symbol may not exist as Kconfig).
-RUN sed -i 's/\t\t&me_state,/\t\t\&power_on_after_fail,\n\t\t\&me_state,/' \
-      /opt/coreboot/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c && \
-    sed -i 's/\.default_value\t= CONFIG(CSE_DEFAULT_CFR_OPTION_STATE_DISABLED),/.default_value\t= 1,/' \
-      /opt/coreboot/src/soc/intel/common/block/include/intelblocks/cfr.h
+# Board patches from patches/base/, applied in lexical order (mirrored into the
+# build context by fetch.sh and build-firmware.py::sync_build_config). Replaces
+# the former inline seds: every patch MUST apply - a pattern miss aborts the
+# build instead of silently producing a ROM without the change.
+#   0001  expose "Restore AC power after loss" in the CFR setup menu
+#   0002  default the Intel ME to disabled (Kconfig select, T480 only)
+COPY patches /opt/patches
+RUN set -e; cd /opt/coreboot; \
+    for p in /opt/patches/base/*.patch; do \
+      [ -e "$p" ] || continue; \
+      echo "[patch] $(basename "$p")"; \
+      git apply --check "$p" || { echo "ERROR: $(basename "$p") does not apply - fix patches/base/"; exit 1; }; \
+      git apply "$p"; \
+    done
 
 # Config-driven: enable/disable the optional devicetree devices (smbus/heci1/
 # fast_spi) per the "# DT_DEVICE NAME=y/n" markers in defconfig, before `make`.

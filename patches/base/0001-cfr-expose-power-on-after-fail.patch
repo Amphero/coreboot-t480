@@ -1,0 +1,12 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
+index 213c90a1..a522cbff 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
+@@ -35,6 +35,7 @@ static struct sm_obj_form system = {
+ 		&igd_dvmt,
+ 		&igd_aperture,
+ 		&legacy_8254_timer,
++		&power_on_after_fail,
+ 		&me_state,
+ 		&me_state_counter,
+ 		&pciexp_aspm,

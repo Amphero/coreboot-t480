@@ -1,0 +1,12 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index 9d4b5f49..14452410 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -32,6 +32,7 @@ config BOARD_LENOVO_T470S
+ config BOARD_LENOVO_T480
+ 	bool
+ 	select BOARD_LENOVO_SKLKBL_THINKPAD_COMMON
++	select CSE_DEFAULT_CFR_OPTION_STATE_DISABLED
+ 	select DRIVERS_INTEL_DTBT
+ 	select SOC_INTEL_KABYLAKE
+ 	select MEC1653_HAS_DEBUG_UNLOCK

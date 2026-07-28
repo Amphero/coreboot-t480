@@ -95,6 +95,7 @@ podman run --rm \
 cp -f "$CONFIG/defconfig" "$SRC/defconfig"
 cp -f "$BUILD/apply-devicetree.sh" "$SRC/apply-devicetree.sh"   # config-driven devicetree toggles
 [ -f "$CONFIG/splash.bmp" ] && cp -f "$CONFIG/splash.bmp" "$SRC/splash.bmp" || true
+rm -rf "$SRC/patches" && cp -a "$PROJECT/patches" "$SRC/patches" # base patches (Dockerfile.offline) + tpm-reset
 
 echo
 echo "fetch.sh: sources/$MODE ready. Continue with the offline build:"
