@@ -1,0 +1,249 @@
+diff --git a/src/ec/lenovo/h8/acpi/thermal.asl b/src/ec/lenovo/h8/acpi/thermal.asl
+index 54f4f922..8b76ad4b 100644
+--- a/src/ec/lenovo/h8/acpi/thermal.asl
++++ b/src/ec/lenovo/h8/acpi/thermal.asl
+@@ -74,6 +74,236 @@ External (\PPKG, MethodObj)
+ 			Return (C2K(Local0))
+ 		}
+ 
++#if CONFIG(H8_FAN_STEPPED)
++/*
++ * Five regulated fan levels instead of auto/disengage. \FLVL holds the
++ * current level, a LOWER number means a FASTER fan. Level 4 is the resting
++ * state: HFSP 0x80 keeps the EC's own curve active as a safety net.
++ * The values come from <variant/thermal.h> of the selecting board; the
++ * fallbacks below only keep this file compilable on its own.
++ */
++#ifndef FAN4_HFSP
++#define FAN4_HFSP		0x80
++#define FAN3_HFSP		0x02
++#define FAN2_HFSP		0x04
++#define FAN1_HFSP		0x06
++#define FAN0_HFSP		0x07
++#define FAN0_THRESHOLD_ON	85
++#define FAN0_THRESHOLD_OFF	77
++#define FAN1_THRESHOLD_ON	76
++#define FAN1_THRESHOLD_OFF	68
++#define FAN2_THRESHOLD_ON	68
++#define FAN2_THRESHOLD_OFF	60
++#define FAN3_THRESHOLD_ON	58
++#define FAN3_THRESHOLD_OFF	50
++#endif
++
++		/* Start in the resting state: EC automatic, level 4 */
++		Method (_INI) {
++			\FLVL = 4
++			\_SB.PCI0.LPCB.EC.FANL (FAN4_HFSP)
++			Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++		}
++
++		/*
++		 * _ACx: the returned trip point depends on the current level -
++		 * a lower temperature to switch on, a higher one to switch off.
++		 */
++		Method (_AC0) {
++			If (\FLVL <= 0) {
++				Return (C2K (FAN0_THRESHOLD_OFF))
++			}
++			Return (C2K (FAN0_THRESHOLD_ON))
++		}
++
++		Method (_AC1) {
++			If (\FLVL <= 1) {
++				Return (C2K (FAN1_THRESHOLD_OFF))
++			}
++			Return (C2K (FAN1_THRESHOLD_ON))
++		}
++
++		Method (_AC2) {
++			If (\FLVL <= 2) {
++				Return (C2K (FAN2_THRESHOLD_OFF))
++			}
++			Return (C2K (FAN2_THRESHOLD_ON))
++		}
++
++		Method (_AC3) {
++			If (\FLVL <= 3) {
++				Return (C2K (FAN3_THRESHOLD_OFF))
++			}
++			Return (C2K (FAN3_THRESHOLD_ON))
++		}
++
++		Name (_AL0, Package () { FAN0 })
++		Name (_AL1, Package () { FAN1 })
++		Name (_AL2, Package () { FAN2 })
++		Name (_AL3, Package () { FAN3 })
++
++		/*
++		 * WINDOWS BUGS (apply to every PowerResource below): don't read
++		 * from EmbeddedControl in PowerResources and don't write to FIELD
++		 * elements in another ACPI scope - go through EC.FANL instead.
++		 * _ON steps one level up, _OFF steps one level down.
++		 */
++		PowerResource (FNP0, 0, 0)
++		{
++			Method (_STA) {
++				If (\FLVL <= 0) {
++					Return (1)
++				}
++				Return (0)
++			}
++			Method (_ON) {
++				If (!_STA ()) {
++					\FLVL = 0
++					\_SB.PCI0.LPCB.EC.FANL (FAN0_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++			Method (_OFF) {
++				If (_STA ()) {
++					\FLVL = 1
++					\_SB.PCI0.LPCB.EC.FANL (FAN1_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++		}
++
++		PowerResource (FNP1, 0, 0)
++		{
++			Method (_STA) {
++				If (\FLVL <= 1) {
++					Return (1)
++				}
++				Return (0)
++			}
++			Method (_ON) {
++				If (!_STA ()) {
++					\FLVL = 1
++					\_SB.PCI0.LPCB.EC.FANL (FAN1_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++			Method (_OFF) {
++				If (_STA ()) {
++					\FLVL = 2
++					\_SB.PCI0.LPCB.EC.FANL (FAN2_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++		}
++
++		PowerResource (FNP2, 0, 0)
++		{
++			Method (_STA) {
++				If (\FLVL <= 2) {
++					Return (1)
++				}
++				Return (0)
++			}
++			Method (_ON) {
++				If (!_STA ()) {
++					\FLVL = 2
++					\_SB.PCI0.LPCB.EC.FANL (FAN2_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++			Method (_OFF) {
++				If (_STA ()) {
++					\FLVL = 3
++					\_SB.PCI0.LPCB.EC.FANL (FAN3_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++		}
++
++		PowerResource (FNP3, 0, 0)
++		{
++			Method (_STA) {
++				If (\FLVL <= 3) {
++					Return (1)
++				}
++				Return (0)
++			}
++			Method (_ON) {
++				If (!_STA ()) {
++					\FLVL = 3
++					\_SB.PCI0.LPCB.EC.FANL (FAN3_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++			Method (_OFF) {
++				If (_STA ()) {
++					\FLVL = 4
++					\_SB.PCI0.LPCB.EC.FANL (FAN4_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++		}
++
++		PowerResource (FNP4, 0, 0)
++		{
++			Method (_STA) {
++				If (\FLVL <= 4) {
++					Return (1)
++				}
++				Return (0)
++			}
++			Method (_ON) {
++				If (!_STA ()) {
++					\FLVL = 4
++					\_SB.PCI0.LPCB.EC.FANL (FAN4_HFSP)
++					Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
++				}
++			}
++			Method (_OFF) {
++				/*
++				 * Level 4 is the resting state - there is nothing
++				 * below it. Must stay a no-op: if _STA could never
++				 * return 0 after _OFF, Windows would disable the
++				 * whole thermal zone.
++				 */
++			}
++		}
++
++		Device (FAN0)
++		{
++			Name (_HID, EISAID ("PNP0C0B"))
++			Name (_UID, 0)
++			Name (_PR0, Package () { FNP0 })
++		}
++
++		Device (FAN1)
++		{
++			Name (_HID, EISAID ("PNP0C0B"))
++			Name (_UID, 1)
++			Name (_PR0, Package () { FNP1 })
++		}
++
++		Device (FAN2)
++		{
++			Name (_HID, EISAID ("PNP0C0B"))
++			Name (_UID, 2)
++			Name (_PR0, Package () { FNP2 })
++		}
++
++		Device (FAN3)
++		{
++			Name (_HID, EISAID ("PNP0C0B"))
++			Name (_UID, 3)
++			Name (_PR0, Package () { FNP3 })
++		}
++
++		Device (FAN4)
++		{
++			Name (_HID, EISAID ("PNP0C0B"))
++			Name (_UID, 4)
++			Name (_PR0, Package () { FNP4 })
++		}
++#else
+ 		Method (_AC0) {
+ 			Local0 = GPSV ()
+ 
+@@ -122,6 +352,7 @@ External (\PPKG, MethodObj)
+ 			Name (_HID, EISAID ("PNP0C0B"))
+ 			Name (_PR0, Package () { FPWR })
+ 		}
++#endif
+ 	}
+ #if CONFIG(H8_HAS_2ND_THERMAL_ZONE)
+ 	ThermalZone(THM1)
