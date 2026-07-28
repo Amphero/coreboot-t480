@@ -111,9 +111,17 @@ Then put it in the `# MAC=` line of `config/defconfig`, or pass
 | `--version NAME` | version part of the ROM file name (default: `pinned` or the date) |
 | `--rebuild-base` | rebuild from scratch after editing `config/defconfig` |
 
-The markers at the end of `config/defconfig` toggle optional devices (SMBus for
-the touchpad, HECI1, Fast SPI). A custom boot logo goes into
-`config/splash.bmp` (24-bit uncompressed BMP). Both need `--rebuild-base`.
+The markers at the end of `config/defconfig` toggle optional devices with a
+simple `y`/`n`:
+
+```
+# DT_DEVICE SMBUS=y       # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
+# DT_DEVICE HECI1=n       # HECI1 (PCI 16.0)
+# DT_DEVICE FAST_SPI=n    # Fast SPI (PCI 1f.5)
+```
+
+A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
+Both need `--rebuild-base`.
 
 ## Flashing
 
