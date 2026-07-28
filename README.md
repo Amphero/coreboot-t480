@@ -238,6 +238,29 @@ step1 may report INVALID_POSTINIT, that's fine (coreboot already started the
 TPM itself). On systemd 257+ mask `systemd-pcrproduct.service`, the T480's TPM
 chip doesn't support what it needs.
 
+The clear is authorized through the TPM's platform hierarchy, whose auth is
+empty right after firmware startup - that is why it needs no owner password
+and also lifts a latched disableClear. Not combinable with `--no-tpm`.
+
+Afterwards, re-enroll anything sealed to the old TPM state: wipe and re-add
+the LUKS TPM slot (`systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto`)
+and delete `/var/lib/systemd/tpm2-srk-public-key.*`, otherwise unlocking
+fails with "key does not belong to this TPM".
+
+<details>
+<summary>If the clear does not work</summary>
+<br>
+
+- No `TPM-RESET` lines in the log: the normal ROM was flashed instead of
+  `..._tpmreset.rom`.
+- step3 with rc != 0x0: the raw TPM response is logged right above it -
+  `0x120` is TPM_RC_DISABLED, `0x9a2` is TPM_RC_BAD_AUTH. Flash the backup
+  back and investigate before trying again.
+- `tpm2_getcap` finds no TPM: check that `/dev/tpm0` exists and that the
+  firmware log shows the TPM being set up at all.
+
+</details>
+
 ## Cleaning up
 
 ```bash
