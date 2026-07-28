@@ -107,6 +107,8 @@ Then put it in the `# MAC=` line of `config/defconfig`, or pass
 | `--no-tpm` | build without TPM support |
 | `--auto-enroll` | enroll Microsoft's Secure Boot keys instead of Setup Mode |
 | `--no-rng` | leave out the RNG |
+| `--plain` | just the raw base ROM (TPM on, Microsoft keys auto-enrolled) |
+| `--version NAME` | version part of the ROM file name (default: `pinned` or the date) |
 | `--rebuild-base` | rebuild from scratch after editing `config/defconfig` |
 
 The markers at the end of `config/defconfig` toggle optional devices (SMBus for
