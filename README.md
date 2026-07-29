@@ -51,8 +51,10 @@ python3 scripts/build-firmware.py --mode pinned
 The ROM ends up in `roms/coreboot_t480_pinned.rom`. The first build takes
 30-60 minutes because coreboot builds its own toolchain, after that it's fast.
 
-`pinned` uses versions that were tested on real hardware. `latest` fetches the
-newest upstream versions instead. Untested, keep a backup ready.
+`pinned` builds the versions this port was originally validated with;
+`latest` resolves the newest upstream versions at fetch time. The recent
+fan-control releases were built and tested from `latest` - the exact
+versions of every build are recorded in `roms/versions_<mode>.lock`.
 
 <details>
 <summary>Manual build without the scripts</summary>
@@ -176,6 +178,25 @@ If flashrom aborts with "Laptop detected", use
 flashrom finds the coreboot table and usually needs no override.
 
 If flashrom says the BIOS region is read-only, flash externally.
+
+## Fan control
+
+The fan runs in five regulated levels driven by the ACPI thermal zone -
+the old behaviour (EC automatic until 80 C, then unregulated full blast)
+is gone. Four profiles can be picked in the setup menu under
+**Embedded Controller → Fan profile**; a change applies on the next boot:
+
+| Profile | Character | First fan level at |
+|---------|-----------|--------------------|
+| Quiet | quieter, runs hotter | 64 C |
+| Balanced (default) | the tested middle ground | 58 C |
+| Performance | louder, runs cooler | 48 C |
+| EC only | firmware keeps its hands off the fan | - |
+
+"EC only" is for userspace fan control (thinkfan, zcfan): the firmware
+trip points move just below the critical threshold, so the EC curve - or
+your tool - rules alone, with one ACPI escalation left as the last net.
+Curve details and tuning: [patches/README.md](patches/README.md).
 
 ## Secure Boot
 

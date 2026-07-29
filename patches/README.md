@@ -218,5 +218,7 @@ for p in ../../../patches/base/*.patch; do git apply --check "$p" && git apply "
 git diff -- <files of that patch> > ../../../patches/base/<same-name>.patch
 ```
 
-Keep the numbering (0001/0002 = setup menu, 0010+ = fan) - the patches are
-applied in lexical order and 0012 builds on top of 0002's Kconfig context.
+Keep the numbering (0001/0002 = setup menu, 0010-0012 = stepped fan,
+0020 = fan profiles, 0030 = OS compatibility) - the patches are applied
+in lexical order and later ones build on the context of earlier ones
+(0012 on 0002's Kconfig, 0020 on 0011/0012, 0030 on 0020's ramstage.c).
