@@ -140,6 +140,64 @@ Verified on a 20L5: full CPU load levels out at 75-78 C on level 1,
 the hysteresis steps back down cleanly after the load ends, and the old
 unregulated "disengaged" mode no longer occurs at all.
 
+## base/0020-cfr-fan-profile-option.patch
+
+**Files:** `src/mainboard/lenovo/sklkbl_thinkpad/cfr.c`, `.../ramstage.c`,
+`.../variants/t480/include/variant/thermal.h`,
+`src/ec/lenovo/h8/acpi/thermal.asl`
+
+Makes the fan curve switchable in the EDK2 setup menu ("Embedded
+Controller" form) without rebuilding. Four profiles:
+
+| # | Profile | Idea | _AC0.._AC3 ON thresholds |
+|---|---------|------|--------------------------|
+| 0 | Quiet | quieter, runs hotter | 88 / 80 / 72 / 64 C |
+| 1 | Balanced (default) | the verified curve from 0012 | 85 / 76 / 68 / 58 C |
+| 2 | Performance | louder, runs cooler | 78 / 68 / 58 / 48 C |
+| 3 | EC only | firmware keeps its hands off the fan | 96 / 95 / 94 / 93 C |
+
+The chain: the setup menu stores `fan_profile` in the SMMSTORE; on boot
+the ramstage reads it (`get_uint_option`) and publishes it as `\FPRO` in
+an SSDT; the thermal zone's `_ACx` methods look their trip points up in a
+per-profile package (`FTBL`) indexed by `\FPRO`, with the same 8 K
+hysteresis as before. Because the SSDT is generated at boot, **a profile
+change applies on the next reboot** - which is how leaving a firmware
+setup menu works anyway.
+
+Three details that must survive future edits:
+
+1. **The SSDT hook is chained.** `mainboard_enable()` used to assign
+   `ssdt_add_dgpu` directly; the new `mainboard_fill_ssdt()` calls it
+   *and* writes `\FPRO`. Assigning either one directly again would
+   silently drop the other (no dGPU in ACPI, or a dead profile option).
+2. **`\FPRO` is double-guarded:** clamped to 0..3 in C, and in ASL
+   `CondRefOf` covers a missing SSDT entry while a `> 3` check covers
+   garbage - an out-of-range `Index()` into the package would hang the
+   thermal zone.
+3. **"EC only" does not disable the trips.** All four sit 1 K staggered
+   just below `\TCRT` (100 C): in practice the EC curve rules alone
+   (the mode for `thinkfan`/`zcfan` users), but if the EC curve ever
+   fails there is still an ACPI escalation before the critical shutdown.
+   Setting the trips above `_CRT` or removing them would delete that
+   last net - don't.
+
+## base/0030-t480-lenovo-bios-version-for-thinkpad_acpi.patch
+
+**File:** `src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c`
+
+Makes `thinkpad_acpi` load without `force_load=1`. The driver's probe
+(`tpacpi_parse_fw_id`) requires the SMBIOS **BIOS version** to parse as a
+Lenovo firmware ID (`xxxyTkkW`, e.g. `N24ET65W`) and gives up before even
+reading the product version - coreboot's build id (`5cbf8afc-dirty`)
+fails that at the first lowercase letter. The board now reports
+`N24ET99W (1.99 )` for the T480: the stock scheme with a release above
+every real one, so no tool ever flags the firmware as outdated. coreboot
+stays identifiable through the SMBIOS BIOS *vendor* string.
+
+Note: `CONFIG_MAINBOARD_VERSION="ThinkPad T480"` in `config/defconfig` is
+the second half of this fix (the driver checks the product version right
+after the firmware ID) - keep both.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`

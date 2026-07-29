@@ -10,6 +10,9 @@ CONFIG_PAYLOAD_EDK2=y
 CONFIG_EDK2_BOOTSPLASH_FILE="/opt/coreboot/splash.bmp"
 CONFIG_EDK2_FOLLOW_BGRT_SPEC=y
 CONFIG_MAINBOARD_SMBIOS_PRODUCT_NAME="ThinkPad T480"
+# thinkpad_acpi probes DMI product_version for the word "ThinkPad"; the
+# default "1.0" makes it refuse to load (modprobe: "No such device").
+CONFIG_MAINBOARD_VERSION="ThinkPad T480"
 CONFIG_CBFS_SIZE=0xDC0000
 CONFIG_SMMSTORE=y
 CONFIG_SMMSTORE_V2=y

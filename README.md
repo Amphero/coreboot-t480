@@ -115,9 +115,11 @@ Patches in `patches/base/` are applied to the coreboot tree when the base
 image is built, in lexical order and with a mandatory `git apply --check` -
 a patch that no longer applies aborts the build instead of being skipped
 silently. They carry everything this repo changes about coreboot itself:
-the five-level stepped fan control for the T480, the "Restore AC power
-after loss" setup option and the ME-disabled default. **Each patch is
-documented in [patches/README.md](patches/README.md).** Changes here need
+the five-level stepped fan control for the T480 with four fan profiles
+selectable in the setup menu (Quiet / Balanced / Performance / EC only),
+the "Restore AC power after loss" setup option and the ME-disabled
+default. **Each patch is documented in
+[patches/README.md](patches/README.md).** Changes here need
 `--rebuild-base`.
 
 The markers at the end of `config/defconfig` toggle optional devices with a
@@ -154,8 +156,8 @@ sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
 sudo flashrom -p ch341a_spi -v roms/coreboot_t480_pinned.rom
 ```
 
-After flashing: reconnect the CMOS battery, boot, set the clock
-(`sudo timedatectl set-ntp true`) and add `reboot=pci` to the kernel cmdline.
+After flashing: reconnect the CMOS battery, boot and set the clock
+(`sudo timedatectl set-ntp true`).
 
 > [!NOTE]
 > The clock matters. Secure Boot key enrollment silently fails if it's wrong.
@@ -269,6 +271,39 @@ fails with "key does not belong to this TPM".
   firmware log shows the TPM being set up at all.
 
 </details>
+
+## EC debugging
+
+The T480's embedded controller (Microchip MEC1653) runs the fan, battery,
+keyboard and more. Two ways to look inside while tuning things like the
+fan curve:
+
+**Read EC registers from Linux** (no rebuild needed, root required):
+
+```bash
+modprobe ec_sys
+# one byte at an offset, e.g. the fan register HFSP (0x2f = 47):
+dd if=/sys/kernel/debug/ec/ec0/io bs=1 skip=47 count=1 2>/dev/null | od -An -tu1
+```
+
+Useful offsets: `0x2f` fan control (bits 0-2 level, bit 6 disengage, bit 7
+EC automatic), `0x78` CPU temperature in C (`0x79` would be a second
+sensor, but on the T480 it always reads 128 = not fitted), `0x84`/`0x85`
+fan tachometer (RPM, low/high byte).
+
+**EC debug UART** (rebuild needed): the EC has a debug console that is
+locked by default; the unlock key for the T480/T580 is known and already
+in the coreboot tree. Enable it with `CONFIG_MEC1653_ENABLE_UART=y` in
+`config/defconfig` and `--rebuild-base`. coreboot then unlocks the EC
+debug interface at boot and maps the EC's UART to host I/O port 0x3f8,
+IRQ 4 over LPC - that is the classic COM1, so no soldering: the console
+should appear as `/dev/ttyS0` in Linux (`screen /dev/ttyS0 115200`).
+
+> [!NOTE]
+> The 0x3f8/IRQ4 mapping and the unlock mechanism are read from the
+> coreboot code (`src/ec/lenovo/mec1653/uart.c`); that the EC actually
+> prints anything there, and at which baud rate, is NOT yet verified on
+> hardware. Treat this section as a pointer, not a promise.
 
 ## Cleaning up
 

@@ -1,0 +1,30 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
+index 247153ec..c64cdd23 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
+@@ -2,9 +2,25 @@
+ 
+ #include <acpi/acpigen.h>
+ #include <option.h>
++#include <smbios.h>
+ #include <soc/ramstage.h>
+ #include "variant.h"
+ 
++#if CONFIG(BOARD_LENOVO_T480)
++/*
++ * thinkpad_acpi only loads when the SMBIOS BIOS version parses as a
++ * Lenovo firmware ID (pattern xxxyTkkW, see tpacpi_parse_fw_id in the
++ * kernel) - it bails out before even looking at the product version.
++ * Mimic the stock T480 scheme (N24ETxxW) with a release far above any
++ * real one, so nothing ever flags this firmware as outdated. coreboot
++ * remains identifiable via the SMBIOS BIOS vendor string.
++ */
++const char *smbios_mainboard_bios_version(void)
++{
++	return "N24ET99W (1.99 )";
++}
++#endif
++
+ void mainboard_silicon_init_params(FSP_SIL_UPD *params)
+ {
+ 	// Setup GPIOs
