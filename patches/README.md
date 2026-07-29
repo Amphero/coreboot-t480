@@ -198,6 +198,46 @@ Note: `CONFIG_MAINBOARD_VERSION="ThinkPad T480"` in `config/defconfig` is
 the second half of this fix (the driver checks the product version right
 after the firmware ID) - keep both.
 
+## base/0031-h8-no-master-wireless-switch.patch
+
+**Files:** `src/ec/lenovo/h8/Kconfig`, `.../h8/acpi/thinkpad.asl`,
+`src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
+
+Fixes bluetooth/WWAN being **hard-blocked** in rfkill. The `WLSW` ACPI
+method reports the master wireless kill switch by reading EC bit
+0x48.1 (`GSTS`) - a relic of the sliders on X220-era ThinkPads. The
+T480 has no such switch and its EC reads 0 there (measured via
+`ec_sys`), so `thinkpad_acpi` believed the radio master switch was off
+and hard-blocked both radios. Behind the new opt-in
+`H8_NO_MASTER_WIRELESS_SWITCH` (selected for the T480 only), `WLSW`
+returns "radio allowed".
+
+## base/0032-h8-extended-hotkeys.patch
+
+**Files:** `src/ec/lenovo/h8/Kconfig`, `.../h8/acpi/thinkpad.asl`,
+`.../h8/acpi/ec.asl`, `src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
+
+Makes the Fn+F9..F12 functions emit the key events matching what is
+printed on the T480 keycaps. The EC delivers these keys fine, but the
+legacy hotkey numbers the shared H8 code assigned (X220-era positions)
+land on keymap slots the kernel maps to `KEY_UNKNOWN` ("unhandled HKEY
+event 0x100d/e/f" in dmesg) or the useless generic `KEY_FN_F10`.
+2017+ ThinkPads use Lenovo's *adaptive/extended* hotkey codes
+(0x11xx/0x13xx), which the kernel maps unconditionally (verified in
+the 7.1 source, `hotkey_notify_hotkey` and the keymap table):
+
+| Key | Keycap symbol | Old event | New event | Kernel key |
+|-----|---------------|-----------|-----------|------------|
+| Fn+F9 | settings gear | 0x100a | 0x110e | KEY_CONFIG |
+| Fn+F10 | bluetooth | 0x100e | 0x1314 | KEY_BLUETOOTH |
+| Fn+F11 | keyboard | 0x100f | 0x1315 | KEY_KEYBOARD |
+| Fn+F12 | star / favorites | 0x100d | 0x1311 | KEY_BOOKMARKS |
+
+A new `REK` method reports these codes through the existing `MHKP`
+queue; everything sits behind the opt-in `H8_EXTENDED_HOTKEYS`,
+selected for the T480 only - older H8 boards keep their correct
+legacy codes.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`

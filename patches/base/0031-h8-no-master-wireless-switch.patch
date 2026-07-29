@@ -1,0 +1,52 @@
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index 8e1261eb..0676d72d 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -88,6 +88,15 @@ config H8_HAS_2ND_THERMAL_ZONE
+ 	bool
+ 	default n
+ 
++config H8_NO_MASTER_WIRELESS_SWITCH
++	bool
++	default n
++	help
++	  Select this on boards without the physical wireless kill slider.
++	  The WLSW ACPI method then reports "radio allowed" instead of
++	  reading the EC bit for the (non-existent) switch, which would
++	  otherwise make thinkpad_acpi hard-block bluetooth and WWAN.
++
+ config H8_FAN_STEPPED
+ 	bool
+ 	default n
+diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
+index 4991c6d1..a69b9248 100644
+--- a/src/ec/lenovo/h8/acpi/thinkpad.asl
++++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
+@@ -145,7 +145,15 @@ Device (HKEY)
+ 	/* Master wireless switch state */
+ 	Method (WLSW, 0, NotSerialized)
+ 	{
++#if CONFIG(H8_NO_MASTER_WIRELESS_SWITCH)
++		/*
++		 * No physical switch on this board; the EC bit reads 0,
++		 * which would hard-block bluetooth/WWAN in thinkpad_acpi.
++		 */
++		Return (1)
++#else
+ 		Return (\_SB.PCI0.LPCB.EC.GSTS)
++#endif
+ 	}
+ 
+ 	/* Set to one on first boot */
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index b1e0a77e..138ea6fe 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -35,6 +35,7 @@ config BOARD_LENOVO_T480
+ 	select CSE_DEFAULT_CFR_OPTION_STATE_DISABLED
+ 	select DRIVERS_INTEL_DTBT
+ 	select H8_FAN_STEPPED
++	select H8_NO_MASTER_WIRELESS_SWITCH
+ 	select SOC_INTEL_KABYLAKE
+ 	select MEC1653_HAS_DEBUG_UNLOCK
+ 	select VARIANT_HAS_DGPU

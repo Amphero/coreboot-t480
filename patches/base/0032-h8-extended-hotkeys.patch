@@ -1,0 +1,101 @@
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index 0676d72d..85d71bea 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -97,6 +97,14 @@ config H8_NO_MASTER_WIRELESS_SWITCH
+ 	  reading the EC bit for the (non-existent) switch, which would
+ 	  otherwise make thinkpad_acpi hard-block bluetooth and WWAN.
+ 
++config H8_EXTENDED_HOTKEYS
++	bool
++	default n
++	help
++	  Report the Fn-key functions of 2017+ ThinkPads with the extended
++	  Lenovo hotkey codes (0x11xx/0x13xx) the kernel expects, instead
++	  of legacy codes that map to KEY_UNKNOWN or generic KEY_FN_*.
++
+ config H8_FAN_STEPPED
+ 	bool
+ 	default n
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index f30b3830..164feb05 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -235,7 +235,11 @@ Device(EC)
+ 
+ 	Method (_Q66, 0, NotSerialized)
+ 	{
++#if CONFIG(H8_EXTENDED_HOTKEYS)
++		^HKEY.REK (0x110E)	/* settings gear */
++#else
+ 		^HKEY.RHK (0x0A)
++#endif
+ 	}
+ 
+ 	Method (_Q6A, 0, NotSerialized)
+@@ -255,17 +259,29 @@ Device(EC)
+ 
+ 	Method (_Q62, 0, NotSerialized)
+ 	{
++#if CONFIG(H8_EXTENDED_HOTKEYS)
++		^HKEY.REK (0x1311)	/* star / favorites */
++#else
+ 		^HKEY.RHK (0x0D)
++#endif
+ 	}
+ 
+ 	Method (_Q60, 0, NotSerialized)
+ 	{
++#if CONFIG(H8_EXTENDED_HOTKEYS)
++		^HKEY.REK (0x1314)	/* bluetooth */
++#else
+ 		^HKEY.RHK (0x0E)
++#endif
+ 	}
+ 
+ 	Method (_Q61, 0, NotSerialized)
+ 	{
++#if CONFIG(H8_EXTENDED_HOTKEYS)
++		^HKEY.REK (0x1315)	/* keyboard settings */
++#else
+ 		^HKEY.RHK (0x0F)
++#endif
+ 	}
+ 
+ 	Method (_Q1F, 0, NotSerialized)
+diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
+index a69b9248..e5b6b10f 100644
+--- a/src/ec/lenovo/h8/acpi/thinkpad.asl
++++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
+@@ -62,6 +62,19 @@ Device (HKEY)
+ 		}
+ 	}
+ 
++#if CONFIG(H8_EXTENDED_HOTKEYS)
++	/*
++	 * Report an extended (0x13xx) or adaptive (0x11xx) hotkey code,
++	 * as used by 2017+ ThinkPads. MHKP adds 0x1000 to the stored
++	 * value, so strip it here. The kernel applies no enable mask to
++	 * these ranges.
++	 */
++	Method (REK, 1, NotSerialized) {
++		BTN = Arg0 - 0x1000
++		Notify (HKEY, 0x80)
++	}
++#endif
++
+ 	/* Report tablet  */
+ 	Method (RTAB, 1, NotSerialized) {
+ 		Local0 = 1 << (Arg0 - 1)
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index 138ea6fe..4d2a80bc 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -34,6 +34,7 @@ config BOARD_LENOVO_T480
+ 	select BOARD_LENOVO_SKLKBL_THINKPAD_COMMON
+ 	select CSE_DEFAULT_CFR_OPTION_STATE_DISABLED
+ 	select DRIVERS_INTEL_DTBT
++	select H8_EXTENDED_HOTKEYS
+ 	select H8_FAN_STEPPED
+ 	select H8_NO_MASTER_WIRELESS_SWITCH
+ 	select SOC_INTEL_KABYLAKE
