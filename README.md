@@ -272,6 +272,39 @@ fails with "key does not belong to this TPM".
 
 </details>
 
+## EC debugging
+
+The T480's embedded controller (Microchip MEC1653) runs the fan, battery,
+keyboard and more. Two ways to look inside while tuning things like the
+fan curve:
+
+**Read EC registers from Linux** (no rebuild needed, root required):
+
+```bash
+modprobe ec_sys
+# one byte at an offset, e.g. the fan register HFSP (0x2f = 47):
+dd if=/sys/kernel/debug/ec/ec0/io bs=1 skip=47 count=1 2>/dev/null | od -An -tu1
+```
+
+Useful offsets: `0x2f` fan control (bits 0-2 level, bit 6 disengage, bit 7
+EC automatic), `0x78` CPU temperature in C (`0x79` would be a second
+sensor, but on the T480 it always reads 128 = not fitted), `0x84`/`0x85`
+fan tachometer (RPM, low/high byte).
+
+**EC debug UART** (rebuild needed): the EC has a debug console that is
+locked by default; the unlock key for the T480/T580 is known and already
+in the coreboot tree. Enable it with `CONFIG_MEC1653_ENABLE_UART=y` in
+`config/defconfig` and `--rebuild-base`. coreboot then unlocks the EC
+debug interface at boot and maps the EC's UART to host I/O port 0x3f8,
+IRQ 4 over LPC - that is the classic COM1, so no soldering: the console
+should appear as `/dev/ttyS0` in Linux (`screen /dev/ttyS0 115200`).
+
+> [!NOTE]
+> The 0x3f8/IRQ4 mapping and the unlock mechanism are read from the
+> coreboot code (`src/ec/lenovo/mec1653/uart.c`); that the EC actually
+> prints anything there, and at which baud rate, is NOT yet verified on
+> hardware. Treat this section as a pointer, not a promise.
+
 ## Cleaning up
 
 ```bash
