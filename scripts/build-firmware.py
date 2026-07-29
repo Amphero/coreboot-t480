@@ -90,8 +90,8 @@ def verify_checksums(src):
 
 
 def sync_build_config(src):
-    """Mirror the current config/defconfig (+splash.bmp) into sources/<mode>/.
-    That way local defconfig tweaks reach the offline build (context = sources/<mode>/)
+    """Mirror the current config/defconfig (+splash.bmp) and patches/ into sources/<mode>/.
+    That way local defconfig/patch tweaks reach the offline build (context = sources/<mode>/)
     without re-running PHASE 1. Takes effect only with --rebuild-base."""
     shutil.copy2(CONFIG / "defconfig", src / "defconfig")
     shutil.copy2(BUILD / "apply-devicetree.sh", src / "apply-devicetree.sh")  # config-driven devicetree toggles
@@ -100,7 +100,11 @@ def sync_build_config(src):
         shutil.copy2(sp, src / "splash.bmp")
     else:
         (src / "splash.bmp").unlink(missing_ok=True)
-    print(f"[config] defconfig + apply-devicetree.sh{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
+    dst = src / "patches"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(PROJECT / "patches", dst)                    # base patches (Dockerfile.offline) + tpm-reset
+    print(f"[config] defconfig + apply-devicetree.sh + patches/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
 
 
 def log_versions(src):

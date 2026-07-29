@@ -111,6 +111,13 @@ Then put it in the `# MAC=` line of `config/defconfig`, or pass
 | `--version NAME` | version part of the ROM file name (default: `pinned` or the date) |
 | `--rebuild-base` | rebuild from scratch after editing `config/defconfig` |
 
+Patches in `patches/base/` are applied to the coreboot tree when the base
+image is built, in lexical order and with a mandatory `git apply --check` -
+a patch that no longer applies aborts the build instead of being skipped
+silently. They currently expose the "Restore AC power after loss" setup
+option and default the Intel ME to disabled. Changes here need
+`--rebuild-base`.
+
 The markers at the end of `config/defconfig` toggle optional devices with a
 simple `y`/`n`:
 
