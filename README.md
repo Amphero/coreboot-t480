@@ -115,9 +115,11 @@ Patches in `patches/base/` are applied to the coreboot tree when the base
 image is built, in lexical order and with a mandatory `git apply --check` -
 a patch that no longer applies aborts the build instead of being skipped
 silently. They carry everything this repo changes about coreboot itself:
-the five-level stepped fan control for the T480, the "Restore AC power
-after loss" setup option and the ME-disabled default. **Each patch is
-documented in [patches/README.md](patches/README.md).** Changes here need
+the five-level stepped fan control for the T480 with four fan profiles
+selectable in the setup menu (Quiet / Balanced / Performance / EC only),
+the "Restore AC power after loss" setup option and the ME-disabled
+default. **Each patch is documented in
+[patches/README.md](patches/README.md).** Changes here need
 `--rebuild-base`.
 
 The markers at the end of `config/defconfig` toggle optional devices with a
