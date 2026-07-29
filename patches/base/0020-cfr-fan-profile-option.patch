@@ -1,0 +1,209 @@
+diff --git a/src/ec/lenovo/h8/acpi/thermal.asl b/src/ec/lenovo/h8/acpi/thermal.asl
+index 8b76ad4b..1ab1a265 100644
+--- a/src/ec/lenovo/h8/acpi/thermal.asl
++++ b/src/ec/lenovo/h8/acpi/thermal.asl
+@@ -96,6 +96,12 @@ External (\PPKG, MethodObj)
+ #define FAN2_THRESHOLD_OFF	60
+ #define FAN3_THRESHOLD_ON	58
+ #define FAN3_THRESHOLD_OFF	50
++#endif
++#ifndef FAN_PROFILE_QUIET
++#define FAN_PROFILE_QUIET	88, 80, 80, 72, 72, 64, 64, 56
++#define FAN_PROFILE_BALANCED	85, 77, 76, 68, 68, 60, 58, 50
++#define FAN_PROFILE_PERFORMANCE	78, 70, 68, 60, 58, 50, 48, 40
++#define FAN_PROFILE_EC_ONLY	96, 94, 95, 93, 94, 92, 93, 91
+ #endif
+ 
+ 		/* Start in the resting state: EC automatic, level 4 */
+@@ -106,37 +112,51 @@ External (\PPKG, MethodObj)
+ 		}
+ 
+ 		/*
+-		 * _ACx: the returned trip point depends on the current level -
+-		 * a lower temperature to switch on, a higher one to switch off.
++		 * \FPRO is the fan profile chosen in the setup menu; the
++		 * board's ramstage publishes it in an SSDT. Absent (no SSDT
++		 * entry) or garbage values fall back to profile 1.
+ 		 */
+-		Method (_AC0) {
+-			If (\FLVL <= 0) {
+-				Return (C2K (FAN0_THRESHOLD_OFF))
+-			}
+-			Return (C2K (FAN0_THRESHOLD_ON))
+-		}
++		External (\FPRO, IntObj)
+ 
+-		Method (_AC1) {
+-			If (\FLVL <= 1) {
+-				Return (C2K (FAN1_THRESHOLD_OFF))
+-			}
+-			Return (C2K (FAN1_THRESHOLD_ON))
+-		}
++		/*
++		 * One row per profile - Quiet, Balanced, Performance,
++		 * EC only - each row the _AC0-_AC3 ON/OFF pairs in degrees C
++		 * from <variant/thermal.h>.
++		 */
++		Name (FTBL, Package () {
++			Package () { FAN_PROFILE_QUIET },
++			Package () { FAN_PROFILE_BALANCED },
++			Package () { FAN_PROFILE_PERFORMANCE },
++			Package () { FAN_PROFILE_EC_ONLY },
++		})
+ 
+-		Method (_AC2) {
+-			If (\FLVL <= 2) {
+-				Return (C2K (FAN2_THRESHOLD_OFF))
++		/*
++		 * Arg0 = level 0..3. Returns the trip point of the current
++		 * profile, with hysteresis: while the level is active the
++		 * lower OFF threshold applies, otherwise the ON threshold.
++		 */
++		Method (ACX, 1, Serialized)
++		{
++			Local2 = 1
++			If (CondRefOf (\FPRO)) {
++				Local2 = \FPRO
+ 			}
+-			Return (C2K (FAN2_THRESHOLD_ON))
+-		}
+-
+-		Method (_AC3) {
+-			If (\FLVL <= 3) {
+-				Return (C2K (FAN3_THRESHOLD_OFF))
++			If (Local2 > 3) {
++				Local2 = 1	/* guard: index overflow would hang the zone */
++			}
++			Local0 = DerefOf (Index (FTBL, Local2))
++			Local1 = Arg0 * 2
++			If (\FLVL <= Arg0) {
++				Local1++	/* level active -> OFF threshold */
+ 			}
+-			Return (C2K (FAN3_THRESHOLD_ON))
++			Return (C2K (DerefOf (Index (Local0, Local1))))
+ 		}
+ 
++		Method (_AC0) { Return (ACX (0)) }
++		Method (_AC1) { Return (ACX (1)) }
++		Method (_AC2) { Return (ACX (2)) }
++		Method (_AC3) { Return (ACX (3)) }
++
+ 		Name (_AL0, Package () { FAN0 })
+ 		Name (_AL1, Package () { FAN1 })
+ 		Name (_AL2, Package () { FAN2 })
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
+index a522cbff..0b7e1af5 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
+@@ -27,6 +27,26 @@ static const struct sm_object dgpu = SM_DECLARE_ENUM({
+ 	.default_value	= false,
+ }, WITH_CALLBACK(update_dgpu));
+ 
++#if CONFIG(H8_FAN_STEPPED)
++/* Fan profile for the stepped fan control; published as \FPRO on boot
++ * (ramstage.c), consumed by ec/lenovo/h8/acpi/thermal.asl. */
++static const struct sm_object fan_profile = SM_DECLARE_ENUM({
++	.opt_name	= "fan_profile",
++	.ui_name	= "Fan profile",
++	.ui_helptext	= "Quiet runs hotter, Performance runs cooler and "
++			  "louder. EC only: the firmware never touches the "
++			  "fan (for thinkfan/zcfan users). Applies on reboot.",
++	.default_value	= 1,
++	.values		= (const struct sm_enum_value[]) {
++		{ "Quiet",		0 },
++		{ "Balanced",		1 },
++		{ "Performance",	2 },
++		{ "EC only",		3 },
++		SM_ENUM_VALUE_END
++	},
++});
++#endif
++
+ static struct sm_obj_form system = {
+ 	.ui_name = "System",
+ 	.obj_list = (const struct sm_object *[]) {
+@@ -60,6 +80,9 @@ static struct sm_obj_form ec = {
+ 		&wwan,
+ 		&pm_beeps,
+ 		&battery_beep,
++#if CONFIG(H8_FAN_STEPPED)
++		&fan_profile,
++#endif
+ 		&fn_ctrl_swap,
+ 		&sticky_fn,
+ 		&f1_to_f12_as_primary,
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
+index db1b18ac..247153ec 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
+@@ -1,5 +1,7 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpigen.h>
++#include <option.h>
+ #include <soc/ramstage.h>
+ #include "variant.h"
+ 
+@@ -9,13 +11,31 @@ void mainboard_silicon_init_params(FSP_SIL_UPD *params)
+ 	variant_config_gpios();
+ }
+ 
++/*
++ * One SSDT hook for everything the board adds: the dGPU description
++ * (when present) and the fan profile chosen in the setup menu, published
++ * as \FPRO for the thermal zone (ec/lenovo/h8/acpi/thermal.asl reads it).
++ * Keep it chained - assigning ssdt_add_dgpu directly here would drop the
++ * fan profile, assigning only a fan hook would drop the dGPU from ACPI.
++ */
++static void mainboard_fill_ssdt(const struct device *dev)
++{
++	if (CONFIG(VARIANT_HAS_DGPU))
++		ssdt_add_dgpu(dev);
++
++	if (CONFIG(H8_FAN_STEPPED)) {
++		unsigned int prof = get_uint_option("fan_profile", 1);
++		if (prof > 3)
++			prof = 1;
++		acpigen_write_name_integer("\\FPRO", prof);
++	}
++}
+ 
+ static void mainboard_enable(struct device *dev)
+ {
+-	if (CONFIG(VARIANT_HAS_DGPU)) {
++	if (CONFIG(VARIANT_HAS_DGPU))
+ 		dgpu_detect();
+-		dev->ops->acpi_fill_ssdt = ssdt_add_dgpu;
+-	}
++	dev->ops->acpi_fill_ssdt = mainboard_fill_ssdt;
+ }
+ 
+ struct chip_operations mainboard_ops = {
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
+index b9415483..32d9435b 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
+@@ -31,4 +31,23 @@
+ #define FAN3_THRESHOLD_ON	58
+ #define FAN3_THRESHOLD_OFF	50
+ 
++/*
++ * Fan profiles for the setup-menu option "fan_profile" (published as
++ * \FPRO by ramstage.c). One row per profile; each row lists the
++ * _AC0-_AC3 ON/OFF pairs in degrees C for the FTBL package in
++ * ec/lenovo/h8/acpi/thermal.asl.
++ *
++ * "EC only" parks all four trips 1 K staggered just below \TCRT (100 C):
++ * the EC curve rules alone, but if it ever fails there is still an ACPI
++ * escalation before the critical shutdown. Do NOT disable the trips
++ * instead - that would remove the safety net entirely.
++ */
++#define FAN_PROFILE_QUIET	88, 80,  80, 72,  72, 64,  64, 56
++#define FAN_PROFILE_BALANCED	FAN0_THRESHOLD_ON, FAN0_THRESHOLD_OFF, \
++				FAN1_THRESHOLD_ON, FAN1_THRESHOLD_OFF, \
++				FAN2_THRESHOLD_ON, FAN2_THRESHOLD_OFF, \
++				FAN3_THRESHOLD_ON, FAN3_THRESHOLD_OFF
++#define FAN_PROFILE_PERFORMANCE	78, 70,  68, 60,  58, 50,  48, 40
++#define FAN_PROFILE_EC_ONLY	96, 94,  95, 93,  94, 92,  93, 91
++
+ #endif /* VARIANT_THERMAL_H */
