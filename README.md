@@ -156,8 +156,8 @@ sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
 sudo flashrom -p ch341a_spi -v roms/coreboot_t480_pinned.rom
 ```
 
-After flashing: reconnect the CMOS battery, boot, set the clock
-(`sudo timedatectl set-ntp true`) and add `reboot=pci` to the kernel cmdline.
+After flashing: reconnect the CMOS battery, boot and set the clock
+(`sudo timedatectl set-ntp true`).
 
 > [!NOTE]
 > The clock matters. Secure Boot key enrollment silently fails if it's wrong.
