@@ -181,6 +181,23 @@ Three details that must survive future edits:
    Setting the trips above `_CRT` or removing them would delete that
    last net - don't.
 
+## base/0030-t480-lenovo-bios-version-for-thinkpad_acpi.patch
+
+**File:** `src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c`
+
+Makes `thinkpad_acpi` load without `force_load=1`. The driver's probe
+(`tpacpi_parse_fw_id`) requires the SMBIOS **BIOS version** to parse as a
+Lenovo firmware ID (`xxxyTkkW`, e.g. `N24ET65W`) and gives up before even
+reading the product version - coreboot's build id (`5cbf8afc-dirty`)
+fails that at the first lowercase letter. The board now reports
+`N24ET99W (1.99 )` for the T480: the stock scheme with a release above
+every real one, so no tool ever flags the firmware as outdated. coreboot
+stays identifiable through the SMBIOS BIOS *vendor* string.
+
+Note: `CONFIG_MAINBOARD_VERSION="ThinkPad T480"` in `config/defconfig` is
+the second half of this fix (the driver checks the product version right
+after the firmware ID) - keep both.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
