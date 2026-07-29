@@ -1,0 +1,66 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index 14452410..b1e0a77e 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -34,6 +34,7 @@ config BOARD_LENOVO_T480
+ 	select BOARD_LENOVO_SKLKBL_THINKPAD_COMMON
+ 	select CSE_DEFAULT_CFR_OPTION_STATE_DISABLED
+ 	select DRIVERS_INTEL_DTBT
++	select H8_FAN_STEPPED
+ 	select SOC_INTEL_KABYLAKE
+ 	select MEC1653_HAS_DEBUG_UNLOCK
+ 	select VARIANT_HAS_DGPU
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl b/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl
+index 3a949a2f..0b8dfc8d 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl
+@@ -8,5 +8,9 @@ Name(\TCRT, 100)
+ Name(\TPSV, 90)
+ Name(\FLVL, 0)
+ 
++#if CONFIG(H8_FAN_STEPPED)
++#include <variant/thermal.h>
++#endif
++
+ #include <ec/lenovo/h8/acpi/ec.asl>
+ #include <ec/lenovo/h8/acpi/thinkpad_bat_thresholds_b0.asl>
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
+new file mode 100644
+index 00000000..b9415483
+--- /dev/null
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef VARIANT_THERMAL_H
++#define VARIANT_THERMAL_H
++
++/*
++ * Stepped fan control (H8_FAN_STEPPED), see ec/lenovo/h8/acpi/thermal.asl.
++ *
++ * HFSP values: 0x80 = EC automatic, 0x01-0x07 = fixed regulated level.
++ * Level 4 is the resting state and MUST stay 0x80 so the EC curve remains
++ * active as a safety net (0x00 would mean fan off with the curve disabled).
++ */
++#define FAN4_HFSP		0x80	/* resting state - EC automatic */
++#define FAN3_HFSP		0x02
++#define FAN2_HFSP		0x04
++#define FAN1_HFSP		0x06
++#define FAN0_HFSP		0x07	/* fastest REGULATED level */
++
++/*
++ * Trip points in degrees C, 8 K hysteresis each. _AC0 belongs to the
++ * FASTEST level (ACPI defines it that way). Keep every value well below
++ * \TCRT (100) - the critical shutdown is the last resort, not part of
++ * the fan curve.
++ */
++#define FAN0_THRESHOLD_ON	85
++#define FAN0_THRESHOLD_OFF	77
++#define FAN1_THRESHOLD_ON	76
++#define FAN1_THRESHOLD_OFF	68
++#define FAN2_THRESHOLD_ON	68
++#define FAN2_THRESHOLD_OFF	60
++#define FAN3_THRESHOLD_ON	58
++#define FAN3_THRESHOLD_OFF	50
++
++#endif /* VARIANT_THERMAL_H */
