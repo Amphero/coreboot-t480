@@ -250,22 +250,11 @@ reset. Turning the radio off in the OS is enough; it stays off. Pulling
 both battery and charger clears the EC's memory and the radio comes back.
 
 The second half of the fix is patch 0031: the firmware no longer
-announces a wireless master switch (`WLSW`). With one present, the
-kernel's `rfkill-input` handler saw "master switch on" at every boot
-and reset all radios to unblocked before the desktop was even up -
-details in [patches/README.md](patches/README.md).
-
-If bluetooth still comes back on, check which rfkill switch your desktop
-is actually toggling:
-
-```bash
-rfkill list
-```
-
-`tpacpi_bluetooth_sw` is the firmware path described here. The `hci0`
-entry belongs to the USB adapter on the WLAN card and is a separate,
-purely OS-side state - for that one it is `AutoEnable` in
-`/etc/bluetooth/main.conf`.
+announces a wireless master switch (`WLSW`), which the kernel answered
+by unblocking all radios on every boot - details in
+[patches/README.md](patches/README.md). The switch this all controls is
+`tpacpi_bluetooth_sw` in `rfkill list`; `hci0` only exists while the
+radio has power.
 
 ## Secure Boot
 

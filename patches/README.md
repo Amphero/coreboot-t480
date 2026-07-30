@@ -217,20 +217,12 @@ and hard-blocked both radios. Behind the new opt-in
 `H8_NO_MASTER_WIRELESS_SWITCH` (selected for the T480 only), the
 `WLSW` method is **omitted entirely**.
 
-A first version of this patch had `WLSW` return a constant 1 ("radio
-allowed") instead. That un-does the hard-block but plants a worse
-problem: the mere presence of `WLSW` makes `thinkpad_acpi` register a
-`SW_RFKILL_ALL` master-switch input device, and the kernel's
-`rfkill-input` handler reacts to "master switch is on" by resetting
-**every** radio to unblocked - on each boot, at handler connect
-(`net/rfkill/input.c`), invisible to userspace auditing because it
-never goes through `/dev/rfkill`. In practice: bluetooth (and WWAN,
-even against TLP's `DEVICES_TO_DISABLE_ON_STARTUP`) switched itself
-back on a few seconds into every boot, which also silently defeated
-patch 0033. GNOME's gsd-rfkill inhibits `rfkill-input` a few seconds
-later (`RFKILL_IOCTL_NOINPUT`) - too late for the boot window. No
-method, no switch, no side effects; the board really has no slider,
-so not reporting one is also simply accurate.
+Omitted, not stubbed: a first version returned a constant 1 instead.
+That un-does the hard-block, but any `WLSW` makes `thinkpad_acpi`
+register a `SW_RFKILL_ALL` master switch, and the kernel's
+`rfkill-input` handler answers "switch is on" by unblocking **every**
+radio at each boot (`net/rfkill/input.c`, handler connect) - which
+also defeated patch 0033. The board has no slider, so it reports none.
 
 ## base/0032-h8-extended-hotkeys.patch
 
@@ -278,15 +270,12 @@ two old values keep forcing the radio on or off at every boot.
 
 Notes:
 
-- Other H8 boards see no change at all - without the symbol `cfr.h`
-  declares the same `SM_DECLARE_BOOL` as upstream.
-- `h8_bluetooth_nv_keep_state()` returns false on `!CONFIG(...)` inside
-  the function rather than being compiled away, so the call site in
-  `h8.c` stays free of `#if`.
+- Other H8 boards see no change - without the symbol `cfr.h` declares
+  the same `SM_DECLARE_BOOL` as upstream.
 - The EC's memory is standby-powered. Removing battery *and* charger
   resets it and the radio comes back on.
-- WWAN goes through the same mechanism (`WWEB`, bit 6 of the same
-  register) and was left alone - no WWAN card here to test it with.
+- WWAN uses the same mechanism (`WWEB`, bit 6) and was left alone - no
+  WWAN card here to test it with.
 
 ## tpm-reset/tpm2-clear-on-boot.patch
 
