@@ -96,7 +96,7 @@ in `mainboard/samsung/stumpy`:
   to enter, lower OFF threshold to leave).
 - `_INI` starts at level 4, the resting state.
 
-Two properties are load-bearing; keep them when touching this file:
+Three properties are load-bearing; keep them when touching this file:
 
 1. **Level 4 rests at HFSP `0x80` (EC automatic), never `0x00`.** Writing a
    manual level disables the EC's own fan curve; `0x00` would mean "fan off
@@ -106,6 +106,11 @@ Two properties are load-bearing; keep them when touching this file:
    reach 0 after `_OFF`; level 4 is the lowest state, there is nothing
    below it. Linux forgives a violation - Windows disables the whole
    thermal zone.
+3. **`_INI` sets `\FLVL` and nothing else.** It runs before the OS
+   attaches its EmbeddedControl handler, so an EC access there aborts the
+   method (`AE_NOT_EXIST` at every boot, issue #1). The write would be a
+   no-op anyway: the ramstage leaves the fan register at `0x80`
+   (`H8_FAN_CONTROL_AUTO`, `h8.c`) on every boot, which is level 4.
 
 The `FANx_HFSP`/`FANx_THRESHOLD_*` values come from the selecting board's
 `<variant/thermal.h>` (patch 0012); the `#ifndef` fallbacks in the file
@@ -209,8 +214,23 @@ method reports the master wireless kill switch by reading EC bit
 T480 has no such switch and its EC reads 0 there (measured via
 `ec_sys`), so `thinkpad_acpi` believed the radio master switch was off
 and hard-blocked both radios. Behind the new opt-in
-`H8_NO_MASTER_WIRELESS_SWITCH` (selected for the T480 only), `WLSW`
-returns "radio allowed".
+`H8_NO_MASTER_WIRELESS_SWITCH` (selected for the T480 only), the
+`WLSW` method is **omitted entirely**.
+
+A first version of this patch had `WLSW` return a constant 1 ("radio
+allowed") instead. That un-does the hard-block but plants a worse
+problem: the mere presence of `WLSW` makes `thinkpad_acpi` register a
+`SW_RFKILL_ALL` master-switch input device, and the kernel's
+`rfkill-input` handler reacts to "master switch is on" by resetting
+**every** radio to unblocked - on each boot, at handler connect
+(`net/rfkill/input.c`), invisible to userspace auditing because it
+never goes through `/dev/rfkill`. In practice: bluetooth (and WWAN,
+even against TLP's `DEVICES_TO_DISABLE_ON_STARTUP`) switched itself
+back on a few seconds into every boot, which also silently defeated
+patch 0033. GNOME's gsd-rfkill inhibits `rfkill-input` a few seconds
+later (`RFKILL_IOCTL_NOINPUT`) - too late for the boot window. No
+method, no switch, no side effects; the board really has no slider,
+so not reporting one is also simply accurate.
 
 ## base/0032-h8-extended-hotkeys.patch
 
@@ -238,6 +258,36 @@ queue; everything sits behind the opt-in `H8_EXTENDED_HOTKEYS`,
 selected for the T480 only - older H8 boards keep their correct
 legacy codes.
 
+## base/0033-h8-remember-bluetooth-state.patch
+
+**Files:** `src/ec/lenovo/h8/Kconfig`, `.../h8/h8.h`, `.../h8/h8.c`,
+`.../h8/bluetooth.c`, `.../h8/cfr.h`,
+`src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
+
+Stops bluetooth from coming back on after every reboot. `h8_enable()`
+writes EC register 0x3a bit 4 on every boot from the `bluetooth` setup
+option, and `thinkpad_acpi` reads its rfkill state from exactly that bit
+(`HKEY.GBDC`), so whatever the OS wrote through `HKEY.SBDC` before the
+reboot was overwritten before the OS ever looked.
+
+Behind the new opt-in `H8_BLUETOOTH_KEEP_STATE` (selected for the T480
+only), the option becomes an enum with a third value, `Last state` (2),
+and that is the default. On that value `h8_enable()` skips the write
+entirely; the EC keeps the bit across the reset, so "off" stays off. The
+two old values keep forcing the radio on or off at every boot.
+
+Notes:
+
+- Other H8 boards see no change at all - without the symbol `cfr.h`
+  declares the same `SM_DECLARE_BOOL` as upstream.
+- `h8_bluetooth_nv_keep_state()` returns false on `!CONFIG(...)` inside
+  the function rather than being compiled away, so the call site in
+  `h8.c` stays free of `#if`.
+- The EC's memory is standby-powered. Removing battery *and* charger
+  resets it and the radio comes back on.
+- WWAN goes through the same mechanism (`WWEB`, bit 6 of the same
+  register) and was left alone - no WWAN card here to test it with.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
@@ -259,6 +309,7 @@ git diff -- <files of that patch> > ../../../patches/base/<same-name>.patch
 ```
 
 Keep the numbering (0001/0002 = setup menu, 0010-0012 = stepped fan,
-0020 = fan profiles, 0030 = OS compatibility) - the patches are applied
-in lexical order and later ones build on the context of earlier ones
-(0012 on 0002's Kconfig, 0020 on 0011/0012, 0030 on 0020's ramstage.c).
+0020 = fan profiles, 0030-0033 = OS compatibility) - the patches are
+applied in lexical order and later ones build on the context of earlier
+ones (0012 on 0002's Kconfig, 0020 on 0011/0012, 0030 on 0020's
+ramstage.c, 0033 on 0031/0032's Kconfig hunks).

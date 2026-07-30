@@ -40,7 +40,7 @@ in the firmware itself.
 | TPM 2.0 | on, LUKS auto-unlock | off (SeaBIOS driver bug) |
 | Fan behaviour | 5 regulated levels, 4 profiles | stock two-state (auto / full blast) |
 | `thinkpad_acpi` | loads automatically | needs `force_load=1` (their FAQ) |
-| Bluetooth/WWAN rfkill | works, Fn+F10 toggles | may hard-block, manual unblock (errata) |
+| Bluetooth/WWAN rfkill | works, Fn+F10 toggles, off stays off | may hard-block, manual unblock (errata) |
 | Fn+F9…F12 | match the keycaps | may stop working (errata) |
 | Kernel cmdline | nothing needed¹ | `thinkpad_acpi.force_load=1` |
 | Boot splash | custom logo | — |
@@ -231,6 +231,41 @@ is gone. Four profiles can be picked in the setup menu under
 trip points move just below the critical threshold, so the EC curve - or
 your tool - rules alone, with one ACPI escalation left as the last net.
 Curve details and tuning: [patches/README.md](patches/README.md).
+
+## Bluetooth
+
+**Embedded Controller → Bluetooth** has three settings:
+
+| Setting | Behaviour |
+|---------|-----------|
+| Disabled | radio off at every boot |
+| Enabled | radio on at every boot |
+| Last state (default) | firmware leaves the radio as the OS left it |
+
+Upstream only knows Disabled/Enabled and writes the EC bit on every boot,
+so bluetooth turned off in the OS was back on after the next reboot -
+`thinkpad_acpi` reads its rfkill state from exactly that bit. With "Last
+state" the firmware does not touch it, and the EC keeps it across the
+reset. Turning the radio off in the OS is enough; it stays off. Pulling
+both battery and charger clears the EC's memory and the radio comes back.
+
+The second half of the fix is patch 0031: the firmware no longer
+announces a wireless master switch (`WLSW`). With one present, the
+kernel's `rfkill-input` handler saw "master switch on" at every boot
+and reset all radios to unblocked before the desktop was even up -
+details in [patches/README.md](patches/README.md).
+
+If bluetooth still comes back on, check which rfkill switch your desktop
+is actually toggling:
+
+```bash
+rfkill list
+```
+
+`tpacpi_bluetooth_sw` is the firmware path described here. The `hci0`
+entry belongs to the USB adapter on the WLAN card and is a separate,
+purely OS-side state - for that one it is `AutoEnable` in
+`/etc/bluetooth/main.conf`.
 
 ## Secure Boot
 
