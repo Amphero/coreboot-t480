@@ -1,0 +1,125 @@
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index 1421f9ce..cd422d78 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -108,6 +108,15 @@ config H8_EXTENDED_HOTKEYS
+ 	  Lenovo hotkey codes (0x11xx/0x13xx) the kernel expects, instead
+ 	  of legacy codes that map to KEY_UNKNOWN or generic KEY_FN_*.
+ 
++config H8_BLUETOOTH_KEEP_STATE
++	bool
++	default n
++	help
++	  Give the "bluetooth" option a third value, "Last state", and make it
++	  the default. The EC bit is then left untouched at boot instead of
++	  being forced to the option value, so a radio the OS switched off
++	  through HKEY.SBDC stays off across a reboot.
++
+ config H8_FAN_STEPPED
+ 	bool
+ 	default n
+diff --git a/src/ec/lenovo/h8/bluetooth.c b/src/ec/lenovo/h8/bluetooth.c
+index 166b3fb0..00f07d7e 100644
+--- a/src/ec/lenovo/h8/bluetooth.c
++++ b/src/ec/lenovo/h8/bluetooth.c
+@@ -50,3 +50,18 @@ bool h8_bluetooth_nv_enable(void)
+ {
+ 	return get_uint_option("bluetooth", true);
+ }
++
++/*
++ * Is the option set to "Last state"? The EC keeps register 0x3a across a
++ * reset, so not writing it leaves the radio the way the OS left it - that
++ * is the only way an OS-side "bluetooth off" survives a reboot, coreboot
++ * has no other memory of it.
++ */
++bool h8_bluetooth_nv_keep_state(void)
++{
++	if (!CONFIG(H8_BLUETOOTH_KEEP_STATE))
++		return false;
++
++	return get_uint_option("bluetooth", H8_BLUETOOTH_LAST_STATE) ==
++		H8_BLUETOOTH_LAST_STATE;
++}
+diff --git a/src/ec/lenovo/h8/cfr.h b/src/ec/lenovo/h8/cfr.h
+index fbda8047..4705b04a 100644
+--- a/src/ec/lenovo/h8/cfr.h
++++ b/src/ec/lenovo/h8/cfr.h
+@@ -11,12 +11,29 @@
+ #include "h8.h"
+ 
+ /* Bluetooth */
++#if CONFIG(H8_BLUETOOTH_KEEP_STATE)
++static const struct sm_object bluetooth = SM_DECLARE_ENUM({
++	.opt_name	= "bluetooth",
++	.ui_name	= "Bluetooth",
++	.ui_helptext	= "Enable or disable the bluetooth module. \"Last "
++			  "state\" leaves the radio the way the OS left it, "
++			  "so switching it off survives a reboot.",
++	.default_value	= H8_BLUETOOTH_LAST_STATE,
++	.values		= (const struct sm_enum_value[]) {
++		{ "Disabled",	0 },
++		{ "Enabled",	1 },
++		{ "Last state",	H8_BLUETOOTH_LAST_STATE },
++		SM_ENUM_VALUE_END
++	},
++});
++#else
+ static const struct sm_object bluetooth = SM_DECLARE_BOOL({
+ 	.opt_name	= "bluetooth",
+ 	.ui_name	= "Bluetooth",
+ 	.ui_helptext	= "Enable or disable the bluetooth module",
+ 	.default_value	= true,
+ });
++#endif
+ 
+ /* Keyboard Backlight */
+ static const struct sm_object backlight = SM_DECLARE_BOOL({
+diff --git a/src/ec/lenovo/h8/h8.c b/src/ec/lenovo/h8/h8.c
+index 7aec284b..6bd514b2 100644
+--- a/src/ec/lenovo/h8/h8.c
++++ b/src/ec/lenovo/h8/h8.c
+@@ -337,9 +337,11 @@ static void h8_enable(struct device *dev)
+ 	if (volume <= 0xff && !acpi_is_wakeup_s3())
+ 		ec_write(H8_VOLUME_CONTROL, volume);
+ 
+-	val = (CONFIG(H8_SUPPORT_BT_ON_WIFI) || h8_has_bdc(dev)) &&
+-		h8_bluetooth_nv_enable();
+-	h8_bluetooth_enable(val);
++	if (!h8_bluetooth_nv_keep_state()) {
++		val = (CONFIG(H8_SUPPORT_BT_ON_WIFI) || h8_has_bdc(dev)) &&
++			h8_bluetooth_nv_enable();
++		h8_bluetooth_enable(val);
++	}
+ 
+ 	val = h8_has_wwan(dev) && h8_wwan_nv_enable();
+ 	h8_wwan_enable(val);
+diff --git a/src/ec/lenovo/h8/h8.h b/src/ec/lenovo/h8/h8.h
+index 9b71f299..46890335 100644
+--- a/src/ec/lenovo/h8/h8.h
++++ b/src/ec/lenovo/h8/h8.h
+@@ -25,8 +25,12 @@ void h8_usb_always_on(void);
+ int h8_get_fn_key(void);
+ int h8_get_sense_ready(void);
+ 
++/* Third value of the "bluetooth" option, see H8_BLUETOOTH_KEEP_STATE */
++#define H8_BLUETOOTH_LAST_STATE 2
++
+ void h8_bluetooth_enable(int on);
+ bool h8_bluetooth_nv_enable(void);
++bool h8_bluetooth_nv_keep_state(void);
+ bool h8_has_bdc(const struct device *dev);
+ 
+ void h8_wwan_enable(int on);
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index 4d2a80bc..10b30fb4 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -34,6 +34,7 @@ config BOARD_LENOVO_T480
+ 	select BOARD_LENOVO_SKLKBL_THINKPAD_COMMON
+ 	select CSE_DEFAULT_CFR_OPTION_STATE_DISABLED
+ 	select DRIVERS_INTEL_DTBT
++	select H8_BLUETOOTH_KEEP_STATE
+ 	select H8_EXTENDED_HOTKEYS
+ 	select H8_FAN_STEPPED
+ 	select H8_NO_MASTER_WIRELESS_SWITCH
