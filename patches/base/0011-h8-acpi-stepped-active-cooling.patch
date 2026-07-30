@@ -1,8 +1,8 @@
 diff --git a/src/ec/lenovo/h8/acpi/thermal.asl b/src/ec/lenovo/h8/acpi/thermal.asl
-index 54f4f922..8b76ad4b 100644
+index 54f4f922..11687f81 100644
 --- a/src/ec/lenovo/h8/acpi/thermal.asl
 +++ b/src/ec/lenovo/h8/acpi/thermal.asl
-@@ -74,6 +74,236 @@ External (\PPKG, MethodObj)
+@@ -74,6 +74,242 @@ External (\PPKG, MethodObj)
  			Return (C2K(Local0))
  		}
  
@@ -32,9 +32,15 @@ index 54f4f922..8b76ad4b 100644
 +
 +		/* Start in the resting state: EC automatic, level 4 */
 +		Method (_INI) {
++			/*
++			 * Nothing but \FLVL here. _INI runs before the OS
++			 * attaches its EmbeddedControl handler, so any EC
++			 * access aborts the method with AE_NOT_EXIST. It
++			 * would be a no-op anyway: the ramstage leaves the
++			 * fan register at 0x80 (H8_FAN_CONTROL_AUTO) on
++			 * every boot, which is exactly level 4.
++			 */
 +			\FLVL = 4
-+			\_SB.PCI0.LPCB.EC.FANL (FAN4_HFSP)
-+			Notify (\_TZ.THM0, NOTIFY_TZ_TRIPPTCHG)
 +		}
 +
 +		/*
@@ -239,7 +245,7 @@ index 54f4f922..8b76ad4b 100644
  		Method (_AC0) {
  			Local0 = GPSV ()
  
-@@ -122,6 +352,7 @@ External (\PPKG, MethodObj)
+@@ -122,6 +358,7 @@ External (\PPKG, MethodObj)
  			Name (_HID, EISAID ("PNP0C0B"))
  			Name (_PR0, Package () { FPWR })
  		}
