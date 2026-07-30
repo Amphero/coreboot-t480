@@ -24,33 +24,37 @@ Tested on a Type 20L5 (mainboard NM-B501). The SPI flash is a Winbond W25Q128,
 
 ### How this differs from Libreboot
 
-This build reuses Libreboot's `lbmk` for the blob handling, so the lowest
-layer is identical — the same deblobbed image is where the ME and Boot Guard
-mitigations come from. Everything above the payload boundary is different,
-because Libreboot ships a legacy BIOS payload and this ships a UEFI one.
+The lowest layer is the same — this build reuses Libreboot's `lbmk` for the
+ME/Boot Guard handling. The differences start at the payload, and several
+T480 quirks that Libreboot documents as
+[known errata](https://libreboot.org/docs/install/t480.html) are fixed here
+in the firmware itself.
 
-| | This repo | [Libreboot on the T480](https://libreboot.org/docs/install/t480.html) |
+| | This repo | [Libreboot T480](https://libreboot.org/docs/install/t480.html) |
 |---|---|---|
-| Payload | MrChromebox EDK2, branch `uefipayload_2605` | GRUB (libgfxinit-only) or SeaBIOS |
-| Boot interface | UEFI | legacy BIOS |
-| coreboot base | upstream, currently 26.06 | pinned to Libreboot's tree (coreboot patchset 25) |
-| Secure Boot | EDK2 Secure Boot, your own keys via `sbctl` | not available |
-| UEFI variable store | SMMSTORE v2, 256 KiB, survives a reflash of the BIOS region | none |
-| Firmware setup menu | EDK2 setup with CFR options (fan profile, ME on/off, AC-loss behaviour) | GRUB/SeaBIOS menu, no UEFI setup |
-| Discrete TPM 2.0 | enabled, seals LUKS for auto-unlock | disabled (SeaBIOS TPM driver hangs the boot) |
-| Fan control | five regulated ACPI levels, four profiles in the setup menu | stock, not addressed |
-| Boot splash | custom 24-bit BMP logo | none |
-| Native graphics init | libgfxinit | libgfxinit |
-| Intel ME | neutralized with `me_cleaner` | neutralized with `me_cleaner` |
-| Intel Boot Guard | bypassed with `deguard` | bypassed with `deguard` |
-| Lenovo EC firmware | kept (Lenovo's, untouched) | kept (`n24ur39w` required) |
-| First flash | external, CH341A + SOIC-8 clip | external, CH341A + SOIC-8 clip |
-| Later flashes | internal, BIOS region only, keeps your keys | internal, once flash protection is off |
-| Build | two-phase, fully offline podman build | `lbmk` |
+| Payload | EDK2 UEFI (`uefipayload_2605`) | GRUB or SeaBIOS (legacy BIOS) |
+| coreboot base | upstream 26.06 | own tree (patchset 25) |
+| Secure Boot | own keys via `sbctl` | — |
+| UEFI variables | SMMSTORE v2, survive reflashing | — |
+| Setup menu | graphical, incl. fan profile / ME / AC-loss | — |
+| TPM 2.0 | on, LUKS auto-unlock | off (SeaBIOS driver bug) |
+| Fan behaviour | 5 regulated levels, 4 profiles | stock two-state (auto / full blast) |
+| `thinkpad_acpi` | loads automatically | needs `force_load=1` (their FAQ) |
+| Bluetooth/WWAN rfkill | works, Fn+F10 toggles | may hard-block, manual unblock (errata) |
+| Fn+F9…F12 | match the keycaps | may stop working (errata) |
+| Kernel cmdline | nothing needed¹ | `thinkpad_acpi.force_load=1` |
+| Boot splash | custom logo | — |
+| Graphics init | libgfxinit | libgfxinit |
+| ME / Boot Guard | `me_cleaner` + `deguard` | `me_cleaner` + `deguard` |
+| EC firmware | Lenovo `n24ur39w`, untouched | Lenovo `n24ur39w`, untouched |
+| First install | external flash (CH341A) | external flash (CH341A) |
+| Updates | internal, keys preserved | internal |
+| Build | two-phase offline podman | `lbmk` |
 
-The trade-off is trust surface for features: Libreboot's payload is fully in
-its own tree, this one pulls in MrChromebox's EDK2. If you don't need UEFI,
-Secure Boot or the TPM, Libreboot is the leaner choice.
+¹ earlier versions of this port required `reboot=pci`; fixed upstream, gone.
+
+Trade-off: Libreboot's payload lives entirely in its own tree, this one adds
+MrChromebox's EDK2. No UEFI, Secure Boot or TPM needed? Take Libreboot.
 
 > [!WARNING]
 > Flashing firmware can permanently brick your laptop. Everything in this repo
