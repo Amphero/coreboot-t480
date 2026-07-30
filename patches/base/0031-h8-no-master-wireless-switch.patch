@@ -1,8 +1,8 @@
 diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
-index 8e1261eb..0676d72d 100644
+index 8e1261eb..5f41446b 100644
 --- a/src/ec/lenovo/h8/Kconfig
 +++ b/src/ec/lenovo/h8/Kconfig
-@@ -88,6 +88,15 @@ config H8_HAS_2ND_THERMAL_ZONE
+@@ -88,6 +88,18 @@ config H8_HAS_2ND_THERMAL_ZONE
  	bool
  	default n
  
@@ -11,33 +11,42 @@ index 8e1261eb..0676d72d 100644
 +	default n
 +	help
 +	  Select this on boards without the physical wireless kill slider.
-+	  The WLSW ACPI method then reports "radio allowed" instead of
-+	  reading the EC bit for the (non-existent) switch, which would
-+	  otherwise make thinkpad_acpi hard-block bluetooth and WWAN.
++	  The WLSW ACPI method is then omitted entirely. Reading the EC bit
++	  for the (non-existent) switch would make thinkpad_acpi hard-block
++	  bluetooth and WWAN; a method reporting a constant "radio allowed"
++	  would make it register a SW_RFKILL_ALL master switch, which the
++	  kernel's rfkill-input handler answers with an unblock of every
++	  radio on each boot. No method, no switch, no side effects.
 +
  config H8_FAN_STEPPED
  	bool
  	default n
 diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
-index 4991c6d1..a69b9248 100644
+index 4991c6d1..1436f524 100644
 --- a/src/ec/lenovo/h8/acpi/thinkpad.asl
 +++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
-@@ -145,7 +145,15 @@ Device (HKEY)
- 	/* Master wireless switch state */
- 	Method (WLSW, 0, NotSerialized)
- 	{
-+#if CONFIG(H8_NO_MASTER_WIRELESS_SWITCH)
-+		/*
-+		 * No physical switch on this board; the EC bit reads 0,
-+		 * which would hard-block bluetooth/WWAN in thinkpad_acpi.
-+		 */
-+		Return (1)
-+#else
- 		Return (\_SB.PCI0.LPCB.EC.GSTS)
-+#endif
+@@ -142,11 +142,20 @@ Device (HKEY)
+ 		Return (0x0100)
  	}
  
+-	/* Master wireless switch state */
++#if !CONFIG(H8_NO_MASTER_WIRELESS_SWITCH)
++	/*
++	 * Master wireless switch state. Boards without the physical
++	 * slider must not provide this method at all: its mere presence
++	 * makes thinkpad_acpi register a SW_RFKILL_ALL input switch, and
++	 * the kernel's rfkill-input handler answers "switch is on" with
++	 * an unblock of every radio on each boot (net/rfkill/input.c,
++	 * handler connect). Returning a constant 1 is not enough.
++	 */
+ 	Method (WLSW, 0, NotSerialized)
+ 	{
+ 		Return (\_SB.PCI0.LPCB.EC.GSTS)
+ 	}
++#endif
+ 
  	/* Set to one on first boot */
+ 	Name (INIT, 0)
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
 index b1e0a77e..138ea6fe 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig

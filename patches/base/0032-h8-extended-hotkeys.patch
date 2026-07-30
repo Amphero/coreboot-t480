@@ -1,10 +1,10 @@
 diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
-index 0676d72d..85d71bea 100644
+index 5f41446b..1421f9ce 100644
 --- a/src/ec/lenovo/h8/Kconfig
 +++ b/src/ec/lenovo/h8/Kconfig
-@@ -97,6 +97,14 @@ config H8_NO_MASTER_WIRELESS_SWITCH
- 	  reading the EC bit for the (non-existent) switch, which would
- 	  otherwise make thinkpad_acpi hard-block bluetooth and WWAN.
+@@ -100,6 +100,14 @@ config H8_NO_MASTER_WIRELESS_SWITCH
+ 	  kernel's rfkill-input handler answers with an unblock of every
+ 	  radio on each boot. No method, no switch, no side effects.
  
 +config H8_EXTENDED_HOTKEYS
 +	bool
@@ -64,7 +64,7 @@ index f30b3830..164feb05 100644
  
  	Method (_Q1F, 0, NotSerialized)
 diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
-index a69b9248..e5b6b10f 100644
+index 1436f524..831a7fd7 100644
 --- a/src/ec/lenovo/h8/acpi/thinkpad.asl
 +++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
 @@ -62,6 +62,19 @@ Device (HKEY)
