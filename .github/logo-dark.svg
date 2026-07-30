@@ -1,24 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 430" width="440" height="430">
-  <g fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round">
-    <!-- chip body -->
-    <rect x="126" y="56" width="188" height="188" rx="34"/>
-    <!-- pins: top -->
-    <path d="M172 56 V22 M220 56 V22 M268 56 V22"/>
-    <!-- pins: bottom -->
-    <path d="M172 244 V278 M220 244 V278 M268 244 V278"/>
-    <!-- pins: left -->
-    <path d="M126 102 H92 M126 150 H92 M126 198 H92"/>
-    <!-- pins: right -->
-    <path d="M314 102 H348 M314 150 H348 M314 198 H348"/>
-  </g>
-  <!-- power symbol -->
-  <g fill="none" stroke="#f06a22" stroke-width="17" stroke-linecap="round">
-    <path d="M196 106 a 46 46 0 1 0 48 0"/>
-    <path d="M220 92 V148"/>
-  </g>
-  <!-- red dot -->
-  <circle cx="285" cy="212" r="15" fill="#e8481c"/>
-  <!-- wordmark -->
-  <text x="220" y="392" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-size="78" font-weight="bold" fill="#f06a22">coreboot</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 70 400 400">
+<defs><linearGradient id="pw" gradientUnits="userSpaceOnUse"
+  x1="155" y1="170" x2="295" y2="330">
+<stop offset="0" stop-color="#F06A22"/><stop offset="1" stop-color="#E8481C"/>
+</linearGradient></defs>
+<g stroke="#E8EAED" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.9">
+  <path d="M 262 120 H 150 Q 95 120 95 175 V 330 Q 95 385 150 385 H 300 Q 355 385 355 330 V 213"/>
+  <line x1="62" y1="195" x2="88" y2="195"/>
+  <line x1="62" y1="252" x2="88" y2="252"/>
+  <line x1="62" y1="309" x2="88" y2="309"/>
+  <line x1="160" y1="392" x2="160" y2="418"/>
+  <line x1="225" y1="392" x2="225" y2="418"/>
+  <line x1="290" y1="392" x2="290" y2="418"/>
+</g>
+<g stroke="url(#pw)" stroke-width="16" stroke-linecap="round" fill="none">
+  <path d="M 195.4 194.6 A 70 70 0 1 0 254.6 194.6"/>
+  <line x1="225" y1="168" x2="225" y2="258"/>
+</g>
+<circle cx="318" cy="347" r="11" fill="#E8481C"/>
 </svg>

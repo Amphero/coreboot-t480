@@ -22,6 +22,36 @@ The board config is from there, the build system around it is new.
 Tested on a Type 20L5 (mainboard NM-B501). The SPI flash is a Winbond W25Q128,
 16 MB, at position U49.
 
+### How this differs from Libreboot
+
+This build reuses Libreboot's `lbmk` for the blob handling, so the lowest
+layer is identical — the same deblobbed image is where the ME and Boot Guard
+mitigations come from. Everything above the payload boundary is different,
+because Libreboot ships a legacy BIOS payload and this ships a UEFI one.
+
+| | This repo | [Libreboot on the T480](https://libreboot.org/docs/install/t480.html) |
+|---|---|---|
+| Payload | MrChromebox EDK2, branch `uefipayload_2605` | GRUB (libgfxinit-only) or SeaBIOS |
+| Boot interface | UEFI | legacy BIOS |
+| coreboot base | upstream, currently 26.06 | pinned to Libreboot's tree (coreboot patchset 25) |
+| Secure Boot | EDK2 Secure Boot, your own keys via `sbctl` | not available |
+| UEFI variable store | SMMSTORE v2, 256 KiB, survives a reflash of the BIOS region | none |
+| Firmware setup menu | EDK2 setup with CFR options (fan profile, ME on/off, AC-loss behaviour) | GRUB/SeaBIOS menu, no UEFI setup |
+| Discrete TPM 2.0 | enabled, seals LUKS for auto-unlock | disabled (SeaBIOS TPM driver hangs the boot) |
+| Fan control | five regulated ACPI levels, four profiles in the setup menu | stock, not addressed |
+| Boot splash | custom 24-bit BMP logo | none |
+| Native graphics init | libgfxinit | libgfxinit |
+| Intel ME | neutralized with `me_cleaner` | neutralized with `me_cleaner` |
+| Intel Boot Guard | bypassed with `deguard` | bypassed with `deguard` |
+| Lenovo EC firmware | kept (Lenovo's, untouched) | kept (`n24ur39w` required) |
+| First flash | external, CH341A + SOIC-8 clip | external, CH341A + SOIC-8 clip |
+| Later flashes | internal, BIOS region only, keeps your keys | internal, once flash protection is off |
+| Build | two-phase, fully offline podman build | `lbmk` |
+
+The trade-off is trust surface for features: Libreboot's payload is fully in
+its own tree, this one pulls in MrChromebox's EDK2. If you don't need UEFI,
+Secure Boot or the TPM, Libreboot is the leaner choice.
+
 > [!WARNING]
 > Flashing firmware can permanently brick your laptop. Everything in this repo
 > is provided WITHOUT ANY WARRANTY and without liability for any damage, as
