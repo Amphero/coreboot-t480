@@ -160,29 +160,49 @@ log "resolved versions:"; sed 's/^/    /' "$LOCK"
 # 2) coreboot  (source + selected submodules + crossgcc toolchain tarballs)
 # =====================================================================
 CB="$SRC/coreboot"
+# Two stamps on purpose: the clone is ~1.5 GB and the tarball download hangs
+# off third-party mirrors that fail on their own schedule. With a single stamp
+# a failed download meant the next run re-cloned everything just to die in the
+# same place.
+crossgcc_fetch() {
+  ( cd "$CB/util/crossgcc" \
+      && ./buildgcc -f "$@" \
+      && ./buildgcc -f -P IASL "$@" \
+      && ./buildgcc -f -P NASM "$@" )
+}
+
 if [ -f "$CB/.stamp-fetch" ] && [ "$REFRESH" != "1" ]; then
   log "coreboot already fetched - skipping"
 else
-  log "fetching coreboot $COREBOOT_REF (+ submodules) ..."
-  rm -rf "$CB"; mkdir -p "$CB"
-  git -C "$CB" init -q
-  git -C "$CB" remote add origin "$CB_URL"
-  # shallow fetch of the exact commit/tag (review.coreboot.org serves SHAs)
-  git -C "$CB" fetch -q --depth 1 origin "$COREBOOT_REF" \
-    || git -C "$CB" fetch -q --depth 1 "$CB_GH" "$COREBOOT_REF" \
-    || die "coreboot fetch of $COREBOOT_REF failed"
-  git -C "$CB" checkout -q FETCH_HEAD
-  for m in "${CB_SUBMODULES[@]}"; do
-    log "  submodule $m ..."
-    git -C "$CB" submodule update --init --checkout -- "$m" \
-      || die "coreboot submodule $m failed"
-  done
+  if [ -f "$CB/.stamp-clone" ] && [ "$REFRESH" != "1" ]; then
+    log "coreboot source already cloned - skipping to the tarballs"
+  else
+    log "fetching coreboot $COREBOOT_REF (+ submodules) ..."
+    rm -rf "$CB"; mkdir -p "$CB"
+    git -C "$CB" init -q
+    git -C "$CB" remote add origin "$CB_URL"
+    # shallow fetch of the exact commit/tag (review.coreboot.org serves SHAs)
+    git -C "$CB" fetch -q --depth 1 origin "$COREBOOT_REF" \
+      || git -C "$CB" fetch -q --depth 1 "$CB_GH" "$COREBOOT_REF" \
+      || die "coreboot fetch of $COREBOOT_REF failed"
+    git -C "$CB" checkout -q FETCH_HEAD
+    for m in "${CB_SUBMODULES[@]}"; do
+      log "  submodule $m ..."
+      git -C "$CB" submodule update --init --checkout -- "$m" \
+        || die "coreboot submodule $m failed"
+    done
+    touch "$CB/.stamp-clone"
+  fi
+
+  # buildgcc pulls gmp/mpfr/mpc/binutils/gcc from ftpmirror.gnu.org, which is
+  # down often enough to matter. Its own -m switch serves the same tarballs
+  # from coreboot.org; the hashes are verified either way, so the fallback
+  # costs nothing but is not the default (upstream first).
   log "pre-loading coreboot crossgcc tarballs (buildgcc -f) ..."
-  ( cd "$CB/util/crossgcc" \
-      && ./buildgcc -f \
-      && ./buildgcc -f -P IASL \
-      && ./buildgcc -f -P NASM ) \
-    || die "crossgcc tarball download (buildgcc -f) failed"
+  crossgcc_fetch || {
+    log "  direct download failed - retrying via the coreboot mirror (-m) ..."
+    crossgcc_fetch -m
+  } || die "crossgcc tarball download failed (upstream and coreboot mirror)"
   ls "$CB/util/crossgcc/tarballs/"*.tar.* >/dev/null 2>&1 \
     || die "no crossgcc tarballs in util/crossgcc/tarballs/"
   touch "$CB/.stamp-fetch"
