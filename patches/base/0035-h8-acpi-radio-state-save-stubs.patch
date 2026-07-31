@@ -1,0 +1,64 @@
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index de954851..7b5fe97d 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -126,6 +126,16 @@ config H8_WWAN_KEEP_STATE
+ 	  forced to the option value, so a radio the OS switched off through
+ 	  HKEY.SWAN stays off across a reboot.
+ 
++config H8_ACPI_RADIO_SAVE_STUBS
++	bool
++	default n
++	help
++	  Provide empty \BLTH and \WGSV methods. thinkpad_acpi calls them at
++	  shutdown to have the firmware save the bluetooth and WWAN radio
++	  state; without them it logs two AE_NOT_FOUND errors on every
++	  shutdown. Only select this together with H8_BLUETOOTH_KEEP_STATE
++	  and H8_WWAN_KEEP_STATE - those are what actually keeps the state.
++
+ config H8_FAN_STEPPED
+ 	bool
+ 	default n
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index 164feb05..be16fc2f 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -446,3 +446,26 @@ Device(PMH7)
+ 	})
+ }
+ #endif
++
++#if CONFIG(H8_ACPI_RADIO_SAVE_STUBS)
++/*
++ * thinkpad_acpi calls these from bluetooth_shutdown() and wan_shutdown() to
++ * have the firmware store the radio state for S4/S5, and logs
++ * "acpi_evalf(\BLTH, vd, ...) failed: AE_NOT_FOUND" when they are missing.
++ * Nothing to do here: the EC keeps register 0x3a across the reset and the
++ * ramstage no longer overwrites it, which is what H8_BLUETOOTH_KEEP_STATE
++ * and H8_WWAN_KEEP_STATE rely on.
++ */
++Scope (\)
++{
++	/* Bluetooth, arg0 = TP_ACPI_BLTH_* command */
++	Method (BLTH, 1, NotSerialized)
++	{
++	}
++
++	/* WWAN, arg0 = TP_ACPI_WGSV_* command */
++	Method (WGSV, 1, NotSerialized)
++	{
++	}
++}
++#endif
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index e89998c5..8e6de026 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -34,6 +34,7 @@ config BOARD_LENOVO_T480
+ 	select BOARD_LENOVO_SKLKBL_THINKPAD_COMMON
+ 	select CSE_DEFAULT_CFR_OPTION_STATE_DISABLED
+ 	select DRIVERS_INTEL_DTBT
++	select H8_ACPI_RADIO_SAVE_STUBS
+ 	select H8_BLUETOOTH_KEEP_STATE
+ 	select H8_EXTENDED_HOTKEYS
+ 	select H8_FAN_STEPPED

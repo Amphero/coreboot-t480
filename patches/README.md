@@ -309,6 +309,42 @@ Notes:
 - Same cold-start caveat as 0033: pulling battery *and* charger clears
   the EC and the radio comes back on.
 
+## base/0035-h8-acpi-radio-state-save-stubs.patch
+
+**Files:** `src/ec/lenovo/h8/Kconfig`, `.../h8/acpi/ec.asl`,
+`src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
+
+Silences two errors `thinkpad_acpi` logs on **every shutdown**:
+
+```
+thinkpad_acpi: acpi_evalf(\WGSV, vd, ...) failed: AE_NOT_FOUND
+thinkpad_acpi: acpi_evalf(\BLTH, vd, ...) failed: AE_NOT_FOUND
+```
+
+For every radio rfkill switch it registers, the driver installs a
+`.shutdown` handler that calls a root-scope ACPI method to have the
+firmware save the radio state for S4/S5 - `\BLTH(5)` for bluetooth,
+`\WGSV(4)` for WWAN. Lenovo's DSDT has both; coreboot has neither, and
+`acpi_evalf()` reports the miss at `KERN_ERR`. They are visible even
+with `quiet loglevel=1` because `systemd-shutdown` raises the console
+loglevel to 5 just before the kernel goes down.
+
+Behind `H8_ACPI_RADIO_SAVE_STUBS` the EC ASL gains two empty methods in
+the root scope. `acpi_evalf(..., "vd", ...)` only checks for `AE_OK`, so
+an empty body is enough and the success path is a `vdbg_printk`, i.e.
+silent.
+
+Why an empty body is honest here: the state *is* preserved, just not the
+way Lenovo's firmware does it. The EC keeps register 0x3a across the
+reset and coreboot no longer overwrites it - that is patches 0033 and
+0034. Without those two the stubs would be claiming something that is
+not true, so do not select this symbol on its own.
+
+The kernel calls `\BLTH`/`\WGSV` nowhere else - only from
+`bluetooth_shutdown()`/`wan_shutdown()` and the `*_exit()` paths that
+reuse them (checked in the 7.1 tree). That also gives a way to test
+without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
@@ -330,7 +366,7 @@ git diff -- <files of that patch> > ../../../patches/base/<same-name>.patch
 ```
 
 Keep the numbering (0001/0002 = setup menu, 0010-0012 = stepped fan,
-0020 = fan profiles, 0030-0034 = OS compatibility) - the patches are
+0020 = fan profiles, 0030-0035 = OS compatibility) - the patches are
 applied in lexical order and later ones build on the context of earlier
 ones (0012 on 0002's Kconfig, 0020 on 0011/0012, 0030 on 0020's
-ramstage.c, 0033 on 0031/0032's Kconfig hunks, 0034 on 0033's).
+ramstage.c, 0033 on 0031/0032's Kconfig hunks, 0034/0035 on 0033's).

@@ -260,6 +260,12 @@ radio has power.
 same way - it is the neighbouring bit in the same EC register (patch
 0034). Untested: there is no WWAN card in the machine this was built on.
 
+At shutdown `thinkpad_acpi` asks the firmware to save both radio states
+through ACPI methods that only Lenovo's BIOS has, and logged two
+`AE_NOT_FOUND` errors when it did not find them. Patch 0035 adds the two
+methods as empty stubs - the state is kept in the EC anyway, so there is
+nothing for them to do.
+
 ## Secure Boot
 
 The firmware starts in Setup Mode. Enroll your own keys from Linux:
