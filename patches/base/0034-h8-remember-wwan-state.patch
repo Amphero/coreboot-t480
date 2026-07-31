@@ -1,0 +1,123 @@
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index cd422d78..de954851 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -117,6 +117,15 @@ config H8_BLUETOOTH_KEEP_STATE
+ 	  being forced to the option value, so a radio the OS switched off
+ 	  through HKEY.SBDC stays off across a reboot.
+ 
++config H8_WWAN_KEEP_STATE
++	bool
++	default n
++	help
++	  Give the "wwan" option a third value, "Last state", and make it the
++	  default. The EC bit is then left untouched at boot instead of being
++	  forced to the option value, so a radio the OS switched off through
++	  HKEY.SWAN stays off across a reboot.
++
+ config H8_FAN_STEPPED
+ 	bool
+ 	default n
+diff --git a/src/ec/lenovo/h8/cfr.h b/src/ec/lenovo/h8/cfr.h
+index 4705b04a..bba9e8ca 100644
+--- a/src/ec/lenovo/h8/cfr.h
++++ b/src/ec/lenovo/h8/cfr.h
+@@ -85,12 +85,29 @@ static const struct sm_object wlan = SM_DECLARE_BOOL({
+ });
+ 
+ /* WWAN */
++#if CONFIG(H8_WWAN_KEEP_STATE)
++static const struct sm_object wwan = SM_DECLARE_ENUM({
++	.opt_name	= "wwan",
++	.ui_name	= "WWAN",
++	.ui_helptext	= "Enable or disable the WWAN module. \"Last state\" "
++			  "leaves the radio the way the OS left it, so "
++			  "switching it off survives a reboot.",
++	.default_value	= H8_WWAN_LAST_STATE,
++	.values		= (const struct sm_enum_value[]) {
++		{ "Disabled",	0 },
++		{ "Enabled",	1 },
++		{ "Last state",	H8_WWAN_LAST_STATE },
++		SM_ENUM_VALUE_END
++	},
++});
++#else
+ static const struct sm_object wwan = SM_DECLARE_BOOL({
+ 	.opt_name	= "wwan",
+ 	.ui_name	= "WWAN",
+ 	.ui_helptext	= "Enable or disable the WWAN module",
+ 	.default_value	= true,
+ });
++#endif
+ 
+ /* Power Management Beeps */
+ static const struct sm_object pm_beeps = SM_DECLARE_BOOL({
+diff --git a/src/ec/lenovo/h8/h8.c b/src/ec/lenovo/h8/h8.c
+index 6bd514b2..283a2a85 100644
+--- a/src/ec/lenovo/h8/h8.c
++++ b/src/ec/lenovo/h8/h8.c
+@@ -343,8 +343,10 @@ static void h8_enable(struct device *dev)
+ 		h8_bluetooth_enable(val);
+ 	}
+ 
+-	val = h8_has_wwan(dev) && h8_wwan_nv_enable();
+-	h8_wwan_enable(val);
++	if (!h8_wwan_nv_keep_state()) {
++		val = h8_has_wwan(dev) && h8_wwan_nv_enable();
++		h8_wwan_enable(val);
++	}
+ 
+ 	if (conf->has_uwb)
+ 		h8_uwb_enable(get_uint_option("uwb", 1));
+diff --git a/src/ec/lenovo/h8/h8.h b/src/ec/lenovo/h8/h8.h
+index 46890335..fd6cd024 100644
+--- a/src/ec/lenovo/h8/h8.h
++++ b/src/ec/lenovo/h8/h8.h
+@@ -33,8 +33,12 @@ bool h8_bluetooth_nv_enable(void);
+ bool h8_bluetooth_nv_keep_state(void);
+ bool h8_has_bdc(const struct device *dev);
+ 
++/* Third value of the "wwan" option, see H8_WWAN_KEEP_STATE */
++#define H8_WWAN_LAST_STATE 2
++
+ void h8_wwan_enable(int on);
+ bool h8_wwan_nv_enable(void);
++bool h8_wwan_nv_keep_state(void);
+ bool h8_has_wwan(const struct device *dev);
+ 
+ void h8_ssdt_generator(const struct device *dev);
+diff --git a/src/ec/lenovo/h8/wwan.c b/src/ec/lenovo/h8/wwan.c
+index edb76659..4df284c9 100644
+--- a/src/ec/lenovo/h8/wwan.c
++++ b/src/ec/lenovo/h8/wwan.c
+@@ -48,3 +48,18 @@ bool h8_wwan_nv_enable(void)
+ {
+ 	return get_uint_option("wwan", true);
+ }
++
++/*
++ * Is the option set to "Last state"? The EC keeps register 0x3a across a
++ * reset, so not writing it leaves the radio the way the OS left it - that
++ * is the only way an OS-side "wwan off" survives a reboot, coreboot has
++ * no other memory of it.
++ */
++bool h8_wwan_nv_keep_state(void)
++{
++	if (!CONFIG(H8_WWAN_KEEP_STATE))
++		return false;
++
++	return get_uint_option("wwan", H8_WWAN_LAST_STATE) ==
++		H8_WWAN_LAST_STATE;
++}
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index 10b30fb4..e89998c5 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -38,6 +38,7 @@ config BOARD_LENOVO_T480
+ 	select H8_EXTENDED_HOTKEYS
+ 	select H8_FAN_STEPPED
+ 	select H8_NO_MASTER_WIRELESS_SWITCH
++	select H8_WWAN_KEEP_STATE
+ 	select SOC_INTEL_KABYLAKE
+ 	select MEC1653_HAS_DEBUG_UNLOCK
+ 	select VARIANT_HAS_DGPU

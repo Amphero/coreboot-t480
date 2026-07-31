@@ -232,7 +232,7 @@ trip points move just below the critical threshold, so the EC curve - or
 your tool - rules alone, with one ACPI escalation left as the last net.
 Curve details and tuning: [patches/README.md](patches/README.md).
 
-## Bluetooth
+## Bluetooth and WWAN
 
 **Embedded Controller → Bluetooth** has three settings:
 
@@ -255,6 +255,10 @@ by unblocking all radios on every boot - details in
 [patches/README.md](patches/README.md). The switch this all controls is
 `tpacpi_bluetooth_sw` in `rfkill list`; `hci0` only exists while the
 radio has power.
+
+**Embedded Controller → WWAN** has the same three settings and works the
+same way - it is the neighbouring bit in the same EC register (patch
+0034). Untested: there is no WWAN card in the machine this was built on.
 
 ## Secure Boot
 

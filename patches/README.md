@@ -274,8 +274,40 @@ Notes:
   the same `SM_DECLARE_BOOL` as upstream.
 - The EC's memory is standby-powered. Removing battery *and* charger
   resets it and the radio comes back on.
-- WWAN uses the same mechanism (`WWEB`, bit 6) and was left alone - no
-  WWAN card here to test it with.
+- WWAN sits in the same register, bit 6, and gets the same treatment in
+  patch 0034.
+
+## base/0034-h8-remember-wwan-state.patch
+
+**Files:** `src/ec/lenovo/h8/Kconfig`, `.../h8/h8.h`, `.../h8/h8.c`,
+`.../h8/wwan.c`, `.../h8/cfr.h`,
+`src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
+
+The same thing 0033 does for bluetooth, for WWAN: `h8_enable()` writes
+EC register 0x3a **bit 6** on every boot from the `wwan` setup option,
+which overwrites whatever the OS left there through `HKEY.SWAN`. Behind
+`H8_WWAN_KEEP_STATE` the option gains a third value, `Last state` (2),
+which is the default and makes `h8_enable()` skip the write.
+
+Mechanically it is a mirror of 0033 - same register, same option style,
+the `wwan` object already sits in the board's "Embedded Controller" form
+(`sklkbl_thinkpad/cfr.c`), so nothing about the menu changes except the
+value list.
+
+Notes:
+
+- The board does not select `H8_HAS_WWAN_GPIO_DETECTION`, so
+  `h8_has_wwan()` always returns true ("Assuming WWAN installed") and
+  bit 6 is written on every boot today. With `Last state` it keeps
+  whatever value it already has.
+- **The WWAN half is untested.** There is no WWAN card in the machine
+  this repo is built for. What was verified: the option shows up, the
+  build is clean, and bit 6 survives a reboot (readable through
+  `ec_sys`, see "EC debugging" in the top-level README). What was not:
+  that a real modem actually stays off. The mechanism itself is the one
+  0033 relies on and that one is verified on hardware.
+- Same cold-start caveat as 0033: pulling battery *and* charger clears
+  the EC and the radio comes back on.
 
 ## tpm-reset/tpm2-clear-on-boot.patch
 
@@ -298,7 +330,7 @@ git diff -- <files of that patch> > ../../../patches/base/<same-name>.patch
 ```
 
 Keep the numbering (0001/0002 = setup menu, 0010-0012 = stepped fan,
-0020 = fan profiles, 0030-0033 = OS compatibility) - the patches are
+0020 = fan profiles, 0030-0034 = OS compatibility) - the patches are
 applied in lexical order and later ones build on the context of earlier
 ones (0012 on 0002's Kconfig, 0020 on 0011/0012, 0030 on 0020's
-ramstage.c, 0033 on 0031/0032's Kconfig hunks).
+ramstage.c, 0033 on 0031/0032's Kconfig hunks, 0034 on 0033's).
