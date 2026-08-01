@@ -37,12 +37,25 @@ FMAP_AREA = "<II32sH"          # offset, size, name[32], flags
 
 
 def parse_fmap(data, label):
-    """Find the FMAP in the image and return {region name: (offset, size)}."""
-    idx = data.find(FMAP_SIG)
-    if idx < 0:
-        sys.exit(f"ERROR: {label}: no FMAP found - is this a coreboot image?")
-    _sig, _vmaj, _vmin, _base, _size, _name, nareas = struct.unpack_from(FMAP_HDR, data, idx)
-    areas, off = {}, idx + struct.calcsize(FMAP_HDR)
+    """Find the FMAP in the image and return {region name: (offset, size)}.
+    The signature can also appear as payload bytes inside CBFS, so candidates
+    are checked for plausibility (known major version, sane area count, table
+    fits the file) and implausible hits are skipped instead of trusted."""
+    hdr_len, area_len = struct.calcsize(FMAP_HDR), struct.calcsize(FMAP_AREA)
+    idx = -1
+    while True:
+        idx = data.find(FMAP_SIG, idx + 1)
+        if idx < 0:
+            sys.exit(f"ERROR: {label}: no valid FMAP found - is this a coreboot image?")
+        if idx + hdr_len > len(data):
+            continue
+        _sig, vmaj, _vmin, _base, _size, _name, nareas = struct.unpack_from(FMAP_HDR, data, idx)
+        if vmaj != 1 or nareas == 0 or nareas > 1024:
+            continue
+        if idx + hdr_len + nareas * area_len > len(data):
+            continue
+        break
+    areas, off = {}, idx + hdr_len
     for _ in range(nareas):
         aoff, asize, aname, _flags = struct.unpack_from(FMAP_AREA, data, off)
         areas[aname.split(b"\0")[0].decode("ascii", "replace")] = (aoff, asize)
