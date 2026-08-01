@@ -63,6 +63,9 @@ sortver(){ sort -V; }
 resolve_pinned(){
   COREBOOT_REF="${COREBOOT_REF:-2a2ab9e0cca320b98fb47ad41a2a4baf7a31b7d2}"
   EDK2_BRANCH="${EDK2_BRANCH:-uefipayload_2603}"
+  # uefipayload_* branch heads MOVE - pin the exact commit, otherwise a fresh
+  # 'pinned' fetch can silently pick up a newer payload than the tested one.
+  EDK2_COMMIT="${EDK2_COMMIT:-1d840d4e6ed0e9a13fee47936c330f4f0cbf6510}"
   LIBREBOOT_VERSION="${LIBREBOOT_VERSION:-26.01rev1}"
   LBMK_REF="${LBMK_REF:-26.01rev1}"
 }
@@ -128,18 +131,26 @@ else
   resolve_latest
 fi
 
-# Derive tarball name + resolve exact commits (so versions.lock is complete)
+# Derive tarball name + resolve exact commits (so versions.lock is complete).
+# Every resolution is guarded: a value already set (pinned constant, frozen
+# lock, env override) is NEVER re-resolved from the network - previously the
+# frozen path loaded the lock and then overwrote EDK2_COMMIT with the current
+# branch head, so the lock could name a commit the tree does not contain.
 LIBREBOOT_TARBALL="libreboot-${LIBREBOOT_VERSION}_t480_vfsp_16mb.tar.xz"
 lsref(){ git ls-remote "$1" "$2" 2>/dev/null | awk 'NR==1{print $1}'; }
-EDK2_COMMIT="$(lsref "$EDK2_URL" "refs/heads/$EDK2_BRANCH")"
-LBMK_COMMIT="$(git ls-remote "$LBMK_URL" "refs/tags/$LBMK_REF^{}" 2>/dev/null | awk 'NR==1{print $1}')"
-[ -n "$LBMK_COMMIT" ] || LBMK_COMMIT="$(lsref "$LBMK_URL" "refs/tags/$LBMK_REF")"
+[ -n "${EDK2_COMMIT:-}" ] || EDK2_COMMIT="$(lsref "$EDK2_URL" "refs/heads/$EDK2_BRANCH")"
+if [ -z "${LBMK_COMMIT:-}" ]; then
+  LBMK_COMMIT="$(git ls-remote "$LBMK_URL" "refs/tags/$LBMK_REF^{}" 2>/dev/null | awk 'NR==1{print $1}')"
+  [ -n "$LBMK_COMMIT" ] || LBMK_COMMIT="$(lsref "$LBMK_URL" "refs/tags/$LBMK_REF")"
+fi
 # coreboot: pinned is already a commit; a tag needs dereferencing
-if printf '%s' "$COREBOOT_REF" | grep -qE '^[0-9a-f]{40}$'; then
-  COREBOOT_COMMIT="$COREBOOT_REF"
-else
-  COREBOOT_COMMIT="$(git ls-remote "$CB_URL" "refs/tags/$COREBOOT_REF^{}" 2>/dev/null | awk 'NR==1{print $1}')"
-  [ -n "$COREBOOT_COMMIT" ] || COREBOOT_COMMIT="$(lsref "$CB_URL" "refs/tags/$COREBOOT_REF")"
+if [ -z "${COREBOOT_COMMIT:-}" ]; then
+  if printf '%s' "$COREBOOT_REF" | grep -qE '^[0-9a-f]{40}$'; then
+    COREBOOT_COMMIT="$COREBOOT_REF"
+  else
+    COREBOOT_COMMIT="$(git ls-remote "$CB_URL" "refs/tags/$COREBOOT_REF^{}" 2>/dev/null | awk 'NR==1{print $1}')"
+    [ -n "$COREBOOT_COMMIT" ] || COREBOOT_COMMIT="$(lsref "$CB_URL" "refs/tags/$COREBOOT_REF")"
+  fi
 fi
 
 cat > "$LOCK" <<EOF
@@ -222,10 +233,29 @@ else
   rm -rf "$SRC/edk2"; mkdir -p "$SRC/edk2"
   git clone -q --branch "$EDK2_BRANCH" --single-branch --recurse-submodules -j"$NPROC" \
     "$EDK2_URL" "$ED" || die "edk2 clone ($EDK2_BRANCH) failed"
-  git -C "$ED" checkout -q --detach "origin/$EDK2_BRANCH"
+  # Detach on the RESOLVED commit, not the branch head - for pinned that is a
+  # constant, so the tree is reproducible even after the branch moved on.
+  if [ -n "${EDK2_COMMIT:-}" ]; then
+    git -C "$ED" checkout -q --detach "$EDK2_COMMIT" \
+      || die "edk2: pinned commit $EDK2_COMMIT not on branch $EDK2_BRANCH (history rewritten?)"
+  else
+    git -C "$ED" checkout -q --detach "origin/$EDK2_BRANCH"
+  fi
   git -C "$ED" submodule update --init --checkout --recursive \
     || die "edk2 submodules failed"
   touch "$SRC/edk2/.stamp-fetch"
+fi
+
+# versions.lock must state what the tree ACTUALLY contains - read the commit
+# back from the checkout instead of trusting an ls-remote answer (the skip
+# path above can keep an older tree than a freshly resolved branch head).
+EDK2_HEAD="$(git -C "$ED" rev-parse HEAD 2>/dev/null)" \
+  || die "edk2: cannot read HEAD of $ED"
+if [ "$EDK2_HEAD" != "$EDK2_COMMIT" ]; then
+  log "edk2: lock said '$EDK2_COMMIT', tree has '$EDK2_HEAD' - recording the tree's commit"
+  EDK2_COMMIT="$EDK2_HEAD"
+  sed -i "s/^EDK2_COMMIT=.*/EDK2_COMMIT=$EDK2_COMMIT/" "$LOCK"
+  grep -q "^EDK2_COMMIT=$EDK2_COMMIT\$" "$LOCK" || die "failed to update EDK2_COMMIT in $LOCK"
 fi
 
 # =====================================================================

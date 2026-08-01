@@ -133,20 +133,25 @@ RUN echo "" && echo "======= STEP 3 - building cross-compiler (from pre-fetched 
 # fail fast - which correctly signals a gap in PHASE 1 rather than looping forever.
 RUN make crossgcc-i386 CPUS="$(nproc)"
 
-# Pin the EDK2 revision coreboot checks out to the branch PHASE 1 actually
-# pre-placed in workspace/mrchromebox. Needed for `latest`: coreboot's Kconfig
-# default may name a different uefipayload_* branch (e.g. 26.06 defaults to
-# uefipayload_2603) than the newest branch we resolved/fetched. Placed AFTER
-# crossgcc so this fix never invalidates the (slow) toolchain cache. No-op for
-# pinned (the pre-placed branch already equals coreboot's default there).
+# Pin the EDK2 revision coreboot checks out to what PHASE 1 actually pre-placed
+# in workspace/mrchromebox: the exact commit from versions.lock when available
+# (deterministic even after the upstream branch moved), the branch name as the
+# fallback. Needed for `latest`: coreboot's Kconfig default may name a different
+# uefipayload_* branch (e.g. 26.06 defaults to uefipayload_2603) than the one we
+# resolved/fetched. Placed AFTER crossgcc so this fix never invalidates the
+# (slow) toolchain cache.
 ARG EDK2_BRANCH
-RUN if [ -n "$EDK2_BRANCH" ]; then \
+ARG EDK2_COMMIT
+RUN REV="$EDK2_COMMIT"; [ -n "$REV" ] || REV="${EDK2_BRANCH:+origin/$EDK2_BRANCH}"; \
+    if [ -n "$REV" ]; then \
       if grep -q '^CONFIG_EDK2_TAG_OR_REV=' .config; then \
-        sed -i 's|^\(CONFIG_EDK2_TAG_OR_REV=\).*|\1"origin/'"$EDK2_BRANCH"'"|' .config; \
+        sed -i 's|^\(CONFIG_EDK2_TAG_OR_REV=\).*|\1"'"$REV"'"|' .config; \
       else \
-        echo "CONFIG_EDK2_TAG_OR_REV=\"origin/$EDK2_BRANCH\"" >> .config; \
+        echo "CONFIG_EDK2_TAG_OR_REV=\"$REV\"" >> .config; \
       fi; \
-      echo "== EDK2 branch pinned to origin/$EDK2_BRANCH =="; \
+      grep -q "^CONFIG_EDK2_TAG_OR_REV=\"$REV\"\$" .config \
+        || { echo "ERROR: failed to pin CONFIG_EDK2_TAG_OR_REV"; exit 1; }; \
+      echo "== EDK2 pinned to $REV =="; \
     fi
 
 RUN echo "" && echo "======= STEP 4 - building coreboot =======" && echo ""

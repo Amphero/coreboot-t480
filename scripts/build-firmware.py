@@ -143,11 +143,14 @@ def build_base(src, image, mac, force):
         return
     print(f"[base] OFFLINE build '{image}' (MAC={mac}, --network=none) - first run ~30-60 min (crossgcc) ...")
     cmd = ["podman", "build", "--network=none", "--build-arg", f"MAC_ADDRESS={mac}"]
-    # Pass the EDK2 branch from versions.lock through to coreboot (CONFIG_EDK2_TAG_OR_REV)
-    # so the pre-placed clone is used instead of coreboot's possibly different default.
+    # Pass the EDK2 branch/commit from versions.lock through to coreboot
+    # (CONFIG_EDK2_TAG_OR_REV) so the exact pre-placed checkout is used.
     edk2_branch = lock_get(src, "EDK2_BRANCH")
     if edk2_branch:
         cmd += ["--build-arg", f"EDK2_BRANCH={edk2_branch}"]
+    edk2_commit = lock_get(src, "EDK2_COMMIT")
+    if edk2_commit:
+        cmd += ["--build-arg", f"EDK2_COMMIT={edk2_commit}"]
     cmd += ["-f", str(BUILD / "Dockerfile.offline"), "-t", image, str(src)]
     run(cmd)
 
