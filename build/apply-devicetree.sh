@@ -31,9 +31,17 @@ NL=$(printf '\nx'); NL=${NL%x}          # a real newline
 # heci1 16.0, fast_spi 1f.5) - everything else is ignored.
 MANAGED="smbus heci1 fast_spi"
 
-# 1) Remove all managed device lines (declarative, idempotent):
+# 1) Remove all managed device lines (declarative, idempotent). Only the
+#    single-line "device ref X on|off end" form is managed; if the device
+#    appears in any other shape (e.g. with a config body), abort instead of
+#    silently inserting a duplicate next to it.
 for ref in $MANAGED; do
-	sed -i "/^[[:space:]]*device ref ${ref} on end[[:space:]]*\$/d" "$DT"
+	sed -i -e "/^[[:space:]]*device ref ${ref} on end[[:space:]]*\$/d" \
+	       -e "/^[[:space:]]*device ref ${ref} off end[[:space:]]*\$/d" "$DT"
+	if grep -q "device ref ${ref} " "$DT"; then
+		echo "apply-devicetree: 'device ref ${ref}' exists in a form this script does not manage - fix devicetree.cb or this script" >&2
+		exit 1
+	fi
 done
 
 # 2) Collect enabled (=y) devices in config order (lines like DT_DEVICE_SMBUS=y,
