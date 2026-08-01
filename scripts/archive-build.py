@@ -10,7 +10,7 @@ even if GitHub / review.coreboot.org / the libreboot mirrors disappear.
 
   python3 scripts/archive-build.py --mode pinned   # or --mode latest
 
-Produces:  podman-image/coreboot-t480-<mode>.tar.zst   (~4-5 GB)
+Produces:  podman-image/coreboot-t480-<mode>.tar.zst   (image ~8 GB -> archive ~2-3 GB)
 
 Restore on any machine with podman:
     zstd -dc coreboot-t480-<mode>.tar.zst | podman load
@@ -46,12 +46,19 @@ def main():
     # pipe podman save (uncompressed) through the compressor
     save = subprocess.Popen(["podman", "save", IMAGE], stdout=subprocess.PIPE)
     cargs = ["zstd", "-T0", "-19", "-o", str(dest)] if comp == "zstd" else ["xz", "-T0", "-c"]
-    if comp == "zstd":
-        subprocess.run(cargs, stdin=save.stdout, check=True)
-    else:
-        with open(dest, "wb") as f:
-            subprocess.run(cargs, stdin=save.stdout, stdout=f, check=True)
-    save.wait()
+    try:
+        if comp == "zstd":
+            subprocess.run(cargs, stdin=save.stdout, check=True)
+        else:
+            with open(dest, "wb") as f:
+                subprocess.run(cargs, stdin=save.stdout, stdout=f, check=True)
+    finally:
+        save.stdout.close()
+        rc = save.wait()
+    if rc != 0:
+        # a half-written archive restores a broken image - remove it
+        dest.unlink(missing_ok=True)
+        sys.exit(f"ERROR: 'podman save {IMAGE}' failed (rc={rc}) - truncated archive deleted.")
 
     size_gb = dest.stat().st_size / 1e9
     print(f"\nDone: {dest}  ({size_gb:.1f} GB)")
