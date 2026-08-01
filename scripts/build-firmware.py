@@ -158,28 +158,43 @@ def container_build(image, no_tpm, setup_mode, enable_rng, outname, reset_patch=
     reset_patch: optional clear patch (patches/tpm-reset/...). If set, it is applied before
     `make` -> a reset ROM that clears the TPM 2.0 via TPM2_Clear on EVERY boot; afterwards
     the ramstage is checked to prove the hook is really in there."""
+    # Every sed below is followed by a grep that PROVES the edit took. sed
+    # exits 0 when its pattern matches nothing (the same failure mode that got
+    # the base patches moved from sed to git apply --check) - and a silently
+    # skipped setup-mode edit would auto-enroll Microsoft keys instead of
+    # starting in Setup Mode.
     steps = ['set -e', 'git config --global --add safe.directory "*"']
     if setup_mode:
         # Comment out the EnrollDefaultKeys DXE -> firmware starts in Setup Mode.
         # dirty tree -> coreboot's edk2 Makefile skips 'git checkout -f', the patch survives.
-        steps.append(rf'sed -i "/EnrollDefaultKeys\/EnrollDefaultKeys\.inf/ s/^/#/" {FDF}')
+        steps += [
+            rf'sed -i "/EnrollDefaultKeys\/EnrollDefaultKeys\.inf/ s/^/#/" {FDF}',
+            rf'grep -q "^#.*EnrollDefaultKeys\.inf" {FDF} || {{ echo "ERROR: EnrollDefaultKeys not commented out in UefiPayloadPkg.fdf (EDK2 layout changed?) - would auto-enroll MS keys"; exit 1; }}',
+        ]
     steps.append('cd /opt/coreboot')
     config_changed = False
     if no_tpm:
         steps += [
             r'sed -i "s/^CONFIG_TPM2=y/# CONFIG_TPM2 is not set/" .config',
+            r'! grep -q "^CONFIG_TPM2=y" .config || { echo "ERROR: CONFIG_TPM2 still enabled after edit"; exit 1; }',
             'grep -q "^CONFIG_EDK2_DISABLE_TPM=y" .config || echo "CONFIG_EDK2_DISABLE_TPM=y" >> .config',
         ]
         config_changed = True
     if enable_rng:
         # EFI_RNG_PROTOCOL (RDRAND): RngDxe+Hash2 hang off NETWORK_DRIVER_ENABLE, the heavy
         # TCP/IP stack off NETWORK_ENABLE (stays off) -> only ~2.5 KB, no network stack.
-        steps.append(
-            r'''grep -q 'NETWORK_DRIVER_ENABLE=TRUE' .config || sed -i 's|^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"|CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\1 -D NETWORK_DRIVER_ENABLE=TRUE"|' .config'''
-        )
+        steps += [
+            r'''grep -q 'NETWORK_DRIVER_ENABLE=TRUE' .config || sed -i 's|^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"|CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\1 -D NETWORK_DRIVER_ENABLE=TRUE"|' .config''',
+            r'''grep -q 'NETWORK_DRIVER_ENABLE=TRUE' .config || { echo "ERROR: could not add NETWORK_DRIVER_ENABLE to CONFIG_EDK2_CUSTOM_BUILD_PARAMS"; exit 1; }''',
+        ]
         config_changed = True
     if config_changed:
         steps.append('make olddefconfig')
+        # olddefconfig re-evaluates defaults/selects - re-check what must survive it.
+        if no_tpm:
+            steps.append(r'! grep -q "^CONFIG_TPM2=y" .config || { echo "ERROR: olddefconfig re-enabled CONFIG_TPM2"; exit 1; }')
+        if enable_rng:
+            steps.append(r'''grep -q 'NETWORK_DRIVER_ENABLE=TRUE' .config || { echo "ERROR: olddefconfig dropped NETWORK_DRIVER_ENABLE"; exit 1; }''')
     if reset_patch:
         # Clear patch ONLY for the reset ROM; must apply cleanly, otherwise abort.
         steps += [
