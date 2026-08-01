@@ -70,8 +70,9 @@ FROM coreboot-t480-deps
 
 # coreboot: full checkout with submodules + crossgcc tarballs already present.
 COPY coreboot /opt/coreboot
-# defconfig + optional splash (glob form does not fail if splash is absent).
+# defconfig + board.conf + optional splash (glob form tolerates a missing splash).
 COPY defconfig /opt/coreboot/defconfig
+COPY board.conf /opt/coreboot/board.conf
 COPY splash.bmp* /opt/coreboot/
 # Config-driven devicetree toggles (reads the "# DT_DEVICE NAME=y/n" markers in
 # defconfig, edits the board devicetree.cb before `make`).

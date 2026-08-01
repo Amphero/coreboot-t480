@@ -22,7 +22,7 @@ set -euo pipefail
 
 PROJECT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$PROJECT/build"        # build recipes: Dockerfile.deps/.offline, fetch-sources.sh, apply-devicetree.sh
-CONFIG="$PROJECT/config"      # board config + boot logo: defconfig, splash.bmp
+CONFIG="$PROJECT/config"      # board config + boot logo: defconfig, board.conf, splash.bmp
 DEPS_IMAGE="coreboot-t480-deps"
 
 MODE="${BUILD_MODE:-pinned}"
@@ -93,6 +93,7 @@ podman run --rm \
 
 # --- freeze the build config next to the sources (self-contained context) ----
 cp -f "$CONFIG/defconfig" "$SRC/defconfig"
+cp -f "$CONFIG/board.conf" "$SRC/board.conf"                    # MAC marker + DT_DEVICE toggles
 cp -f "$BUILD/apply-devicetree.sh" "$SRC/apply-devicetree.sh"   # config-driven devicetree toggles
 [ -f "$CONFIG/splash.bmp" ] && cp -f "$CONFIG/splash.bmp" "$SRC/splash.bmp" || true
 rm -rf "$SRC/patches" && cp -a "$PROJECT/patches" "$SRC/patches" # base patches (Dockerfile.offline) + tpm-reset

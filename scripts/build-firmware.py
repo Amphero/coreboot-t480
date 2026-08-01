@@ -26,7 +26,7 @@ Examples:
 Afterwards set up Secure Boot with sbctl (README.md) - IMPORTANT:
 CMOS battery connected + correct clock, otherwise key enrolling fails!
 """
-import argparse, subprocess, sys, hashlib, shutil, datetime, re
+import argparse, os, subprocess, sys, hashlib, shutil, datetime, re
 from pathlib import Path
 
 PROJECT    = Path(__file__).resolve().parent.parent
@@ -46,13 +46,20 @@ def run(cmd, **kw):
     return subprocess.run(cmd, check=True, **kw)
 
 
-def config_mac():
-    """Read the MAC default from config/defconfig (marker line '# MAC=AA:BB:..')."""
-    for line in (CONFIG / "defconfig").read_text().splitlines():
-        m = re.match(r"\s*#\s*MAC\s*=\s*([0-9A-Fa-f:]{17})\b", line)
-        if m:
-            return m.group(1).lower()
-    return None
+def board_conf():
+    """Parse config/board.conf: plain KEY=value lines, '#' comments ignored.
+    Deliberately NOT sourced as shell - both consumers (this script and
+    build/apply-devicetree.sh) parse the same ^KEY=value shape."""
+    vals = {}
+    f = CONFIG / "board.conf"
+    if f.exists():
+        for line in f.read_text().splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            m = re.match(r"\s*([A-Za-z0-9_]+)\s*=\s*(\S+)", line)
+            if m:
+                vals[m.group(1)] = m.group(2)
+    return vals
 
 
 def image_exists(name):
@@ -94,6 +101,7 @@ def sync_build_config(src):
     That way local defconfig/patch tweaks reach the offline build (context = sources/<mode>/)
     without re-running PHASE 1. Takes effect only with --rebuild-base."""
     shutil.copy2(CONFIG / "defconfig", src / "defconfig")
+    shutil.copy2(CONFIG / "board.conf", src / "board.conf")      # MAC marker + DT_DEVICE toggles
     shutil.copy2(BUILD / "apply-devicetree.sh", src / "apply-devicetree.sh")  # config-driven devicetree toggles
     sp = CONFIG / "splash.bmp"
     if sp.exists():
@@ -104,7 +112,7 @@ def sync_build_config(src):
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(PROJECT / "patches", dst)                    # base patches (Dockerfile.offline) + tpm-reset
-    print(f"[config] defconfig + apply-devicetree.sh + patches/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
+    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
 
 
 def log_versions(src):
@@ -241,10 +249,17 @@ def main():
     ap.add_argument("--output", help="override the output file name entirely (default: coreboot_t480_<version>[...].rom)")
     args = ap.parse_args()
 
-    mac = (args.mac or config_mac() or "").lower()
+    # Precedence: --mac > environment MAC= > config/board.conf. The board.conf
+    # entry ships commented out on purpose - the file is tracked in git and a
+    # MAC is machine identity.
+    mac = (args.mac or os.environ.get("MAC") or board_conf().get("MAC") or "").lower()
     if not re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
-        sys.exit("ERROR: Invalid/missing MAC ('%s'). Put it into config/defconfig as '# MAC=AA:BB:CC:DD:EE:FF' "
-                 "or pass --mac AA:BB:.." % mac)
+        sys.exit("ERROR: no valid MAC ('%s'). Pass it per build (preferred, nothing lands in a "
+                 "tracked file):\n"
+                 "   MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py ...\n"
+                 "   or:  --mac AA:BB:CC:DD:EE:FF\n"
+                 "   or uncomment the MAC= line in config/board.conf (that file is tracked in git).\n"
+                 "   Read yours:  ip link show enp0s31f6 | grep ether" % mac)
 
     # --tpm-reset needs an active TPM (it clears it, after all) and the variant path.
     if args.tpm_reset and args.no_tpm:

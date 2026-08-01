@@ -101,8 +101,10 @@ But once `sources/<mode>/` is filled you can run the build itself manually:
 # build-environment image (only needed if it doesn't exist yet)
 podman build -t coreboot-t480-deps -f build/Dockerfile.deps build
 
-# offline build; the build context is the sources dir, the MAC comes from config/defconfig
-MAC=$(grep -oE '# MAC=\S+' config/defconfig | cut -d= -f2)
+# offline build; the build context is the sources dir. Set YOUR MAC here -
+# there is no placeholder check on this manual path, what you type goes into
+# the GbE region verbatim.
+MAC=AA:BB:CC:DD:EE:FF
 podman build --network=none --build-arg MAC_ADDRESS="$MAC" \
     -f build/Dockerfile.offline -t coreboot-t480-pinned sources/pinned
 
@@ -132,8 +134,16 @@ or from a dump of the original firmware (it sits at offset 0x1000):
 xxd -s 0x1000 -l 6 -p backup.bin | sed 's/../&:/g;s/:$//'
 ```
 
-Then put it in the `# MAC=` line of `config/defconfig`, or pass
-`--mac AA:BB:CC:DD:EE:FF` to the build script. Without a MAC the build aborts.
+Then pass it to the build - preferred, because nothing lands in a tracked file:
+
+```bash
+MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py --mode pinned
+```
+
+(or `--mac AA:BB:CC:DD:EE:FF`). Alternatively uncomment the `MAC=` line in
+`config/board.conf` - note that this file is tracked in git, so the MAC will
+show up in your diffs. Without a MAC from one of the three sources the build
+aborts.
 
 ### Options
 
@@ -145,7 +155,7 @@ Then put it in the `# MAC=` line of `config/defconfig`, or pass
 | `--no-rng` | leave out the RNG |
 | `--plain` | just the raw base ROM (TPM on, Microsoft keys auto-enrolled) |
 | `--version NAME` | version part of the ROM file name (default: `pinned` or the date) |
-| `--rebuild-base` | rebuild from scratch after editing `config/defconfig` |
+| `--rebuild-base` | rebuild from scratch after editing `config/defconfig`, `config/board.conf` or `patches/` |
 
 Patches in `patches/base/` are applied to the coreboot tree when the base
 image is built, in lexical order and with a mandatory `git apply --check` -
@@ -158,13 +168,14 @@ default. **Each patch is documented in
 [patches/README.md](patches/README.md).** Changes here need
 `--rebuild-base`.
 
-The markers at the end of `config/defconfig` toggle optional devices with a
-simple `y`/`n`:
+`config/board.conf` toggles optional devices with a simple `y`/`n`
+(`config/defconfig` is pure Kconfig; machine identity and device toggles
+live in `board.conf`):
 
 ```
-# DT_DEVICE SMBUS=y       # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
-# DT_DEVICE HECI1=n       # HECI1 (PCI 16.0)
-# DT_DEVICE FAST_SPI=n    # Fast SPI (PCI 1f.5)
+DT_DEVICE_SMBUS=y        # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
+DT_DEVICE_HECI1=n        # HECI1 (PCI 16.0)
+DT_DEVICE_FAST_SPI=n     # Fast SPI (PCI 1f.5)
 ```
 
 A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
