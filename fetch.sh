@@ -33,7 +33,7 @@ for a in "$@"; do
     pinned|latest) MODE="$a" ;;
     --refresh)      REFRESH=1 ;;
     --rebuild-deps) REBUILD_DEPS=1 ;;
-    -h|--help) sed -n '3,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '3,/^set -euo pipefail/p' "$0" | head -n -1; exit 0 ;;
     *) echo "Unknown argument: $a" >&2; exit 2 ;;
   esac
 done
