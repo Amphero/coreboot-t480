@@ -136,13 +136,44 @@ def lock_get(src, key):
     return ""
 
 
+def config_hash(src, mac):
+    """Fingerprint of everything that gets baked into the base image: the MAC,
+    versions.lock, defconfig, board.conf, apply-devicetree.sh, splash.bmp and
+    every patches/base/*.patch. Stored as an image label so a later run can
+    tell whether the existing image still matches the working tree."""
+    h = hashlib.sha256()
+    h.update(mac.encode() + b"\0")
+    for name in ("versions.lock", "defconfig", "board.conf",
+                 "apply-devicetree.sh", "splash.bmp"):
+        f = src / name
+        if f.exists():
+            h.update(name.encode() + b"\0" + f.read_bytes() + b"\0")
+    for p in sorted((src / "patches" / "base").glob("*.patch")):
+        h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
 def build_base(src, image, mac, force):
     """Build the offline image: context = sources/<mode>/, --network=none."""
+    chash = config_hash(src, mac)
     if image_exists(image) and not force:
-        print(f"[base] image '{image}' exists - skipping (--rebuild-base to rebuild).")
-        return
+        r = subprocess.run(["podman", "image", "inspect", "-f",
+                            '{{index .Config.Labels "t480.confighash"}}', image],
+                           capture_output=True, text=True)
+        have = r.stdout.strip()
+        if have == chash:
+            print(f"[base] image '{image}' exists and matches config/patches/MAC - skipping.")
+            return
+        if have in ("", "<no value>"):
+            print(f"[base] WARNING: image '{image}' predates the staleness check - cannot verify "
+                  f"it matches the current config/patches. --rebuild-base to be certain.")
+            return
+        sys.exit(f"ERROR: image '{image}' was built from DIFFERENT config/patches/MAC than the "
+                 f"working tree.\n   Your changes are NOT in that image. Rebuild:  --rebuild-base"
+                 f"\n   (or revert the local changes to build the old state)")
     print(f"[base] OFFLINE build '{image}' (MAC={mac}, --network=none) - first run ~30-60 min (crossgcc) ...")
-    cmd = ["podman", "build", "--network=none", "--build-arg", f"MAC_ADDRESS={mac}"]
+    cmd = ["podman", "build", "--network=none", "--build-arg", f"MAC_ADDRESS={mac}",
+           "--label", f"t480.confighash={chash}"]
     # Pass the EDK2 branch/commit from versions.lock through to coreboot
     # (CONFIG_EDK2_TAG_OR_REV) so the exact pre-placed checkout is used.
     edk2_branch = lock_get(src, "EDK2_BRANCH")
