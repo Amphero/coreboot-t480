@@ -17,7 +17,10 @@
 # Keeping the union here means neither build stage ever needs `apt-get` (i.e. no
 # network) in PHASE 2.
 
-FROM debian:bookworm
+# Pinned by digest: the base layer is the one non-reproducible input of the
+# otherwise fully locked build (versions.lock pins every source). Digest of
+# debian:bookworm as pulled on 2026-08-01; bump deliberately, with a rebuild.
+FROM debian:bookworm@sha256:41a613df4beca480a97c22b1f6837f7502cb95206e2cc2daf1ea3cb28f8755ab
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -46,8 +49,9 @@ RUN pip3 install --break-system-packages pefile
 
 # `builder`: an unprivileged user. Both PHASE-2 build stages run as this user
 # because lbmk refuses to run as root (xbmk_init: "this command as root is not
-# permitted"), and it keeps the coreboot/EDK2 build off root too.
-RUN useradd -m -s /bin/bash builder && \
-    echo "builder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# permitted"), and it keeps the coreboot/EDK2 build off root too. No sudoers
+# entry: nothing in either build phase escalates, and a passwordless-root user
+# would defeat the point of dropping privileges.
+RUN useradd -m -s /bin/bash builder
 
 CMD ["bash"]
