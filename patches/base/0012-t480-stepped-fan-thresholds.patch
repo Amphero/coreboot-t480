@@ -26,7 +26,7 @@ index 3a949a2f..0b8dfc8d 100644
  #include <ec/lenovo/h8/acpi/thinkpad_bat_thresholds_b0.asl>
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 new file mode 100644
-index 00000000..b9415483
+index 00000000..4be77dbf
 --- /dev/null
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 @@ -0,0 +1,34 @@
@@ -45,7 +45,7 @@ index 00000000..b9415483
 +#define FAN4_HFSP		0x80	/* resting state - EC automatic */
 +#define FAN3_HFSP		0x02
 +#define FAN2_HFSP		0x04
-+#define FAN1_HFSP		0x06
++#define FAN1_HFSP		0x05	/* 0x06 measured identical to FAN0 */
 +#define FAN0_HFSP		0x07	/* fastest REGULATED level */
 +
 +/*

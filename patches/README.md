@@ -126,13 +126,13 @@ Third fan patch: `select H8_FAN_STEPPED` for the **T480 only** (T470s,
 T480s, T580, X280 stay on upstream behaviour - they are untested) and the
 actual fan curve:
 
-| Level | HFSP | on at | off at | audible |
-|-------|------|-------|--------|---------|
-| 4 | `0x80` | - | - | EC automatic, mostly silent |
-| 3 | `0x02` | 58 C | 50 C | soft hum |
-| 2 | `0x04` | 68 C | 60 C | audible |
-| 1 | `0x06` | 76 C | 68 C | clearly audible |
-| 0 | `0x07` | 85 C | 77 C | loud, but still regulated |
+| Level | HFSP | on at | off at | measured RPM | audible |
+|-------|------|-------|--------|--------------|---------|
+| 4 | `0x80` | - | - | 0 cold, ~2870 after load | EC automatic, mostly silent |
+| 3 | `0x02` | 58 C | 50 C | 2866 | soft hum |
+| 2 | `0x04` | 68 C | 60 C | 3155 | audible |
+| 1 | `0x05` | 76 C | 68 C | 3573 | clearly audible |
+| 0 | `0x07` | 85 C | 77 C | 3994 | loud, but still regulated |
 
 `\TPSV` (90 C, passive throttling) and `\TCRT` (100 C, critical shutdown)
 are untouched - they are the safety net above the curve, not part of it.
@@ -141,9 +141,31 @@ are untouched - they are the safety net above the curve, not part of it.
 with `--rebuild-base`, reflash. Keep each ON above its OFF (hysteresis),
 keep the order monotonic, and keep everything well below `\TCRT`.
 
-Verified on a 20L5: full CPU load levels out at 75-78 C on level 1,
-the hysteresis steps back down cleanly after the load ends, and the old
-unregulated "disengaged" mode no longer occurs at all.
+**Why level 1 is `0x05` and not `0x06`.** All eight HFSP levels were measured
+on a 20L5 - each held 60 s at idle through `thinkpad_acpi fan_control=1`,
+settled RPM taken as the median of the last 20 s:
+
+| HFSP | `0x00` | `0x01` | `0x02` | `0x03` | `0x04` | `0x05` | `0x06` | `0x07` |
+|------|------|------|------|------|------|------|------|------|
+| RPM | 0 | 2665 | 2866 | 3018 | 3155 | 3573 | 3989 | 3994 |
+
+`0x06` and `0x07` are the same speed - 5 RPM apart, 0.13 %. With level 1 on
+`0x06` the `_AC0` trip at 85 C therefore escalated to a fan speed that was
+already running since 76 C: a dead step. At the same time levels 2 and 1 were
+834 RPM apart, by far the largest jump and the one that is actually audible.
+`0x05` closes that hole - the four steps now sit at 2866 / 3155 / 3573 / 3994
+RPM, i.e. 289 / 418 / 421 RPM apart, and `_AC0` becomes a real escalation.
+The trade-off is deliberate: between 76 and 85 C the machine now runs quieter
+and correspondingly warmer.
+
+Verified on a 20L5: the hysteresis steps back down cleanly after the load ends
+and the old unregulated "disengaged" mode no longer occurs at all. Where
+sustained full load settles is **not** reproducible, though: two 10-minute
+`stress-ng --cpu 8` runs ended at 76-77 C on level 1 and at 84-86 C on level 0,
+with the same measured fan speed (3987 / 3981 RPM) both times. Identical
+cooling with a 9 K different equilibrium means the difference comes from the
+heat input or the ambient, not from the curve - do not try to paper over it
+with thresholds.
 
 ## base/0020-cfr-fan-profile-option.patch
 

@@ -180,7 +180,7 @@ index db1b18ac..247153ec 100644
  
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-index b9415483..32d9435b 100644
+index 4be77dbf..8254ba1a 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 @@ -31,4 +31,23 @@
