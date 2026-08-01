@@ -26,7 +26,7 @@ Examples:
 Afterwards set up Secure Boot with sbctl (README.md) - IMPORTANT:
 CMOS battery connected + correct clock, otherwise key enrolling fails!
 """
-import argparse, os, subprocess, sys, hashlib, shutil, datetime, re
+import argparse, os, subprocess, sys, hashlib, shutil, datetime, re, struct
 from pathlib import Path
 
 PROJECT    = Path(__file__).resolve().parent.parent
@@ -263,14 +263,43 @@ def extract_plain(image, outname):
          "bash", "-c", f"cp /opt/coreboot/build/coreboot.rom /out/{outname}"])
 
 
+def fmap_region(data, name):
+    """Locate a region in the ROM's FMAP; None if no plausible FMAP/region.
+    Same plausibility rules as scripts/transfer-settings.py."""
+    sig, hdr, area = b"__FMAP__", "<8sBBQI32sH", "<II32sH"
+    hlen, alen = struct.calcsize(hdr), struct.calcsize(area)
+    idx = -1
+    while True:
+        idx = data.find(sig, idx + 1)
+        if idx < 0:
+            return None
+        if idx + hlen > len(data):
+            continue
+        _s, vmaj, _vmin, _b, _sz, _n, nareas = struct.unpack_from(hdr, data, idx)
+        if vmaj != 1 or nareas == 0 or nareas > 1024 or idx + hlen + nareas * alen > len(data):
+            continue
+        break
+    off = idx + hlen
+    for _ in range(nareas):
+        aoff, asize, aname, _f = struct.unpack_from(area, data, off)
+        if aname.split(b"\0")[0].decode("ascii", "replace") == name:
+            return (aoff, asize)
+        off += alen
+    return None
+
+
 def verify(rom):
     data = rom.read_bytes()
-    mac = ":".join(f"{b:02x}" for b in data[0x1000:0x1006])
+    # MAC sits at the start of the GbE region - locate it via FMAP (offsets may
+    # differ between layouts); 0x1000 is the fallback for the standard IFD.
+    gbe = fmap_region(data, "SI_GBE")
+    mac_off, src = (gbe[0], "FMAP:SI_GBE") if gbe else (0x1000, "offset 0x1000")
+    mac = ":".join(f"{b:02x}" for b in data[mac_off:mac_off + 6])
     ok = len(data) == 16 * 1024 * 1024
     print(f"\n=== {rom.name} ===")
     print(f"  size  : {len(data)} bytes  {'(16 MB, ok)' if ok else 'NOT 16 MB!'}")
-    print(f"  MD5   : {hashlib.md5(data).hexdigest()}")
-    print(f"  MAC   : {mac}")
+    print(f"  SHA256: {hashlib.sha256(data).hexdigest()}")
+    print(f"  MAC   : {mac}  ({src})")
     print(f"  path  : {rom}")
     if not ok:
         sys.exit("  wrong size - build failed?")
