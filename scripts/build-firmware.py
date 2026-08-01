@@ -389,7 +389,8 @@ def main():
     # Optional: additionally a reset ROM (same config + clear patch) from the SAME image.
     reset_out = None
     if reset_patch and not args.plain:
-        reset_out = f"{out[:-4]}_tpmreset.rom"
+        base = out[:-4] if out.endswith(".rom") else out
+        reset_out = f"{base}_tpmreset.rom"
         print(f"\n[tpm-reset] additionally building the reset ROM (clear on EVERY boot): {reset_out}")
         container_build(image, no_tpm, setup_mode, enable_rng, reset_out, reset_patch=reset_patch)
         verify(ROMS / reset_out)
