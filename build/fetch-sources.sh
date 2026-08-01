@@ -280,16 +280,34 @@ else
   done
   [ "$ok" = "1" ] || die "no libreboot mirror served $LIBREBOOT_TARBALL (use LIBREBOOT_TARBALL=...)"
 fi
-# Integrity (sha512) is mandatory; authenticity (gpg) is best-effort.
-if [ -f "$TB.sha512" ]; then
+# Integrity: prefer the SHA512 pinned in the repo (build/libreboot-sha512sums,
+# cross-checked between two mirrors when it was recorded) - a mirror-served
+# .sha512 comes from the SAME origin as the tarball and only catches transfer
+# corruption, not a compromised mirror.
+if grep -q " $LIBREBOOT_TARBALL\$" /work/libreboot-sha512sums 2>/dev/null; then
+  ( cd "$LRDIR" && grep " $LIBREBOOT_TARBALL\$" /work/libreboot-sha512sums | sha512sum -c - ) \
+    || die "libreboot tarball does not match the SHA512 pinned in build/libreboot-sha512sums!"
+  log "libreboot SHA512 ok (pinned in repo)"
+elif [ -f "$TB.sha512" ]; then
   ( cd "$LRDIR" && sha512sum -c "$(basename "$TB").sha512" ) \
     || die "libreboot tarball SHA512 mismatch - corrupt!"
-  log "libreboot SHA512 ok"
+  log "libreboot SHA512 ok (mirror-served - same origin as the tarball, integrity only)"
+else
+  log "WARNING: no SHA512 available for $LIBREBOOT_TARBALL - integrity unverified"
 fi
+# Authenticity: with the bundled key (build/leah-rowe.asc, fingerprint matches
+# LEAH_KEY) a present signature MUST verify; without the key file, best-effort.
 if [ -f "$TB.sig" ]; then
-  gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$LEAH_KEY" 2>/dev/null || true
-  if gpg --verify "$TB.sig" "$TB" 2>/dev/null; then log "libreboot GPG signature ok (Leah Rowe)"
-  else log "libreboot GPG not verified (key missing) - SHA512 already confirmed integrity"; fi
+  if [ -f /work/leah-rowe.asc ]; then
+    gpg --import /work/leah-rowe.asc 2>/dev/null || true
+    gpg --verify "$TB.sig" "$TB" 2>/dev/null \
+      || die "libreboot GPG signature INVALID (key: build/leah-rowe.asc)"
+    log "libreboot GPG signature ok (bundled key, Leah Rowe)"
+  else
+    gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$LEAH_KEY" 2>/dev/null || true
+    if gpg --verify "$TB.sig" "$TB" 2>/dev/null; then log "libreboot GPG signature ok (Leah Rowe)"
+    else log "libreboot GPG not verified (key missing) - SHA512 checked above"; fi
+  fi
 fi
 
 # =====================================================================
