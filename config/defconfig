@@ -13,7 +13,11 @@ CONFIG_MAINBOARD_SMBIOS_PRODUCT_NAME="ThinkPad T480"
 # thinkpad_acpi probes DMI product_version for the word "ThinkPad"; the
 # default "1.0" makes it refuse to load (modprobe: "No such device").
 CONFIG_MAINBOARD_VERSION="ThinkPad T480"
-CONFIG_CBFS_SIZE=0xDC0000
+# vboot: the RO section verifies the signed RW slots A/B before jumping in
+# (docs/vboot-plan.md). Layout comes from vboot.fmd (patch 0040); with
+# FMDFILE set, CBFS_SIZE no longer shapes the layout. Keys: devkeys for now.
+CONFIG_VBOOT=y
+CONFIG_FMDFILE="src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd"
 CONFIG_SMMSTORE=y
 CONFIG_SMMSTORE_V2=y
 CONFIG_SMMSTORE_SIZE=0x40000
