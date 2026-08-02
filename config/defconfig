@@ -14,8 +14,8 @@ CONFIG_MAINBOARD_SMBIOS_PRODUCT_NAME="ThinkPad T480"
 # default "1.0" makes it refuse to load (modprobe: "No such device").
 CONFIG_MAINBOARD_VERSION="ThinkPad T480"
 # vboot: the RO section verifies the signed RW slots A/B before jumping in
-# (docs/vboot-plan.md). Layout comes from vboot.fmd (patch 0040); with
-# FMDFILE set, CBFS_SIZE no longer shapes the layout. Keys: devkeys for now.
+# (docs/vboot-notes.md). Layout comes from vboot.fmd (patch 0040); with
+# FMDFILE set, CBFS_SIZE no longer shapes the layout.
 CONFIG_VBOOT=y
 CONFIG_FMDFILE="src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd"
 # the SoC selects VBOOT_MUST_REQUEST_DISPLAY - without this, normal verified
@@ -31,7 +31,7 @@ CONFIG_VBOOT_ROOT_KEY="/opt/keys/root_key.vbpubk"
 CONFIG_VBOOT_RECOVERY_KEY="/opt/keys/recovery_key.vbpubk"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="/opt/keys/firmware_data_key.vbprivk"
 CONFIG_VBOOT_KEYBLOCK="/opt/keys/firmware.keyblock"
-# SPI write protection for WP_RO - prepared, deliberately off (docs/vboot-plan.md).
+# SPI write protection for WP_RO - prepared, deliberately off (docs/vboot-notes.md).
 # Uses the PCH protected range registers, which have 4 KB granularity and can
 # cover WP_RO exactly; the chip's own BP bits only do power-of-two blocks and
 # would round up to the top 8 MB, taking half of RW_SECTION_B with them.
