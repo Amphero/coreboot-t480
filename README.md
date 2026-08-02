@@ -422,9 +422,12 @@ payload ...) into TPM PCR 2 before running it, so the measurement chain
 starts at the firmware itself instead of at the payload. Inspect it:
 
 ```bash
-sudo cbmem -L          # the eventlog (cbmem lives in util/cbmem of the coreboot tree)
+sudo cbmem -L          # the eventlog
 tpm2_pcrread sha256:2
 ```
+
+`cbmem` is not packaged; build it from the fetched tree:
+`make -C sources/<mode>/coreboot/util/cbmem`.
 
 LUKS can be bound to it on top of the usual policy
 (`systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=2`), so the disk
