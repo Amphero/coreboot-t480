@@ -417,8 +417,8 @@ tpm2_pcrread sha256:2
 
 LUKS can be bound to it on top of the usual policy
 (`systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=2`), so the disk
-only auto-unlocks under unmodified firmware. Know the maintenance cost
-before you do: **every firmware update changes PCR 2** - the first boot
+only auto-unlocks under unmodified firmware. Caveat:
+**every firmware update changes PCR 2** - the first boot
 after flashing falls back to the passphrase, and the binding has to be
 re-enrolled (`systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto
 --tpm2-pcrs=2`).
