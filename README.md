@@ -43,6 +43,7 @@ in the firmware itself.
 | Setup menu | graphical, incl. fan profile / ME / AC-loss | — |
 | TPM 2.0 | on, LUKS auto-unlock | off (SeaBIOS driver bug) |
 | Measured boot | firmware chain into TPM PCR 2 | — |
+| Verified boot | signed RW slots A/B, own keys, RO fallback | — |
 | Fan behaviour | 5 regulated levels, 4 profiles | stock two-state (auto / full blast) |
 | `thinkpad_acpi` | loads automatically | needs `force_load=1` (their FAQ) |
 | Bluetooth/WWAN rfkill | works, Fn+F10 toggles, off stays off | may hard-block, manual unblock (errata) |
@@ -86,11 +87,15 @@ second builds offline:
 
 ```bash
 ./fetch.sh pinned
+sh scripts/gen-vboot-keys.sh                    # once, see Verified boot
 python3 scripts/build-firmware.py --mode pinned
 ```
 
 The ROM ends up in `roms/coreboot_t480_pinned.rom`. The first build takes
 30-60 minutes because coreboot builds its own toolchain, after that it's fast.
+
+The build signs both firmware slots, so it needs a keyset in `keys/` and
+aborts without one rather than falling back to the public vboot devkeys.
 
 `pinned` builds the versions this port was originally validated with;
 `latest` resolves the newest upstream versions at fetch time. The recent
@@ -267,6 +272,11 @@ sudo flashrom -p internal --ifd -i bios -w roms/coreboot_t480_pinned.rom
 sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_pinned.rom
 ```
 
+That writes the whole BIOS region, SMMSTORE included, so settings and
+Secure Boot keys are gone afterwards. To update an existing install and
+keep them, write only the firmware regions - `scripts/flash-vboot.sh`, see
+[Verified boot](#verified-boot).
+
 If flashrom aborts with "Laptop detected", use
 `-p internal:laptop=this_is_not_a_laptop`. Once coreboot is on the chip,
 flashrom finds the coreboot table and usually needs no override.
@@ -379,11 +389,11 @@ either copy the SMMSTORE from a backup into the new ROM:
 python3 scripts/transfer-settings.py backup.bin roms/coreboot_t480_pinned.rom
 ```
 
-or, when flashing internally, write only the COREBOOT region and leave the
-rest of the chip alone:
+or, when flashing internally, write only the firmware regions and leave
+SMMSTORE alone:
 
 ```bash
-sudo flashrom -p internal --fmap -i COREBOOT -w roms/coreboot_t480_pinned.rom
+run0 bash scripts/flash-vboot.sh
 ```
 
 <details>
@@ -539,15 +549,15 @@ python3 scripts/build-firmware.py --mode pinned --tpm-reset
 
 Internal flashing only works with coreboot already on the chip - it needs
 the FMAP that only a coreboot image has, and the vendor BIOS locks the
-flash anyway. Running coreboot, only the COREBOOT region is written, so
+flash anyway. Running coreboot, only the firmware regions are written, so
 all settings survive (boot with `iomem=relaxed`):
 
 ```bash
-sudo flashrom -p internal --fmap -i COREBOOT -w roms/coreboot_t480_pinned_tpmreset.rom
+run0 bash scripts/flash-vboot.sh roms/coreboot_t480_pinned_tpmreset.rom
 # boot once, then:
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0
 tpm2_getcap properties-variable                # ownerAuthSet, disableClear = 0
-sudo flashrom -p internal --fmap -i COREBOOT -w roms/coreboot_t480_pinned.rom
+run0 bash scripts/flash-vboot.sh roms/coreboot_t480_pinned.rom
 ```
 
 Coming straight from the vendor BIOS (e.g. doing the reset as part of the
