@@ -21,6 +21,10 @@ CONFIG_FMDFILE="src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd"
 # the SoC selects VBOOT_MUST_REQUEST_DISPLAY - without this, normal verified
 # boots skip display init entirely (no splash, dark until the kernel)
 CONFIG_VBOOT_ALWAYS_ENABLE_DISPLAY=y
+# nothing else clears the recovery request with a non-vboot payload: the only
+# other caller sits in the depthcharge path. Without this a single recovery
+# event pins the machine to RO boots forever.
+CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y
 CONFIG_SMMSTORE=y
 CONFIG_SMMSTORE_V2=y
 CONFIG_SMMSTORE_SIZE=0x40000
