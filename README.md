@@ -190,6 +190,31 @@ The logo is centered per the BGRT spec, so keep it no larger than the panel
 
 ## Flashing
 
+### Before the first flash
+
+Two things have to happen while the vendor BIOS is still installed - both
+are impossible afterwards:
+
+- **Bring the EC to `n24ur39w`.** Lenovo's updater does not run under
+  coreboot, and this payload does no UEFI capsule updates, so fwupd cannot
+  update BIOS or EC later either. Update (or downgrade) with Lenovo's
+  bootable updater to the BIOS release that carries EC firmware
+  `n24ur39w` - coreboot's EC support, including the debug UART unlock, is
+  written against exactly that EC code. In the vendor BIOS setup disable
+  "Secure Rollback Prevention" and enable "Flash BIOS Updating by End
+  Users" (both under Security → UEFI BIOS Update Option); the bootable
+  updater wants Secure Boot off and legacy/CSM boot on. Run it on AC with
+  a charged battery and pick the option that also updates the EC.
+- **Dump the original firmware.** Once before the Lenovo update and once
+  more right before flashing coreboot - the second dump is what you
+  restore if anything goes wrong.
+
+> [!WARNING]
+> This ROM is for the T480 only. The T480s looks the same on the outside
+> but is wired differently - flashing a T480 image onto it bricks it.
+
+### External flashing
+
 External flashing with the CH341A is the safe way. Laptop fully powered off,
 battery disconnected, clip on U49, pin 1 on the dot.
 
