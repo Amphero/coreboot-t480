@@ -177,10 +177,12 @@ Config/build changes outside the patch series:
   case exactly: "platforms without vboot-integrated payloads, to avoid
   being stuck in the recovery mode". The request stays in VBNV, so every
   boot re-enters recovery: RO code, no MRC cache, full memory training.
-  Fix: `CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y`. Until then the
-  request can be cleared by hand in CMOS (VBNV lives at
-  `CONFIG_VBOOT_VBNV_OFFSET + 14` = 0x34, byte 2 is the request, byte 15
-  the CRC8).
+  Fix: `CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y` - verified on
+  hardware: the first boot after flashing still runs recovery and clears
+  the request, the second one selects a slot again and rewrites
+  RW_MRC_CACHE. Alternatively the request can be cleared by hand in CMOS
+  (VBNV lives at `CONFIG_VBOOT_VBNV_OFFSET + 14` = 0x34, byte 2 is the
+  request, byte 15 the CRC8).
   Diagnosing it: "MRC: failed to locate region type 0" appears if and
   only if the boot is a recovery boot - `normal_training` carries
   NORMAL_FLAG only (vboot starts in the bootblock) and there is no
