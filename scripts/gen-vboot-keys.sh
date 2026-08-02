@@ -19,13 +19,19 @@ set -eu
 PROJECT="$(cd "$(dirname "$0")/.." && pwd)"
 KEYS="$PROJECT/keys"
 IMAGE="${IMAGE:-coreboot-t480-deps}"
-MODE="${MODE:-latest}"
-CB="$PROJECT/sources/$MODE/coreboot"
 
 die() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# Any fetched tree will do - only the vboot sources are used here.
+CB=""
+for m in ${MODE:-pinned latest}; do
+	if [ -d "$PROJECT/sources/$m/coreboot/3rdparty/vboot" ]; then
+		CB="$PROJECT/sources/$m/coreboot"; break
+	fi
+done
+
 command -v podman >/dev/null || die "podman is missing"
-[ -d "$CB/3rdparty/vboot" ] || die "no vboot tree in $CB - run ./fetch.sh $MODE first"
+[ -n "$CB" ] || die "no fetched sources with a vboot tree - run ./fetch.sh first"
 podman image exists "$IMAGE" || die "image '$IMAGE' does not exist - run ./fetch.sh first"
 [ -e "$KEYS/root_key.vbpubk" ] && die "keys/ already holds a keyset - move it away first"
 
