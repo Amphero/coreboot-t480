@@ -97,6 +97,20 @@ def verify_checksums(src):
     print("   SHA256: OK")
 
 
+def require_vboot_keys():
+    """With CONFIG_VBOOT=y and no keys/, coreboot silently signs with the public
+    vboot devkeys - anyone could then build an image this firmware accepts. Stop
+    instead: the signature would look fine and mean nothing."""
+    defconfig = (CONFIG / "defconfig").read_text()
+    if not re.search(r"^CONFIG_VBOOT=y", defconfig, re.M):
+        return
+    if (KEYS / "root_key.vbpubk").exists():
+        return
+    sys.exit("ERROR: CONFIG_VBOOT=y but keys/ has no keyset - the build would sign with\n"
+             "   the public vboot devkeys, which anyone can use.\n"
+             "   Generate your own:  sh scripts/gen-vboot-keys.sh")
+
+
 def sync_build_config(src):
     """Mirror the current config/defconfig (+splash.bmp) and patches/ into sources/<mode>/.
     That way local defconfig/patch tweaks reach the offline build (context = sources/<mode>/)
@@ -372,6 +386,7 @@ def main():
     # PHASE 1 must have run - no silent fallback to online/another mode.
     src = require_sources(args.mode)
     verify_checksums(src)
+    require_vboot_keys()
     sync_build_config(src)
     log_versions(src)
 
