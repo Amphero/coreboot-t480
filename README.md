@@ -274,7 +274,7 @@ sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_pinned.rom
 
 That writes the whole BIOS region, SMMSTORE included, so settings and
 Secure Boot keys are gone afterwards. To update an existing install and
-keep them, write only the firmware regions - `scripts/flash-vboot.sh`, see
+keep them, write only the firmware regions - see
 [Verified boot](#verified-boot).
 
 If flashrom aborts with "Laptop detected", use
@@ -393,7 +393,8 @@ or, when flashing internally, write only the firmware regions and leave
 SMMSTORE alone:
 
 ```bash
-run0 bash scripts/flash-vboot.sh
+sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -w roms/coreboot_t480_pinned.rom
 ```
 
 <details>
@@ -511,29 +512,16 @@ futility vbutil_keyblock --unpack firmware.keyblock --signpubkey root_key.vbpubk
 
 Losing them is not fatal as long as WP_RO is still writable: generate a
 new keyset, rebuild, and flash - the new root key goes into the GBB in
-WP_RO and the new slots match it. Writing only the slots would leave the
-old root key in place and both slots would be refused, so let
-`flash-vboot.sh` write WP_RO along with them, which it does by default.
-The TPM is not cleared again; its vboot spaces already exist. Once WP_RO
-is write-protected (#3) this stops working and a lost keyset means an
-external flash.
+WP_RO and the new slots match it. Write `WP_RO` along with the slots;
+slots alone would leave the old root key in place and both would be
+refused. The TPM is not cleared again; its vboot spaces already exist.
+Once WP_RO is write-protected (#3) this stops working and a lost keyset
+means an external flash.
 
 ### Updating
 
-```bash
-python3 scripts/build-firmware.py --mode latest
-run0 bash scripts/flash-vboot.sh
-```
-
-Picks the newest ROM in `roms/`, takes a backup, checks that chip and
-image agree (layouts match, both slots signed, MAC unchanged, Platform
-Key present), then writes `WP_RO` and both slots. SMMSTORE, the MRC cache
-and the vboot state are left alone, so settings and Secure Boot keys
-survive. Reboot afterwards.
-
-<details>
-<summary>By hand</summary>
-<br>
+Boot with `iomem=relaxed`, back up the chip first, then write the three
+firmware regions:
 
 ```bash
 sudo flashrom -p internal -r backup.bin
@@ -543,10 +531,16 @@ sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
     -v roms/coreboot_t480_<date>.rom
 ```
 
+SMMSTORE, the MRC cache and the vboot state are outside those regions, so
+settings and Secure Boot keys survive. Reboot afterwards.
+
 Slot-only changes can skip `WP_RO`; anything touching verstage, the
 bootblock, the GBB or the RO payload needs it.
 
-</details>
+Worth checking before the write, because flashrom will not: that the ROM
+carries the same MAC as the chip (`xxd -s 0x1000 -l 6 -p`), and that both
+images use the same FMAP layout - a layout change needs the migration
+path, not this one.
 
 > [!NOTE]
 > The first boot after enabling vboot clears the TPM. coreboot's
@@ -642,17 +636,12 @@ flash anyway. Running coreboot, only the firmware regions are written, so
 all settings survive (boot with `iomem=relaxed`):
 
 ```bash
-run0 bash scripts/flash-vboot.sh roms/coreboot_t480_pinned_tpmreset.rom
+R="-i WP_RO -i RW_SECTION_A -i RW_SECTION_B"
+sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_pinned_tpmreset.rom
 # boot once, then:
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0
 tpm2_getcap properties-variable                # ownerAuthSet, disableClear = 0
-run0 bash scripts/flash-vboot.sh roms/coreboot_t480_pinned.rom
-```
-
-Without the script, both writes are:
-
-```bash
-sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B -w <rom>
+sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_pinned.rom
 ```
 
 Coming straight from the vendor BIOS (e.g. doing the reset as part of the
