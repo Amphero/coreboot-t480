@@ -356,7 +356,7 @@ the root scope. `acpi_evalf(..., "vd", ...)` only checks for `AE_OK`, so
 an empty body is enough and the success path is a `vdbg_printk`, i.e.
 silent.
 
-Why an empty body is honest here: the state *is* preserved, just not the
+Why an empty body is correct here: the state *is* preserved, just not the
 way Lenovo's firmware does it. The EC keeps register 0x3a across the
 reset and coreboot no longer overwrites it - that is patches 0033 and
 0034. Without those two the stubs would be claiming something that is
