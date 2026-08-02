@@ -480,8 +480,13 @@ sh scripts/gen-vboot-keys.sh
 ```
 
 That writes `root_key`, `firmware_data_key`, `recovery_key` and
-`firmware.keyblock`. Keep a copy elsewhere - without the private keys you
-cannot build firmware the RO on your chip accepts.
+`firmware.keyblock`.
+
+Storing them is about theft, not loss. Whoever holds the private keys can
+build firmware this machine accepts, and there is no revocation list -
+the only way to invalidate a stolen key is to put a new root key into the
+GBB, which is the same procedure as below. Losing the keys, on the other
+hand, costs you one rebuild.
 
 <details>
 <summary>By hand</summary>
@@ -518,22 +523,42 @@ futility vbutil_keyblock --unpack firmware.keyblock --signpubkey root_key.vbpubk
 
 </details>
 
-Losing them is not fatal as long as WP_RO is still writable:
+#### Replacing the keyset
+
+Same procedure whether you lost the keys, suspect they leaked, or just
+want new ones. It is a normal update that happens to carry a new root
+key:
 
 ```bash
+mv keys keys.old                     # gen-vboot-keys.sh will not overwrite
 sh scripts/gen-vboot-keys.sh
 python3 scripts/build-firmware.py --mode latest --rebuild-base
-# then flash as under Updating
+sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -w roms/coreboot_t480_<date>.rom
 ```
 
-The new root key goes into the GBB in WP_RO and the new slots match it.
-Write `WP_RO` along with the slots; slots alone would leave the old root
-key in place and both would be refused. Secure Boot keys, boot entries
-and setup options are unaffected - they sit in SMMSTORE. The TPM is not
-cleared again either; its vboot spaces already exist.
+Nothing else has to be prepared, and nothing is lost:
 
-Once WP_RO is write-protected (#3) this stops working and a lost keyset
-means an external flash.
+- Secure Boot keys, boot entries and setup options sit in SMMSTORE, which
+  is outside the three written regions.
+- The TPM is not cleared - its vboot spaces already exist - so a LUKS
+  auto-unlock keeps working.
+- The old keyset is not needed anywhere in the process. The new root key
+  replaces the old one in the GBB, and both slots are re-signed with the
+  new firmware key.
+
+Two things to watch:
+
+- **`WP_RO` has to be written.** The root key lives there. Writing only
+  the slots leaves the old root key in place, both slots fail
+  verification, and the machine ends up in a recovery boot. That is
+  recoverable - repeat the flash with `WP_RO` included - but avoidable.
+- **Once `WP_RO` is write-protected (#3), this stops working.** The root
+  key is then out of reach from a running system and replacing the keyset
+  needs the external programmer.
+
+A power cut in the middle is survivable: RO and slots no longer match,
+the machine boots the RO copy, and the flash can be repeated from there.
 
 ### Updating
 
