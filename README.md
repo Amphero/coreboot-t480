@@ -266,6 +266,28 @@ flashrom finds the coreboot table and usually needs no override.
 
 If flashrom says the BIOS region is read-only, flash externally.
 
+## Thunderbolt firmware
+
+The Thunderbolt controller has its own small SPI flash (the second SOIC-8
+next to U49) and a known firmware bug: the controller writes debug logs
+into that flash, among other things every time a USB-C charger is plugged
+in. Once the flash is full, Thunderbolt PCIe and fast charging stop
+working (slow charging survives). Lenovo's fix is a Thunderbolt firmware
+update to NVM 23, and it installs from Linux with coreboot running - the
+controller is flashed through the kernel's thunderbolt interface, no UEFI
+needed:
+
+```bash
+fwupdmgr update        # "Thunderbolt host controller" -> NVM 23.00
+```
+
+Verified on this build (20.00 -> 23.00 with coreboot running). If the
+flash has already filled up and the controller is dead, fwupd no longer
+sees it - recovery is then external, on the small SOIC-8: erase, flash a
+1 MB null image, boot the machine once, then flash Lenovo's `tb.bin`. The
+procedure is in [Libreboot's T480 guide](https://libreboot.org/docs/install/t480.html)
+under "Thunderbolt issue".
+
 ## Fan control
 
 The fan runs in five regulated levels driven by the ACPI thermal zone -
