@@ -136,12 +136,28 @@ Config/build changes outside the patch series:
 - **M4 integration:** update flow + README, decision on SPI write
   protection for WP_RO (see open questions), rebase onto main.
 
+## M1 findings (hardware, 2026-08-02)
+
+- Migration flash over the old FMAP+COREBOOT regions worked; slot A
+  boots verified (cbmem: "Slot A is selected", VB2 digests up to the
+  payload). Secure Boot enabled, SMMSTORE and settings intact.
+- First boot factory-initializes the TPM secdata spaces and starts with
+  `tlcl_force_clear()` (`security/vboot/secdata_tpm2.c`): every
+  TPM-sealed secret is invalidated once - LUKS falls back to the
+  passphrase and needs a re-enroll (wipe-slot=tpm2, delete
+  `/var/lib/systemd/tpm2-srk-public-key.*`, enroll again). Goes into
+  the README when this merges.
+- No splash: `VBOOT_MUST_REQUEST_DISPLAY` (selected by the SoC) skips
+  display init on normal verified boots. Fixed with
+  `VBOOT_ALWAYS_ENABLE_DISPLAY=y`; the decision is taken in verstage
+  (RO), so shipping the fix needs a WP_RO write, not just a slot update.
+- vboot measurements landed in PCR 1 (GBB HWID), PCR 2 changed with the
+  new measurement paths; PCR 0/3 unchanged.
+
 ## Open questions / risks
 
-1. **TPM interplay:** vboot does TPM2 startup early and owns secdata;
-   EDK2's Tcg2 stack starts the TPM again (benign INVALID_POSTINIT seen
-   today) and measured boot extends PCRs. All three must coexist -
-   M1 explicitly checks eventlog + PCRs + Secure Boot afterwards.
+1. **TPM interplay:** resolved in M1, see findings - the three users
+   coexist; the one-time cost is the factory-init TPM clear.
 2. **VBNV in CMOS:** no option table, offset looks free (verified), but
    confirm nothing else in the port touches those RTC bytes.
 3. **SPI write protection for WP_RO:** W25Q128 SRP/WP# wiring on the
