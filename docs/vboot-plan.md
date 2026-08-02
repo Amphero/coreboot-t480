@@ -115,7 +115,7 @@ Config/build changes outside the patch series:
   and SMMSTORE are skipped and thereby preserved:
   `flashrom -p internal --fmap -i FMAP -i COREBOOT -w <new>.rom`.
   Needs its own checked script (the regular one refuses on FMAP
-  mismatch, correctly) and the external programmer at hand. AFTER
+  mismatch) and the external programmer at hand. AFTER
   migration, updates write RW_SECTION_A only - `--fmap` then reads the
   new chip FMAP, which matches the image again.
 
@@ -148,7 +148,7 @@ Config/build changes outside the patch series:
    T480 is unknown; without it, vboot's RO is only as trustworthy as the
    last flash. Investigate flashrom's WP commands on the internal
    programmer in M4 - until then this is tamper-evidence, not tamper-proof
-   (same honest limit as measured boot).
+   (same limit as measured boot).
 4. **Recovery UX:** no Chrome EC, so no keyboard combo. Recovery request
    works via VBNV flag from the OS; document how, or wire a key in 0042.
 5. **SMMSTORE access:** the runtime store is coreboot's SMM driver, and
