@@ -42,11 +42,12 @@ podman run --rm --userns=keep-id -v "$CB":/cb:z -v "$KEYS":/keys:z "$IMAGE" sh -
 	INC=$(dirname $(find . -name openssl_compat.h | head -1))
 	cc -O2 -o /tmp/dumpRSAPublicKey utility/dumpRSAPublicKey.c -I"$INC" -lcrypto 2>/dev/null
 	# USE_FLASHROM=0: the libflashrom headers are not in the build image and
-	# futility does not need them for key handling.
-	make USE_FLASHROM=0 -j"$(nproc)" futil >/dev/null 2>&1 || true
-	FUT=$(find build -name futility -type f | head -1)
-	[ -n "$FUT" ] || { echo "could not build futility"; exit 1; }
-	FUT=$(cd "$(dirname "$FUT")" && pwd)/futility
+	# futility does not need them for key handling. BUILD=/tmp keeps the
+	# artifacts out of the mounted tree - that tree is the offline build
+	# context, and touching it invalidates the crossgcc layer cache.
+	make USE_FLASHROM=0 BUILD=/tmp/vbuild -j"$(nproc)" futil >/dev/null 2>&1 || true
+	FUT=/tmp/vbuild/futility/futility
+	[ -x "$FUT" ] || { echo "could not build futility"; exit 1; }
 	for c in vbutil_key vbutil_keyblock; do
 		printf "#!/bin/sh\nexec %s %s \"\$@\"\n" "$FUT" "$c" > /tmp/$c
 		chmod +x /tmp/$c
@@ -71,7 +72,9 @@ chmod 600 "$KEYS"/*.vbprivk
 echo
 echo "keyset in $KEYS:"
 podman run --rm --userns=keep-id -v "$CB":/cb:z -v "$KEYS":/keys:z "$IMAGE" sh -c '
-	F=$(find /cb/3rdparty/vboot/build -name futility -type f | head -1)
+	cd /cb/3rdparty/vboot
+	make USE_FLASHROM=0 BUILD=/tmp/vbuild -j"$(nproc)" futil >/dev/null 2>&1 || true
+	F=/tmp/vbuild/futility/futility
 	cd /keys
 	for k in root_key firmware_data_key recovery_key; do
 		printf "  %-20s " "$k"
