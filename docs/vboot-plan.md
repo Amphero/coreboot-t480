@@ -161,6 +161,15 @@ Config/build changes outside the patch series:
   is selected" and comes up complete (Secure Boot enabled, payload from
   the B slot). No user-visible difference - both slots hold the same
   image. Tooling: `scripts/vboot-slots.sh`.
+- Slot selection is sticky. `vb2_select_fw_slot()` takes the slot from
+  `VB2_NV_TRY_NEXT` and the fallback writes that field permanently
+  (2misc.c:408) - restoring VBLOCK_A does not move the machine back to
+  slot A, and nothing in the firmware ever does. Upstream expects the
+  OS updater to steer it (`crossystem fw_try_next`). Harmless while both
+  slots carry the same image, but M4 needs an answer: build crossystem
+  (needs libflashrom headers in the deps image), write the VBNV bytes
+  directly (CMOS offset 0x26, CRC8 over the record), or document that
+  clearing CMOS resets the choice to A.
 
 ## Open questions / risks
 
