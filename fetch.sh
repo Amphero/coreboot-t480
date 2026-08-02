@@ -41,6 +41,10 @@ done
 
 die(){ printf '\n\033[1;31mfetch.sh ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 command -v podman >/dev/null || die "podman is missing (sudo pacman -S podman)"
+if [ -f /etc/subuid ] && ! grep -q "^$(id -un):" /etc/subuid; then
+  echo "fetch.sh: no /etc/subuid entry for $(id -un) - rootless podman may need:"
+  echo "    sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $(id -un)"
+fi
 
 SRC="$PROJECT/sources/$MODE"
 mkdir -p "$SRC/libreboot"
