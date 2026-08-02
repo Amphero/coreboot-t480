@@ -215,8 +215,19 @@ are impossible afterwards:
 
 ### External flashing
 
-External flashing with the CH341A is the safe way. Laptop fully powered off,
-battery disconnected, clip on U49, pin 1 on the dot.
+External flashing with the CH341A is the safe way, and the only way for
+the first install. Power off, unplug AC, remove the external battery, take
+off the bottom cover (all screws out, then pry gently - Lenovo's Hardware
+Maintenance Manual or any teardown video shows how), unplug the internal
+battery's connector from the board and pop out the CR2032 coin cell.
+
+The chip is the Winbond W25Q128 at U49, towards the middle of the board
+near the RAM slots. A second, smaller SOIC-8 nearby holds the Thunderbolt
+firmware (see below) - don't clip that one. Clip on U49, pin 1 on the dot.
+
+The W25Q128 is a 3.3 V chip and many cheap CH341A boards drive the data
+lines at 5 V - use a fixed/modded one. Wiring and general SPI flashing:
+[Libreboot's 25xx NOR guide](https://libreboot.org/docs/install/spi.html).
 
 ```bash
 # read twice and compare - no diff output means good clip contact
@@ -228,11 +239,17 @@ sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
 sudo flashrom -p ch341a_spi -v roms/coreboot_t480_pinned.rom
 ```
 
-After flashing: reconnect the CMOS battery, boot and set the clock
-(`sudo timedatectl set-ntp true`).
+A bad flash is not fatal as long as the backup exists: flash the backup
+back the same way and the machine is exactly where it started. The only
+real way to lose the machine is to lose the backup.
+
+After flashing: reconnect the internal battery and the CMOS battery, boot
+and set the clock (`sudo timedatectl set-ntp true`).
 
 > [!NOTE]
 > The clock matters. Secure Boot key enrollment silently fails if it's wrong.
+
+### Internal flashing
 
 Internal flashing works too (boot with `iomem=relaxed`), but a failed write
 bricks the machine, so keep the programmer at hand:
