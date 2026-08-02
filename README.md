@@ -537,10 +537,9 @@ settings and Secure Boot keys survive. Reboot afterwards.
 Slot-only changes can skip `WP_RO`; anything touching verstage, the
 bootblock, the GBB or the RO payload needs it.
 
-Worth checking before the write, because flashrom will not: that the ROM
-carries the same MAC as the chip (`xxd -s 0x1000 -l 6 -p`), and that both
-images use the same FMAP layout - a layout change needs the migration
-path, not this one.
+flashrom checks neither of these: that the ROM carries the same MAC as
+the chip (`xxd -s 0x1000 -l 6 -p`), and that both use the same FMAP
+layout. A layout change needs the migration path, not this one.
 
 > [!NOTE]
 > The first boot after enabling vboot clears the TPM. coreboot's
@@ -594,7 +593,7 @@ A recovery boot - both slots unusable - runs the RO copy and comes up
 fully, so the slots can be rewritten from there. It skips the MRC cache
 and retrains memory, which costs a minute or two of black screen.
 
-### What this does and does not buy you
+### Limits
 
 Firmware in the RW slots cannot be swapped for something you did not
 sign: a correctly signed image from a different keyset is refused and the
