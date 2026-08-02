@@ -474,6 +474,41 @@ That writes `root_key`, `firmware_data_key`, `recovery_key` and
 `firmware.keyblock`. Keep a copy elsewhere - without the private keys you
 cannot build firmware the RO on your chip accepts.
 
+<details>
+<summary>By hand</summary>
+<br>
+
+Tools first - `dumpRSAPublicKey` needs compiling, `vbutil_*` only exist
+as futility subcommands (`$V` = `3rdparty/vboot`):
+
+```bash
+cc -O2 -o dumpRSAPublicKey $V/utility/dumpRSAPublicKey.c -I$V/host/include -lcrypto
+make -C $V USE_FLASHROM=0 futil
+```
+
+Per key, algorithm 8 = RSA4096/SHA512 (root, recovery), 7 = RSA4096/SHA256
+(firmware data):
+
+```bash
+openssl genrsa -F4 -out root_key_4096.pem 4096
+openssl req -batch -new -x509 -key root_key_4096.pem -out root_key_4096.crt
+./dumpRSAPublicKey -cert root_key_4096.crt > root_key_4096.keyb
+futility vbutil_key --pack root_key.vbpubk  --key root_key_4096.keyb --version 1 --algorithm 8
+futility vbutil_key --pack root_key.vbprivk --key root_key_4096.pem --algorithm 8
+rm root_key_4096.{pem,crt,keyb}
+```
+
+Then the keyblock (flags 23 = dev switch either way, not recovery, not
+miniOS):
+
+```bash
+futility vbutil_keyblock --pack firmware.keyblock --flags 23 \
+    --datapubkey firmware_data_key.vbpubk --signprivate root_key.vbprivk
+futility vbutil_keyblock --unpack firmware.keyblock --signpubkey root_key.vbpubk
+```
+
+</details>
+
 Losing them is not fatal as long as WP_RO is still writable: generate a
 new keyset, rebuild, and flash - the new root key goes into the GBB in
 WP_RO and the new slots match it. Writing only the slots would leave the
@@ -496,15 +531,22 @@ Key present), then writes `WP_RO` and both slots. SMMSTORE, the MRC cache
 and the vboot state are left alone, so settings and Secure Boot keys
 survive. Reboot afterwards.
 
-By hand it is:
+<details>
+<summary>By hand</summary>
+<br>
 
 ```bash
+sudo flashrom -p internal -r backup.bin
 sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
     -w roms/coreboot_t480_<date>.rom
+sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -v roms/coreboot_t480_<date>.rom
 ```
 
 Slot-only changes can skip `WP_RO`; anything touching verstage, the
 bootblock, the GBB or the RO payload needs it.
+
+</details>
 
 > [!NOTE]
 > The first boot after enabling vboot clears the TPM. coreboot's
@@ -527,6 +569,33 @@ run0 bash scripts/vboot-slots.sh restore                 # rewrite both slots
 
 Plant a test image into the slot the machine actually boots - vboot never
 looks at the other one, so the test would pass for the wrong reason.
+
+<details>
+<summary>By hand</summary>
+<br>
+
+Which slot booted, and whether it was a recovery boot (that message
+appears only in recovery - there is no recovery MRC region):
+
+```bash
+sudo cbmem -1 | grep -iE 'slot [ab] is|MRC: failed to locate region type 0'
+```
+
+Wiping a slot means zeroing its VBLOCK - the keyblock magic goes, the slot
+fails verification. VBLOCK_A is at 0x2a0000, VBLOCK_B at 0x6a0000, both
+0x10000 long:
+
+```bash
+cp roms/coreboot_t480_<date>.rom /tmp/w.rom
+dd if=/dev/zero of=/tmp/w.rom bs=1 conv=notrunc seek=$((0x2a0000)) count=$((0x10000))
+sudo flashrom -p internal --fmap -i VBLOCK_A -w /tmp/w.rom
+```
+
+Planting a foreign image is the same write with that image as the source
+(`-i RW_SECTION_B -w other.rom`); restoring is
+`-i RW_SECTION_A -i RW_SECTION_B -w` from the good ROM.
+
+</details>
 
 Slot selection is sticky: after a fallback vboot keeps booting the other
 slot, because `VB2_NV_TRY_NEXT` persists and nothing in this firmware
@@ -578,6 +647,12 @@ run0 bash scripts/flash-vboot.sh roms/coreboot_t480_pinned_tpmreset.rom
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0
 tpm2_getcap properties-variable                # ownerAuthSet, disableClear = 0
 run0 bash scripts/flash-vboot.sh roms/coreboot_t480_pinned.rom
+```
+
+Without the script, both writes are:
+
+```bash
+sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B -w <rom>
 ```
 
 Coming straight from the vendor BIOS (e.g. doing the reset as part of the
