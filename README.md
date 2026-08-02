@@ -429,6 +429,95 @@ firmware tampering detectable and keeps sealed secrets from being
 released to a modified firmware - it does not stop an attacker who can
 rewrite the flash and fake the measurements.
 
+## Verified boot
+
+The flash is split into a read-only section and two signed, switchable
+copies of the firmware. `WP_RO` holds the bootblock with verstage and
+the GBB with the public root key; `RW_SECTION_A` and `RW_SECTION_B` each
+hold a full signed firmware. verstage checks the signature of a slot
+before jumping into it and falls back A -> B -> RO when that fails.
+SMMSTORE and the MRC cache keep the offsets they had before vboot, so
+settings and Secure Boot keys survive the switch.
+
+```
+0x240000  RW_MRC_CACHE   0x010000
+0x250000  SMMSTORE       0x040000     UEFI variables, Secure Boot keys
+0x290000  RW_ELOG        0x004000
+0x294000  RW_NVRAM       0x006000     vboot state backup
+0x2a0000  RW_SECTION_A   0x400000     VBLOCK_A + FW_MAIN_A
+0x6a0000  RW_SECTION_B   0x400000     VBLOCK_B + FW_MAIN_B
+0xaa0000  WP_RO          0x560000     FMAP, GBB, RO copy of coreboot
+```
+
+### Signing keys
+
+`config/defconfig` points at `keys/`, which is untracked - generate your
+own before the first vboot build, otherwise the build silently uses the
+public vboot devkeys and the signature is worth nothing:
+
+```bash
+sh scripts/gen-vboot-keys.sh
+```
+
+That writes `root_key`, `firmware_data_key`, `recovery_key` and
+`firmware.keyblock`. Back them up somewhere else too: without the private
+keys you cannot build firmware your own RO accepts, and the way back is
+an external flash.
+
+### Updating
+
+```bash
+sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -w roms/coreboot_t480_<date>.rom
+```
+
+`scripts/flash-vboot.sh` does the same with a backup and a few checks
+(layouts match, both slots signed, MAC unchanged, Platform Key present).
+Slot updates alone can skip `WP_RO`; changes to verstage, the bootblock,
+the GBB or the RO payload need it.
+
+> [!NOTE]
+> The first boot after enabling vboot clears the TPM. coreboot's
+> `factory_initialize_tpm2()` starts with `tlcl_force_clear()` to set up
+> the vboot NV spaces, which invalidates everything sealed to the TPM.
+> LUKS falls back to the passphrase; re-enroll afterwards
+> (`systemd-cryptenroll --wipe-slot=tpm2 ...`, delete
+> `/var/lib/systemd/tpm2-srk-public-key.*`). This happens once - the NV
+> spaces persist.
+
+### Slot tooling
+
+```bash
+run0 bash scripts/vboot-slot-check.sh                    # which slot booted
+run0 bash scripts/vboot-slots.sh status                  # state of both VBLOCKs
+run0 bash scripts/vboot-slots.sh corrupt-a               # wipe a slot, test the fallback
+run0 bash scripts/vboot-slots.sh foreign-b <other.rom>   # plant a foreign-keyed image
+run0 bash scripts/vboot-slots.sh restore                 # rewrite both slots
+```
+
+Plant a test image into the slot the machine actually boots - vboot never
+looks at the other one, so the test would pass for the wrong reason.
+
+Slot selection is sticky: after a fallback vboot keeps booting the other
+slot, because `VB2_NV_TRY_NEXT` persists and nothing in this firmware
+resets it (upstream leaves that to the ChromeOS updater). Harmless while
+both slots carry the same image.
+
+A recovery boot - both slots unusable - runs the RO copy, skips the MRC
+cache and therefore retrains memory, which costs a minute or two of black
+screen. The system comes up fully, so the slots can be rewritten from
+there.
+
+### What this does and does not buy you
+
+Firmware in the RW slots cannot be swapped for something you did not
+sign: a correctly signed image from a different keyset is refused and the
+machine boots the other slot. `WP_RO` itself is **not** write-protected
+yet, so anyone with root can still rewrite the RO and the root key with
+it - see issue #3. Rollback protection is inert as well: the TPM counter
+only rolls forward when the OS reports a successful boot, which needs a
+component this firmware does not have.
+
 ## TPM reset
 
 If the TPM is stuck in a vendor-BIOS state (MFG mode, owner auth set,
