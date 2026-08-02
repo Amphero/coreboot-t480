@@ -727,6 +727,15 @@ rm -rf sources/
 The exact versions of a build are recorded in `roms/versions_<mode>.lock`, so
 everything can be rebuilt later.
 
+`sources/<mode>/` is what makes rebuilds independent of upstream staying
+online. To also keep the built toolchain, save the image itself - that
+turns a 30-60 minute rebuild into a `podman load`:
+
+```bash
+podman save coreboot-t480-pinned | zstd -T0 > coreboot-t480-pinned.tar.zst
+zstd -dc coreboot-t480-pinned.tar.zst | podman load        # restore
+```
+
 ## License
 
 [GPL-3.0](LICENSE), inherited from the upstream project. The sources fetched

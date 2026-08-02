@@ -1,7 +1,6 @@
 # build output & sources
 /sources/
 /roms/*.rom
-/podman-image/
 
 # flash dumps, backups, reference material - carries machine identity (MAC, serial, UEFI vars)
 *.bin
@@ -12,3 +11,6 @@
 
 # python bytecode from importing the build script
 __pycache__/
+
+# saved build images (see Cleaning up in the README)
+*.tar.zst
