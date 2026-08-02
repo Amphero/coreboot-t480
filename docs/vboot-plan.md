@@ -161,6 +161,13 @@ Config/build changes outside the patch series:
   is selected" and comes up complete (Secure Boot enabled, payload from
   the B slot). No user-visible difference - both slots hold the same
   image. Tooling: `scripts/vboot-slots.sh`.
+- RO recovery works: with both VBLOCKs zeroed the machine still boots -
+  WP_RO carries a complete image including the EDK2 payload, Secure Boot
+  stays enabled and the system is fully usable, so the RW slots can be
+  rewritten from the running system. Proof: both VBLOCKs read back as
+  wiped while the machine was up. The recovery boot skips the MRC cache
+  ("MRC: failed to locate region type 0"), so it costs a full memory
+  training - a minute or two of black screen.
 - Slot selection is sticky. `vb2_select_fw_slot()` takes the slot from
   `VB2_NV_TRY_NEXT` and the fallback writes that field permanently
   (2misc.c:408) - restoring VBLOCK_A does not move the machine back to
