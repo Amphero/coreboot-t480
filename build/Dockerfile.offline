@@ -94,6 +94,9 @@ COPY --chown=builder:builder splash.bmp* /opt/coreboot/
 # Config-driven devicetree toggles (reads the DT_DEVICE markers in board.conf,
 # edits the board devicetree.cb before `make`).
 COPY --chown=builder:builder apply-devicetree.sh /opt/apply-devicetree.sh
+# vboot signing keys. Empty unless keys/ exists in the project; the defconfig
+# then keeps pointing at the vboot devkeys.
+COPY --chown=builder:builder keys /opt/keys
 # Pre-place the MrChromebox EDK2 clone into coreboot's edk2 workspace. Because
 # the directory already exists, coreboot's edk2 Makefile skips the online
 # `git clone` (any `git fetch origin` it still attempts fails harmlessly offline;

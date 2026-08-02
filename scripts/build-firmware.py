@@ -32,6 +32,7 @@ from pathlib import Path
 PROJECT    = Path(__file__).resolve().parent.parent
 BUILD      = PROJECT / "build"         # build recipes: Dockerfile.offline/.deps, apply-devicetree.sh
 CONFIG     = PROJECT / "config"        # board config + boot logo: defconfig, splash.bmp
+KEYS       = PROJECT / "keys"          # vboot signing keys, never committed (.gitignore)
 ROMS       = PROJECT / "roms"
 SOURCES    = PROJECT / "sources"
 PATCHDIR   = PROJECT / "patches" / "tpm-reset"   # clear patch for the optional --tpm-reset
@@ -112,7 +113,17 @@ def sync_build_config(src):
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(PROJECT / "patches", dst)                    # base patches (Dockerfile.offline) + tpm-reset
-    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
+    # vboot signing keys (untracked, see .gitignore). Without them the build
+    # falls back to the public devkeys in the vboot tree - fine for bring-up,
+    # useless as a signature.
+    kdst = src / "keys"
+    if kdst.exists():
+        shutil.rmtree(kdst)
+    if KEYS.is_dir():
+        shutil.copytree(KEYS, kdst)
+    else:
+        kdst.mkdir()                                             # empty dir: COPY in the Dockerfile still works
+    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/ + keys/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
 
 
 def log_versions(src):
@@ -150,6 +161,12 @@ def config_hash(src, mac):
             h.update(name.encode() + b"\0" + f.read_bytes() + b"\0")
     for p in sorted((src / "patches" / "base").glob("*.patch")):
         h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
+    # Signing keys: only the public halves and the keyblock go into the hash -
+    # they determine what the firmware verifies against, and hashing the
+    # private keys would put them in an image label.
+    for k in sorted((src / "keys").glob("*")):
+        if k.suffix in (".vbpubk", ".keyblock"):
+            h.update(k.name.encode() + b"\0" + k.read_bytes() + b"\0")
     return h.hexdigest()
 
 
