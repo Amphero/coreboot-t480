@@ -19,4 +19,6 @@ CONFIG_SMMSTORE_V2=y
 CONFIG_SMMSTORE_SIZE=0x40000
 CONFIG_EDK2_SECURE_BOOT_SUPPORT=y
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
+# measure all stages/blobs into TPM PCR 2 before running them (log: cbmem -L)
+CONFIG_TPM_MEASURED_BOOT=y
 # (machine identity + optional devicetree devices live in config/board.conf)
