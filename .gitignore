@@ -9,3 +9,6 @@
 
 # vboot signing keys - the private halves must never leave this machine
 /keys/
+
+# python bytecode from importing the build script
+__pycache__/
