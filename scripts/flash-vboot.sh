@@ -25,8 +25,10 @@ case "$ROM" in *tpmreset*) die "that is the TPM reset ROM" ;; esac
 [ "$(id -u)" = 0 ] || die "run as root: run0 bash $0"
 command -v flashrom >/dev/null || die "flashrom is missing"
 grep -q 'iomem=relaxed' /proc/cmdline || die "kernel booted without iomem=relaxed"
-[ "$(cat /sys/class/power_supply/AC/online 2>/dev/null || echo 0)" = 1 ] \
-  || die "AC adapter not connected"
+if [ "${ALLOW_NO_AC:-0}" != "1" ]; then
+	[ "$(cat /sys/class/power_supply/AC/online 2>/dev/null || echo 0)" = 1 ] \
+	  || die "AC adapter not connected (ALLOW_NO_AC=1 overrides, check the battery first)"
+fi
 
 DUMP="$ROMDIR/backup_vboot_$(date +%Y%m%d_%H%M%S).bin"
 echo "== reading the chip -> $DUMP"
