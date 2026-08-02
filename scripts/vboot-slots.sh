@@ -24,7 +24,8 @@ die(){ printf '\n\033[1;31mABORT: %s\033[0m\n' "$*" >&2; exit 1; }
 MODE="${1:-}"
 case "$MODE" in
   corrupt-a|corrupt-both|restore|status) : ;;
-  *) die "usage: $0 status|corrupt-a|corrupt-both|restore [rom]" ;;
+  foreign-a) [ -n "${2:-}" ] || die "foreign-a needs the ROM to plant into slot A" ;;
+  *) die "usage: $0 status|corrupt-a|corrupt-both|restore|foreign-a <rom> [rom]" ;;
 esac
 
 ROM="${2:-$(ls -t "$ROMDIR"/coreboot_t480_*.rom 2>/dev/null | grep -v tpmreset | head -1 || true)}"
@@ -98,6 +99,14 @@ print(f"  rom : VBLOCK_A={state(rom,'VBLOCK_A')}  VBLOCK_B={state(rom,'VBLOCK_B'
 if mode == 'status':
     sys.exit(0)
 
+if mode == 'foreign-a':
+    o, _ = fr['VBLOCK_A']
+    if rom[o:o+8] != b'CHROMEOS': fail("the ROM to plant carries no keyblock in VBLOCK_A")
+    open(os.path.join(work, 'write.bin'), 'wb').write(rom)
+    open(os.path.join(work, 'regions'), 'w').write("RW_SECTION_A")
+    print("  -> plants slot A from that ROM (slot B stays as it is)")
+    sys.exit(0)
+
 if mode == 'restore':
     for r in ('VBLOCK_A', 'VBLOCK_B'):
         o, _ = fr[r]
@@ -126,6 +135,8 @@ echo
 case "$MODE" in
   corrupt-a)    echo "The next boot must select slot B. Undo: '$0 restore'." ;;
   corrupt-both) echo "The next boot falls back to WP_RO. If nothing comes up, the CH341A is the way back." ;;
+  foreign-a)    echo "Slot A gets a fully signed image from a different keyset - the next boot"
+                echo "must reject it and select slot B. Undo: '$0 restore'." ;;
   restore)      echo "Rewrites both slots from the ROM." ;;
 esac
 printf 'Type YES: '
