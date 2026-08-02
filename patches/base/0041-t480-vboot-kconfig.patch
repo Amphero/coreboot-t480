@@ -1,0 +1,14 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+index 8e6de026..12e8a940 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/Kconfig
+@@ -68,6 +68,9 @@ config BOARD_LENOVO_X280
+ 
+ if BOARD_LENOVO_SKLKBL_THINKPAD_COMMON
+ 
++config VBOOT
++	select VBOOT_SLOTS_RW_AB
++
+ config MAINBOARD_DIR
+ 	default "lenovo/sklkbl_thinkpad"
+ 
