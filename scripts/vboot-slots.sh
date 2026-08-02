@@ -35,8 +35,10 @@ ROM="${2:-$(ls -t "$ROMDIR"/coreboot_t480_*.rom 2>/dev/null | grep -v tpmreset |
 [ "$(id -u)" = 0 ] || die "run as root: run0 bash $0 $MODE"
 command -v flashrom >/dev/null || die "flashrom is missing"
 grep -q 'iomem=relaxed' /proc/cmdline || die "kernel booted without iomem=relaxed"
-[ "$(cat /sys/class/power_supply/AC/online 2>/dev/null || echo 0)" = 1 ] \
-  || die "AC adapter not connected"
+if [ "${ALLOW_NO_AC:-0}" != "1" ]; then
+	[ "$(cat /sys/class/power_supply/AC/online 2>/dev/null || echo 0)" = 1 ] \
+	  || die "AC adapter not connected (ALLOW_NO_AC=1 overrides, check the battery first)"
+fi
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 DUMP="$WORK/chip.bin"
