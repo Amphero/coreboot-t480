@@ -30,6 +30,10 @@ T480 quirks that Libreboot documents as
 [known errata](https://libreboot.org/docs/install/t480.html) are fixed here
 in the firmware itself.
 
+<details>
+<summary>Feature-by-feature comparison</summary>
+<br>
+
 | | This repo | [Libreboot T480](https://libreboot.org/docs/install/t480.html) |
 |---|---|---|
 | Payload | EDK2 UEFI (`uefipayload_2605`) | GRUB or SeaBIOS (legacy BIOS) |
@@ -52,6 +56,8 @@ in the firmware itself.
 | Build | two-phase offline podman | `lbmk` |
 
 ¹ earlier versions of this port required `reboot=pci`; fixed upstream, gone.
+
+</details>
 
 Trade-off: Libreboot's payload lives entirely in its own tree, this one adds
 MrChromebox's EDK2. No UEFI, Secure Boot or TPM needed? Take Libreboot.
@@ -317,12 +323,23 @@ Curve details and tuning: [patches/README.md](patches/README.md).
 | Enabled | radio on at every boot |
 | Last state (default) | firmware leaves the radio as the OS left it |
 
+With "Last state", turning the radio off in the OS is enough; it stays
+off. Pulling both battery and charger clears the EC's memory and the
+radio comes back.
+
+**Embedded Controller → WWAN** has the same three settings and works the
+same way - it is the neighbouring bit in the same EC register (patch
+0034). Untested: there is no WWAN card in the machine this was built on.
+
+<details>
+<summary>Background: why the radios come back on every boot upstream</summary>
+<br>
+
 Upstream only knows Disabled/Enabled and writes the EC bit on every boot,
 so bluetooth turned off in the OS was back on after the next reboot -
 `thinkpad_acpi` reads its rfkill state from exactly that bit. With "Last
 state" the firmware does not touch it, and the EC keeps it across the
-reset. Turning the radio off in the OS is enough; it stays off. Pulling
-both battery and charger clears the EC's memory and the radio comes back.
+reset.
 
 The second half of the fix is patch 0031: the firmware no longer
 announces a wireless master switch (`WLSW`), which the kernel answered
@@ -331,15 +348,13 @@ by unblocking all radios on every boot - details in
 `tpacpi_bluetooth_sw` in `rfkill list`; `hci0` only exists while the
 radio has power.
 
-**Embedded Controller → WWAN** has the same three settings and works the
-same way - it is the neighbouring bit in the same EC register (patch
-0034). Untested: there is no WWAN card in the machine this was built on.
-
 At shutdown `thinkpad_acpi` asks the firmware to save both radio states
 through ACPI methods that only Lenovo's BIOS has, and logged two
 `AE_NOT_FOUND` errors when it did not find them. Patch 0035 adds the two
 methods as empty stubs - the state is kept in the EC anyway, so there is
 nothing for them to do.
+
+</details>
 
 ## Secure Boot
 
@@ -399,6 +414,10 @@ that clears the TPM on every boot via TPM2_Clear.
 > undone. The reset ROM clears on every boot: flash it, boot Linux exactly
 > once, check the result, then flash the normal ROM back.
 
+<details>
+<summary>Procedure and aftermath</summary>
+<br>
+
 ```bash
 python3 scripts/build-firmware.py --mode pinned --tpm-reset
 
@@ -422,6 +441,8 @@ the LUKS TPM slot (`systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto`)
 and delete `/var/lib/systemd/tpm2-srk-public-key.*`, otherwise unlocking
 fails with "key does not belong to this TPM".
 
+</details>
+
 <details>
 <summary>If the clear does not work</summary>
 <br>
@@ -442,7 +463,9 @@ The T480's embedded controller (Microchip MEC1653) runs the fan, battery,
 keyboard and more. Two ways to look inside while tuning things like the
 fan curve:
 
-**Read EC registers from Linux** (no rebuild needed, root required):
+<details>
+<summary>Read EC registers from Linux (no rebuild needed, root required)</summary>
+<br>
 
 ```bash
 modprobe ec_sys
@@ -455,19 +478,26 @@ EC automatic), `0x78` CPU temperature in C (`0x79` would be a second
 sensor, but on the T480 it always reads 128 = not fitted), `0x84`/`0x85`
 fan tachometer (RPM, low/high byte).
 
-**EC debug UART** (rebuild needed): the EC has a debug console that is
-locked by default; the unlock key for the T480/T580 is known and already
-in the coreboot tree. Enable it with `CONFIG_MEC1653_ENABLE_UART=y` in
-`config/defconfig` and `--rebuild-base`. coreboot then unlocks the EC
-debug interface at boot and maps the EC's UART to host I/O port 0x3f8,
-IRQ 4 over LPC - that is the classic COM1, so no soldering: the console
-should appear as `/dev/ttyS0` in Linux (`screen /dev/ttyS0 115200`).
+</details>
 
-> [!NOTE]
-> The 0x3f8/IRQ4 mapping and the unlock mechanism are read from the
-> coreboot code (`src/ec/lenovo/mec1653/uart.c`); that the EC actually
-> prints anything there, and at which baud rate, is NOT yet verified on
-> hardware. Treat this section as a pointer, not a promise.
+<details>
+<summary>EC debug UART (rebuild needed)</summary>
+<br>
+
+The EC has a debug console that is locked by default; the unlock key for
+the T480/T580 is known and already in the coreboot tree. Enable it with
+`CONFIG_MEC1653_ENABLE_UART=y` in `config/defconfig` and `--rebuild-base`.
+coreboot then unlocks the EC debug interface at boot and maps the EC's
+UART to host I/O port 0x3f8, IRQ 4 over LPC - that is the classic COM1,
+so no soldering: the console should appear as `/dev/ttyS0` in Linux
+(`screen /dev/ttyS0 115200`).
+
+The 0x3f8/IRQ4 mapping and the unlock mechanism are read from the
+coreboot code (`src/ec/lenovo/mec1653/uart.c`); that the EC actually
+prints anything there, and at which baud rate, is NOT yet verified on
+hardware. Treat this section as a pointer, not a promise.
+
+</details>
 
 ## Cleaning up
 
