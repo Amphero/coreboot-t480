@@ -168,6 +168,24 @@ Config/build changes outside the patch series:
   wiped while the machine was up. The recovery boot skips the MRC cache
   ("MRC: failed to locate region type 0"), so it costs a full memory
   training - a minute or two of black screen.
+- **Recovery is a one-way street without `VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE`.**
+  After the recovery test the machine kept booting recovery even with both
+  slots restored. `vb2api_clear_recovery()` is only called from
+  `2kernel.c` (the depthcharge path we never run) and from
+  `bootmode.c:61`, which is compiled only under
+  `VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE` - coreboot's own help text names the
+  case exactly: "platforms without vboot-integrated payloads, to avoid
+  being stuck in the recovery mode". The request stays in VBNV, so every
+  boot re-enters recovery: RO code, no MRC cache, full memory training.
+  Fix: `CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y`. Until then the
+  request can be cleared by hand in CMOS (VBNV lives at
+  `CONFIG_VBOOT_VBNV_OFFSET + 14` = 0x34, byte 2 is the request, byte 15
+  the CRC8).
+  Diagnosing it: "MRC: failed to locate region type 0" appears if and
+  only if the boot is a recovery boot - `normal_training` carries
+  NORMAL_FLAG only (vboot starts in the bootblock) and there is no
+  recovery MRC region, so the lookup finds nothing. Use `cbmem -1` to
+  isolate the current boot; the console buffer holds several.
 - Slot selection is sticky. `vb2_select_fw_slot()` takes the slot from
   `VB2_NV_TRY_NEXT` and the fallback writes that field permanently
   (2misc.c:408) - restoring VBLOCK_A does not move the machine back to
