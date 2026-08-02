@@ -371,7 +371,7 @@ without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
 
 **Files:** `src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd` (new)
 
-Flash layout for the vboot port (see `docs/vboot-plan.md`): two signed
+Flash layout for the vboot port (see `docs/vboot-notes.md`): two signed
 4 MB slots `RW_SECTION_A/B`, `WP_RO` (FMAP, GBB, RO CBFS) at the top of
 the chip, `RW_MRC_CACHE` and `SMMSTORE` at their current absolute
 offsets so existing installs keep their settings across the migration.
