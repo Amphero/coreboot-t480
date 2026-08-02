@@ -160,7 +160,7 @@ Config/build changes outside the patch series:
 - Slot fallback works: with VBLOCK_A zeroed the next boot logs "Slot B
   is selected" and comes up complete (Secure Boot enabled, payload from
   the B slot). No user-visible difference - both slots hold the same
-  image. Tooling: `scripts/vboot-slots.sh`.
+  image.
 - RO recovery works: with both VBLOCKs zeroed the machine still boots -
   WP_RO carries a complete image including the EDK2 payload, Secure Boot
   stays enabled and the system is fully usable, so the RW slots can be
@@ -218,8 +218,8 @@ Config/build changes outside the patch series:
   ("Error verifying keyblock") - which is the check verstage runs.
 - Booting on our own keys works (no recovery, MRC cache in use).
 - Rejection proven on hardware: the machine was booting slot B, the
-  devkey-signed image was planted into exactly that slot
-  (`vboot-slots.sh foreign-b`), and the next boot selected slot A. Only
+  devkey-signed image was written into exactly that slot
+  (`--fmap -i RW_SECTION_B -w`), and the next boot selected slot A. Only
   the slot content changed, so the switch is the signature check doing
   its job - a correctly signed image from a foreign keyset is refused.
   Planting into the *other* slot proves nothing: vboot never looks at it.

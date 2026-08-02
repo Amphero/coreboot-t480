@@ -551,33 +551,22 @@ path, not this one.
 > `/var/lib/systemd/tpm2-srk-public-key.*`). This happens once - the NV
 > spaces persist.
 
-### Slot tooling
+### Checking and testing the slots
 
-```bash
-run0 bash scripts/vboot-slot-check.sh                    # which slot booted
-run0 bash scripts/vboot-slots.sh status                  # state of both VBLOCKs
-run0 bash scripts/vboot-slots.sh corrupt-a               # wipe a slot, test the fallback
-run0 bash scripts/vboot-slots.sh foreign-b <other.rom>   # plant a foreign-keyed image
-run0 bash scripts/vboot-slots.sh restore                 # rewrite both slots
-```
-
-Plant a test image into the slot the machine actually boots - vboot never
-looks at the other one, so the test would pass for the wrong reason.
-
-<details>
-<summary>By hand</summary>
-<br>
-
-Which slot booted, and whether it was a recovery boot (that message
-appears only in recovery - there is no recovery MRC region):
+Which slot booted, and whether it was a recovery boot - that MRC message
+appears only in recovery, since there is no recovery MRC region here:
 
 ```bash
 sudo cbmem -1 | grep -iE 'slot [ab] is|MRC: failed to locate region type 0'
 ```
 
-Wiping a slot means zeroing its VBLOCK - the keyblock magic goes, the slot
-fails verification. VBLOCK_A is at 0x2a0000, VBLOCK_B at 0x6a0000, both
-0x10000 long:
+<details>
+<summary>Testing the fallback</summary>
+<br>
+
+Wiping a slot means zeroing its VBLOCK: the keyblock magic goes and the
+slot fails verification. VBLOCK_A is at 0x2a0000, VBLOCK_B at 0x6a0000,
+both 0x10000 long.
 
 ```bash
 cp roms/coreboot_t480_<date>.rom /tmp/w.rom
@@ -585,9 +574,14 @@ dd if=/dev/zero of=/tmp/w.rom bs=1 conv=notrunc seek=$((0x2a0000)) count=$((0x10
 sudo flashrom -p internal --fmap -i VBLOCK_A -w /tmp/w.rom
 ```
 
-Planting a foreign image is the same write with that image as the source
-(`-i RW_SECTION_B -w other.rom`); restoring is
+Planting an image signed with a different keyset is the same write with
+that image as the source (`-i RW_SECTION_B -w other.rom`). Restoring is
 `-i RW_SECTION_A -i RW_SECTION_B -w` from the good ROM.
+
+Two things decide whether the test means anything: write into the slot
+the machine actually boots - vboot never looks at the other one - and
+leave that other slot intact, it is the way back. Wiping both lands you
+in an RO recovery boot, which still comes up but retrains memory.
 
 </details>
 
@@ -596,10 +590,9 @@ slot, because `VB2_NV_TRY_NEXT` persists and nothing in this firmware
 resets it (upstream leaves that to the ChromeOS updater). Harmless while
 both slots carry the same image.
 
-A recovery boot - both slots unusable - runs the RO copy, skips the MRC
-cache and therefore retrains memory, which costs a minute or two of black
-screen. The system comes up fully, so the slots can be rewritten from
-there.
+A recovery boot - both slots unusable - runs the RO copy and comes up
+fully, so the slots can be rewritten from there. It skips the MRC cache
+and retrains memory, which costs a minute or two of black screen.
 
 ### What this does and does not buy you
 
