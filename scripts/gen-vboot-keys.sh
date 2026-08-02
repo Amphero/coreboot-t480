@@ -18,14 +18,15 @@ set -eu
 
 PROJECT="$(cd "$(dirname "$0")/.." && pwd)"
 KEYS="$PROJECT/keys"
-IMAGE="${IMAGE:-coreboot-t480-latest}"
-CB="$PROJECT/sources/latest/coreboot"
+IMAGE="${IMAGE:-coreboot-t480-deps}"
+MODE="${MODE:-latest}"
+CB="$PROJECT/sources/$MODE/coreboot"
 
 die() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
 command -v podman >/dev/null || die "podman is missing"
-[ -d "$CB/3rdparty/vboot" ] || die "no vboot tree in $CB - run ./fetch.sh first"
-podman image exists "$IMAGE" || die "image '$IMAGE' does not exist - build the firmware once first"
+[ -d "$CB/3rdparty/vboot" ] || die "no vboot tree in $CB - run ./fetch.sh $MODE first"
+podman image exists "$IMAGE" || die "image '$IMAGE' does not exist - run ./fetch.sh first"
 [ -e "$KEYS/root_key.vbpubk" ] && die "keys/ already holds a keyset - move it away first"
 
 mkdir -p "$KEYS"
@@ -34,8 +35,12 @@ podman run --rm --userns=keep-id -v "$CB":/cb:z -v "$KEYS":/keys:z "$IMAGE" sh -
 	cd /cb/3rdparty/vboot
 	INC=$(dirname $(find . -name openssl_compat.h | head -1))
 	cc -O2 -o /tmp/dumpRSAPublicKey utility/dumpRSAPublicKey.c -I"$INC" -lcrypto 2>/dev/null
-	FUT=$(find /opt/coreboot/build -name futility -type f | head -1)
-	[ -n "$FUT" ] || { echo "futility not found in the image"; exit 1; }
+	# USE_FLASHROM=0: the libflashrom headers are not in the build image and
+	# futility does not need them for key handling.
+	make USE_FLASHROM=0 -j"$(nproc)" futil >/dev/null 2>&1 || true
+	FUT=$(find build -name futility -type f | head -1)
+	[ -n "$FUT" ] || { echo "could not build futility"; exit 1; }
+	FUT=$(cd "$(dirname "$FUT")" && pwd)/futility
 	for c in vbutil_key vbutil_keyblock; do
 		printf "#!/bin/sh\nexec %s %s \"\$@\"\n" "$FUT" "$c" > /tmp/$c
 		chmod +x /tmp/$c
@@ -59,8 +64,8 @@ chmod 600 "$KEYS"/*.vbprivk
 
 echo
 echo "keyset in $KEYS:"
-podman run --rm --userns=keep-id -v "$KEYS":/keys:z "$IMAGE" sh -c '
-	F=$(find /opt/coreboot/build -name futility -type f | head -1)
+podman run --rm --userns=keep-id -v "$CB":/cb:z -v "$KEYS":/keys:z "$IMAGE" sh -c '
+	F=$(find /cb/3rdparty/vboot/build -name futility -type f | head -1)
 	cd /keys
 	for k in root_key firmware_data_key recovery_key; do
 		printf "  %-20s " "$k"
