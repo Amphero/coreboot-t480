@@ -25,9 +25,20 @@ the milestones.
   no board code at all.
 - Keys come from `VBOOT_ROOT_KEY`, `VBOOT_RECOVERY_KEY`,
   `VBOOT_FIRMWARE_PRIVKEY`, `VBOOT_KEYBLOCK`; the defaults point at the
-  devkeys in `3rdparty/vboot` - usable for bring-up, replaced in M3.
-- Custom flash layout via `CONFIG_FMDFILE`. Reference layout:
-  `mainboard/google/glados/chromeos.fmd` (same SoC generation, 16 MB).
+  devkeys in `3rdparty/vboot/tests/devkeys` - usable for bring-up,
+  replaced in M3. Signing happens inside `make`; futility is built as
+  part of the coreboot build (`util/futility`).
+- Custom flash layout via `CONFIG_FMDFILE` (the file is run through the
+  C preprocessor with the build's config.h, so it may use CONFIG
+  macros). The in-tree chromeos.fmd default exists only `if CHROMEOS`,
+  so we set `CONFIG_FMDFILE` explicitly in the vboot defconfig. With
+  FMDFILE set, `CONFIG_CBFS_SIZE` no longer shapes the layout (it only
+  feeds the generated default FMAP) - drop it there to avoid confusion.
+  Reference layout: `mainboard/google/glados/chromeos.fmd` (same SoC
+  generation, 16 MB).
+- flashrom's `--fmap` reads the FMAP **from the chip**, not from the
+  image (man page: "The on-chip fmap will be read and used to generate
+  the layout"). Consequences below in the flash flow.
 - Space: the current image uses ~2.9 MB CBFS (payload 1.55 MB), 11 MB
   free -> two 4 MB RW slots plus a full RO CBFS fit comfortably.
 - The board has no cmos.layout/option table, so the VBNV area at
@@ -60,13 +71,15 @@ FLASH 0x1000000
     WP_RO@0x860000 0x560000                 # abs 0xaa0000..0xffffff
       FMAP@0x0        0x800
       RO_FRID@0x800   0x40
+      RO_FRID_PAD@0x840 0x7c0
       GBB@0x1000      0xf000
       COREBOOT(CBFS)@0x10000 0x550000
 ```
 
-WP_RO sits at the top of the chip so a single SPI protected range can
-cover it later. The FMAP moves (tools find it by signature, ours already
-search; flashrom re-reads it from the image).
+All offsets/sizes verified to tile SI_BIOS exactly (0xdc0000, no gaps,
+no overlap). WP_RO sits at the top of the chip so a single SPI protected
+range can cover it later. The FMAP moves; our tools find it by
+signature.
 
 ## Patches (patches/base/, 0040-0049 reserved for vboot)
 
@@ -74,29 +87,37 @@ search; flashrom re-reads it from the image).
   `src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd` with the layout above.
   Inert until FMDFILE points at it; must not change the default build.
 - **0041-vboot-kconfig.patch** - board Kconfig: `config VBOOT` block
-  (glados pattern) selecting `VBOOT_SLOTS_RW_AB` and defaulting
-  `FMDFILE` to the new fmd. Everything stays behind `CONFIG_VBOOT=y`,
-  which only the vboot defconfig sets.
+  (glados pattern, verified) selecting `VBOOT_SLOTS_RW_AB`. FMDFILE is
+  NOT set here - it goes into the vboot defconfig (see facts).
+  Everything stays behind `CONFIG_VBOOT=y`, which only the vboot
+  defconfig sets.
 - **0042-vboot-hooks.patch** (optional, M2+) - board hooks where the weak
   defaults are not enough: `get_write_protect_state` reading the actual
   SPI WP status, recovery-request plumbing. Skipped for bring-up.
 
 Config/build changes outside the patch series:
 
-- `config/defconfig.vboot` (or a commented block): `CONFIG_VBOOT=y` plus
-  key paths. The normal defconfig stays vboot-free until the port is
-  hardware-proven.
-- `scripts/build-firmware.py`: variant edits (EnrollDefaultKeys etc.)
-  modify CBFS content - with vboot they must happen BEFORE signing.
-  Add a `futility sign` step after the variant step; coreboot builds
-  futility itself, and re-signing devkey images is what
-  `futility sign` exists for.
+- `config/defconfig.vboot` (or a commented block): `CONFIG_VBOOT=y`,
+  `CONFIG_FMDFILE`, key paths; `CONFIG_CBFS_SIZE` dropped. The normal
+  defconfig stays vboot-free until the port is hardware-proven.
+- `scripts/build-firmware.py`: NO extra signing step needed - verified:
+  every variant is a full rebuild (sed on the EDK2 .fdf, then
+  `make olddefconfig` + `make`), and with vboot enabled `make` signs the
+  slots itself with the configured keys. The only change is getting the
+  key files into the offline build context (fetch.sh copies them like
+  board.conf; devkeys need nothing, they are in the tree).
 - `scripts/gen-vboot-keys.sh` (M3): generate an own keyset with
   `futility`; private keys never enter the repo - the repo carries only
   the public keys/keyblocks and paths.
-- Flash flow: migration to the new layout is one full write of the BIOS
-  region minus SMMSTORE (or external). After that, updates write
-  RW_SECTION_A only - smaller and faster than today's COREBOOT region.
+- Flash flow. Migration to the new layout can stay internal: the OLD
+  on-chip FMAP's `FMAP` + `COREBOOT` regions cover exactly the byte
+  range the new layout changes (0x290000-0xffffff), while RW_MRC_CACHE
+  and SMMSTORE are skipped and thereby preserved:
+  `flashrom -p internal --fmap -i FMAP -i COREBOOT -w <new>.rom`.
+  Needs its own checked script (the regular one refuses on FMAP
+  mismatch, correctly) and the external programmer at hand. AFTER
+  migration, updates write RW_SECTION_A only - `--fmap` then reads the
+  new chip FMAP, which matches the image again.
 
 ## Milestones with acceptance criteria
 
@@ -130,9 +151,13 @@ Config/build changes outside the patch series:
    (same honest limit as measured boot).
 4. **Recovery UX:** no Chrome EC, so no keyboard combo. Recovery request
    works via VBNV flag from the OS; document how, or wire a key in 0042.
-5. **EDK2 as RW payload:** EDK2 re-reads SMMSTORE by absolute FMAP
-   lookup - unchanged layout keeps that working; M1 must confirm UEFI
-   vars and Secure Boot still function from a slot boot.
+5. **SMMSTORE access:** the runtime store is coreboot's SMM driver, and
+   it locates the region via FMAP lookup at runtime
+   (`drivers/smmstore/store.c: fmap_locate_area`) - so it would even
+   tolerate a moved SMMSTORE. Keeping the offset is about preserving
+   the *contents* through migration and staying compatible with old
+   backups. M1 must confirm UEFI vars and Secure Boot still function
+   from a slot boot.
 6. **Boot time:** verification adds hashing of FW_MAIN_A on every boot;
    measure with `cbmem -t` before/after (ties into the boot-profiling
    item from the improvement list).
