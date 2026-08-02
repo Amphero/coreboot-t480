@@ -152,7 +152,15 @@ Config/build changes outside the patch series:
   `VBOOT_ALWAYS_ENABLE_DISPLAY=y`; the decision is taken in verstage
   (RO), so shipping the fix needs a WP_RO write, not just a slot update.
 - vboot measurements landed in PCR 1 (GBB HWID), PCR 2 changed with the
-  new measurement paths; PCR 0/3 unchanged.
+  new measurement paths; PCR 0/3 unchanged. vboot additionally measures
+  the firmware version into PCR 10.
+
+## M2 findings (hardware, 2026-08-02)
+
+- Slot fallback works: with VBLOCK_A zeroed the next boot logs "Slot B
+  is selected" and comes up complete (Secure Boot enabled, payload from
+  the B slot). No user-visible difference - both slots hold the same
+  image. Tooling: `scripts/vboot-slots.sh`.
 
 ## Open questions / risks
 
