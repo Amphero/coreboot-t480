@@ -223,8 +223,21 @@ Config/build changes outside the patch series:
   the slot content changed, so the switch is the signature check doing
   its job - a correctly signed image from a foreign keyset is refused.
   Planting into the *other* slot proves nothing: vboot never looks at it.
-- Still open for M3: rollback protection (`VBOOT_KEYBLOCK_VERSION` plus
-  the TPM counters) - deliberately untouched so far, one thing at a time.
+- Rollback protection is inert here and is deferred (file an issue once
+  this merges). `--version $(CONFIG_VBOOT_KEYBLOCK_VERSION)` does set the
+  preamble version, but the TPM counter never advances: the roll-forward
+  in `2firmware.c:210` requires `last_fw_result == VB2_FW_RESULT_SUCCESS`,
+  and nothing sets SUCCESS - vboot itself only ever writes FAILURE,
+  TRYING and UNKNOWN, and the one place that would report success sits in
+  `2load_kernel.c`, which coreboot never calls. So secdata stays at 0 and
+  no image is ever refused as too old.
+  Two ways to change that: a ramstage hook that reports SUCCESS the way
+  `VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE` clears the recovery request (~15
+  lines, but "success" then means "ramstage was reached", and every
+  roll-forward locks out the previous image - painful while the port
+  still moves), or an OS-side VBNV writer, which is also what slot
+  steering needs. Little practical value yet: there is exactly one signed
+  firmware lineage, so there is no older vulnerable image to replay.
 
 ## Open questions / risks
 
@@ -232,11 +245,38 @@ Config/build changes outside the patch series:
    coexist; the one-time cost is the factory-init TPM clear.
 2. **VBNV in CMOS:** no option table, offset looks free (verified), but
    confirm nothing else in the port touches those RTC bytes.
-3. **SPI write protection for WP_RO:** W25Q128 SRP/WP# wiring on the
-   T480 is unknown; without it, vboot's RO is only as trustworthy as the
-   last flash. Investigate flashrom's WP commands on the internal
-   programmer in M4 - until then this is tamper-evidence, not tamper-proof
-   (same limit as measured boot).
+3. **SPI write protection for WP_RO:** researched, prepared as a
+   commented block in `config/defconfig`, deliberately not enabled yet.
+
+   - Use the controller, not the chip: `fast_spi_flash_protect()` exists
+     for this SoC and the PCH protected range registers work at 4 KB
+     granularity, so WP_RO (0xaa0000+0x560000) can be covered exactly.
+     The Winbond driver does know our W25Q128 (id 0x4018), but its BP
+     bits only protect power-of-two blocks - 5.5 MB at the top rounds up
+     to the top 8 MB and would freeze RW_SECTION_B from 0x800000 on,
+     breaking slot updates. Putting WP_RO at the end of the chip is what
+     makes the controller path a single clean range.
+   - Config: `BOOTMEDIA_LOCK_CONTROLLER=y` +
+     `BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y`. Optionally
+     `BOOTMEDIA_LOCK_IN_VERSTAGE=y` locks earlier ("if you don't trust
+     code running after verstage") but per its help text blocks
+     write-protected facilities in ramstage - check against our MRC
+     cache before using it.
+   - Cost: SMMSTORE, MRC cache and both RW slots stay writable from the
+     OS, so normal updates keep working, but every WP_RO change needs
+     the CH341A. Enable this last, when the port has stopped moving -
+     during this port every single flash touched WP_RO.
+   - Runtime toggle: coreboot has no option-API hook for the controller
+     lock; `enable_smm_bios_protection()` (lockdown.h) does it only for
+     SMM BWP via `get_uint_option("bios_lock", ...)`. Same pattern is
+     easy to add for the WP_RO lock, and this board already carries CFR
+     options (patches 0001/0020), so a "SPI write protection" entry in
+     the setup menu is a small patch. Trade-off to state plainly if we
+     do it: CFR values live in SMMSTORE, which sits outside WP_RO and is
+     writable from the OS, so a toggle turns "open the machine to write
+     RO" into "flip a variable and reboot". Convenient, markedly weaker.
+   - Either way this stops software attacks only; anyone with a
+     programmer replaces the RO and the protection with it.
 4. **Recovery UX:** no Chrome EC, so no keyboard combo. Recovery request
    works via VBNV flag from the OS; document how, or wire a key in 0042.
 5. **SMMSTORE access:** the runtime store is coreboot's SMM driver, and
