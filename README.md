@@ -42,6 +42,7 @@ in the firmware itself.
 | UEFI variables | SMMSTORE v2, survive reflashing | — |
 | Setup menu | graphical, incl. fan profile / ME / AC-loss | — |
 | TPM 2.0 | on, LUKS auto-unlock | off (SeaBIOS driver bug) |
+| Measured boot | firmware chain into TPM PCR 2 | — |
 | Fan behaviour | 5 regulated levels, 4 profiles | stock two-state (auto / full blast) |
 | `thinkpad_acpi` | loads automatically | needs `force_load=1` (their FAQ) |
 | Bluetooth/WWAN rfkill | works, Fn+F10 toggles, off stays off | may hard-block, manual unblock (errata) |
@@ -402,6 +403,31 @@ dd if=backup.bin of=new_with_settings.rom bs=1 conv=notrunc \
 file, `count` the size.
 
 </details>
+
+## Measured boot
+
+coreboot hashes every stage and blob (romstage, FSP, microcode, the EDK2
+payload ...) into TPM PCR 2 before running it, so the measurement chain
+starts at the firmware itself instead of at the payload. Inspect it:
+
+```bash
+sudo cbmem -L          # the eventlog (cbmem lives in util/cbmem of the coreboot tree)
+tpm2_pcrread sha256:2
+```
+
+LUKS can be bound to it on top of the usual policy
+(`systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=2`), so the disk
+only auto-unlocks under unmodified firmware. Know the maintenance cost
+before you do: **every firmware update changes PCR 2** - the first boot
+after flashing falls back to the passphrase, and the binding has to be
+re-enrolled (`systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto
+--tpm2-pcrs=2`).
+
+The root of trust stays in software: Boot Guard is deliberately disabled
+(deguard) so the ME can be neutered. Measured boot therefore makes
+firmware tampering detectable and keeps sealed secrets from being
+released to a modified firmware - it does not stop an attacker who can
+rewrite the flash and fake the measurements.
 
 ## TPM reset
 
