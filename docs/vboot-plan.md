@@ -216,6 +216,15 @@ Config/build changes outside the patch series:
   image carries our root key, and VBLOCK_A verifies against it, while
   the previous devkey-signed image fails the same check
   ("Error verifying keyblock") - which is the check verstage runs.
+- Booting on our own keys works (no recovery, MRC cache in use).
+- Rejection proven on hardware: the machine was booting slot B, the
+  devkey-signed image was planted into exactly that slot
+  (`vboot-slots.sh foreign-b`), and the next boot selected slot A. Only
+  the slot content changed, so the switch is the signature check doing
+  its job - a correctly signed image from a foreign keyset is refused.
+  Planting into the *other* slot proves nothing: vboot never looks at it.
+- Still open for M3: rollback protection (`VBOOT_KEYBLOCK_VERSION` plus
+  the TPM counters) - deliberately untouched so far, one thing at a time.
 
 ## Open questions / risks
 
