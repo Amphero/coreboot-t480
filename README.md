@@ -462,29 +462,49 @@ settings and Secure Boot keys survive the switch.
 ### Signing keys
 
 `config/defconfig` points at `keys/`, which is untracked - generate your
-own before the first vboot build, otherwise the build silently uses the
-public vboot devkeys and the signature is worth nothing:
+own before the first vboot build. The build refuses to run without them
+rather than falling back to the public vboot devkeys, which would leave
+you with a signature anyone can produce:
 
 ```bash
 sh scripts/gen-vboot-keys.sh
 ```
 
 That writes `root_key`, `firmware_data_key`, `recovery_key` and
-`firmware.keyblock`. Back them up somewhere else too: without the private
-keys you cannot build firmware your own RO accepts, and the way back is
-an external flash.
+`firmware.keyblock`. Keep a copy elsewhere - without the private keys you
+cannot build firmware the RO on your chip accepts.
+
+Losing them is not fatal as long as WP_RO is still writable: generate a
+new keyset, rebuild, and flash - the new root key goes into the GBB in
+WP_RO and the new slots match it. Writing only the slots would leave the
+old root key in place and both slots would be refused, so let
+`flash-vboot.sh` write WP_RO along with them, which it does by default.
+The TPM is not cleared again; its vboot spaces already exist. Once WP_RO
+is write-protected (#3) this stops working and a lost keyset means an
+external flash.
 
 ### Updating
+
+```bash
+python3 scripts/build-firmware.py --mode latest
+run0 bash scripts/flash-vboot.sh
+```
+
+Picks the newest ROM in `roms/`, takes a backup, checks that chip and
+image agree (layouts match, both slots signed, MAC unchanged, Platform
+Key present), then writes `WP_RO` and both slots. SMMSTORE, the MRC cache
+and the vboot state are left alone, so settings and Secure Boot keys
+survive. Reboot afterwards.
+
+By hand it is:
 
 ```bash
 sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
     -w roms/coreboot_t480_<date>.rom
 ```
 
-`scripts/flash-vboot.sh` does the same with a backup and a few checks
-(layouts match, both slots signed, MAC unchanged, Platform Key present).
-Slot updates alone can skip `WP_RO`; changes to verstage, the bootblock,
-the GBB or the RO payload need it.
+Slot-only changes can skip `WP_RO`; anything touching verstage, the
+bootblock, the GBB or the RO payload needs it.
 
 > [!NOTE]
 > The first boot after enabling vboot clears the TPM. coreboot's
