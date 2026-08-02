@@ -32,6 +32,7 @@ from pathlib import Path
 PROJECT    = Path(__file__).resolve().parent.parent
 BUILD      = PROJECT / "build"         # build recipes: Dockerfile.offline/.deps, apply-devicetree.sh
 CONFIG     = PROJECT / "config"        # board config + boot logo: defconfig, splash.bmp
+KEYS       = PROJECT / "keys"          # vboot signing keys, never committed (.gitignore)
 ROMS       = PROJECT / "roms"
 SOURCES    = PROJECT / "sources"
 PATCHDIR   = PROJECT / "patches" / "tpm-reset"   # clear patch for the optional --tpm-reset
@@ -96,6 +97,20 @@ def verify_checksums(src):
     print("   SHA256: OK")
 
 
+def require_vboot_keys():
+    """With CONFIG_VBOOT=y and no keys/, coreboot silently signs with the public
+    vboot devkeys - anyone could then build an image this firmware accepts. Stop
+    instead: the signature would look fine and mean nothing."""
+    defconfig = (CONFIG / "defconfig").read_text()
+    if not re.search(r"^CONFIG_VBOOT=y", defconfig, re.M):
+        return
+    if (KEYS / "root_key.vbpubk").exists():
+        return
+    sys.exit("ERROR: CONFIG_VBOOT=y but keys/ has no keyset - the build would sign with\n"
+             "   the public vboot devkeys, which anyone can use.\n"
+             "   Generate your own:  sh scripts/gen-vboot-keys.sh")
+
+
 def sync_build_config(src):
     """Mirror the current config/defconfig (+splash.bmp) and patches/ into sources/<mode>/.
     That way local defconfig/patch tweaks reach the offline build (context = sources/<mode>/)
@@ -112,7 +127,17 @@ def sync_build_config(src):
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(PROJECT / "patches", dst)                    # base patches (Dockerfile.offline) + tpm-reset
-    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
+    # vboot signing keys (untracked, see .gitignore). Without them the build
+    # falls back to the public devkeys in the vboot tree - fine for bring-up,
+    # useless as a signature.
+    kdst = src / "keys"
+    if kdst.exists():
+        shutil.rmtree(kdst)
+    if KEYS.is_dir():
+        shutil.copytree(KEYS, kdst)
+    else:
+        kdst.mkdir()                                             # empty dir: COPY in the Dockerfile still works
+    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/ + keys/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
 
 
 def log_versions(src):
@@ -150,6 +175,12 @@ def config_hash(src, mac):
             h.update(name.encode() + b"\0" + f.read_bytes() + b"\0")
     for p in sorted((src / "patches" / "base").glob("*.patch")):
         h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
+    # Signing keys: only the public halves and the keyblock go into the hash -
+    # they determine what the firmware verifies against, and hashing the
+    # private keys would put them in an image label.
+    for k in sorted((src / "keys").glob("*")):
+        if k.suffix in (".vbpubk", ".keyblock"):
+            h.update(k.name.encode() + b"\0" + k.read_bytes() + b"\0")
     return h.hexdigest()
 
 
@@ -355,6 +386,7 @@ def main():
     # PHASE 1 must have run - no silent fallback to online/another mode.
     src = require_sources(args.mode)
     verify_checksums(src)
+    require_vboot_keys()
     sync_build_config(src)
     log_versions(src)
 

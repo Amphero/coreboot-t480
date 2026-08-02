@@ -95,6 +95,8 @@ podman run --rm \
 cp -f "$CONFIG/defconfig" "$SRC/defconfig"
 cp -f "$CONFIG/board.conf" "$SRC/board.conf"                    # MAC marker + DT_DEVICE toggles
 cp -f "$BUILD/apply-devicetree.sh" "$SRC/apply-devicetree.sh"   # config-driven devicetree toggles
+rm -rf "$SRC/keys"; mkdir -p "$SRC/keys"                        # vboot signing keys (untracked)
+[ -d "$PROJECT/keys" ] && cp -a "$PROJECT/keys/." "$SRC/keys/" || true
 [ -f "$CONFIG/splash.bmp" ] && cp -f "$CONFIG/splash.bmp" "$SRC/splash.bmp" || true
 rm -rf "$SRC/patches" && cp -a "$PROJECT/patches" "$SRC/patches" # base patches (Dockerfile.offline) + tpm-reset
 

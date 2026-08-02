@@ -1,0 +1,35 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd b/src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd
+new file mode 100644
+index 00000000..b9e73143
+--- /dev/null
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd
+@@ -0,0 +1,29 @@
++FLASH 0x1000000 {
++	SI_DESC@0x0 0x1000
++	SI_GBE@0x1000 0x2000
++	SI_ME@0x3000 0x111000
++	BIOS@0x240000 0xdc0000 {
++		RW_MRC_CACHE@0x0 0x10000
++		SMMSTORE(PRESERVE)@0x10000 0x40000
++		RW_ELOG(PRESERVE)@0x50000 0x4000
++		RW_NVRAM(PRESERVE)@0x54000 0x6000
++		RW_UNUSED@0x5a000 0x6000
++		RW_SECTION_A@0x60000 0x400000 {
++			VBLOCK_A@0x0 0x10000
++			FW_MAIN_A(CBFS)@0x10000 0x3effc0
++			RW_FWID_A@0x3fffc0 0x40
++		}
++		RW_SECTION_B@0x460000 0x400000 {
++			VBLOCK_B@0x0 0x10000
++			FW_MAIN_B(CBFS)@0x10000 0x3effc0
++			RW_FWID_B@0x3fffc0 0x40
++		}
++		WP_RO@0x860000 0x560000 {
++			FMAP@0x0 0x800
++			RO_FRID@0x800 0x40
++			RO_FRID_PAD@0x840 0x7c0
++			GBB@0x1000 0xf000
++			COREBOOT(CBFS)@0x10000 0x550000
++		}
++	}
++}

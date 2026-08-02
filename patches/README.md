@@ -367,6 +367,27 @@ The kernel calls `\BLTH`/`\WGSV` nowhere else - only from
 reuse them (checked in the 7.1 tree). That also gives a way to test
 without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
 
+## base/0040-t480-vboot-fmd.patch
+
+**Files:** `src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd` (new)
+
+Flash layout for the vboot port (see `docs/vboot-plan.md`): two signed
+4 MB slots `RW_SECTION_A/B`, `WP_RO` (FMAP, GBB, RO CBFS) at the top of
+the chip, `RW_MRC_CACHE` and `SMMSTORE` at their current absolute
+offsets so existing installs keep their settings across the migration.
+Inert on its own - the file only takes effect when `CONFIG_FMDFILE`
+points at it, which only the vboot defconfig does. Layout validated
+with `fmaptool` (offsets tile `BIOS` exactly, three CBFSes recognized).
+
+## base/0041-t480-vboot-kconfig.patch
+
+**Files:** `src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
+
+Adds the board's `config VBOOT` select block (`VBOOT_SLOTS_RW_AB`),
+same pattern as google/glados, inside the existing
+`if BOARD_LENOVO_SKLKBL_THINKPAD_COMMON` guard so it stays scoped to
+this board. No effect until `CONFIG_VBOOT=y` is set.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
