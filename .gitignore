@@ -6,3 +6,6 @@
 # flash dumps, backups, reference material - carries machine identity (MAC, serial, UEFI vars)
 *.bin
 /firmware/
+
+# vboot signing keys - the private halves must never leave this machine
+/keys/
