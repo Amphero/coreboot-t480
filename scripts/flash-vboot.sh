@@ -20,7 +20,11 @@ die(){ printf '\n\033[1;31mABORT: %s\033[0m\n' "$*" >&2; exit 1; }
 ROM="${1:-$(ls -t "$ROMDIR"/coreboot_t480_*.rom 2>/dev/null | grep -v tpmreset | head -1 || true)}"
 [ -n "$ROM" ] && [ -f "$ROM" ] || die "no ROM found in $ROMDIR (pass one explicitly)"
 [ "$(stat -c %s "$ROM")" = 16777216 ] || die "$ROM is not exactly 16 MiB"
-case "$ROM" in *tpmreset*) die "that is the TPM reset ROM" ;; esac
+# The auto-pick above skips reset ROMs; naming one explicitly is a deliberate
+# step of the TPM reset procedure, so warn instead of refusing.
+case "$ROM" in *tpmreset*)
+	printf '\n\033[1;33mNOTE: this is the TPM reset ROM - it clears the TPM on every boot.\033[0m\n' ;;
+esac
 
 [ "$(id -u)" = 0 ] || die "run as root: run0 bash $0"
 command -v flashrom >/dev/null || die "flashrom is missing"
