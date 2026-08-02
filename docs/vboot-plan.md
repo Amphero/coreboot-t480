@@ -198,6 +198,25 @@ Config/build changes outside the patch series:
   directly (CMOS offset 0x26, CRC8 over the record), or document that
   clearing CMOS resets the choice to A.
 
+## M3 progress
+
+- Own keyset generated with the upstream helpers from
+  `scripts/keygeneration/common.sh` (root RSA4096/SHA512,
+  firmware_data_key RSA4096/SHA256, recovery RSA4096/SHA512, plus the
+  firmware keyblock). `create_new_keys.sh` itself is unusable here - it
+  insists on ChromeOS AP-RO keys - and `dumpRSAPublicKey` has to be
+  compiled by hand (`cc utility/dumpRSAPublicKey.c -Ihost/include
+  -lcrypto`), while `vbutil_key`/`vbutil_keyblock` only exist as futility
+  subcommands and need shims for common.sh.
+- Keys live in `keys/`, untracked (.gitignore). The build copies them
+  into the context; the config hash covers only the public halves and
+  the keyblock, so private keys never end up in an image label. Without
+  `keys/` the build falls back to the vboot devkeys.
+- Signature swap verified offline before flashing: the GBB of the new
+  image carries our root key, and VBLOCK_A verifies against it, while
+  the previous devkey-signed image fails the same check
+  ("Error verifying keyblock") - which is the check verstage runs.
+
 ## Open questions / risks
 
 1. **TPM interplay:** resolved in M1, see findings - the three users
