@@ -420,11 +420,27 @@ that clears the TPM on every boot via TPM2_Clear.
 
 ```bash
 python3 scripts/build-firmware.py --mode pinned --tpm-reset
+```
 
-sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned_tpmreset.rom
+Internal flashing only works with coreboot already on the chip - it needs
+the FMAP that only a coreboot image has, and the vendor BIOS locks the
+flash anyway. Running coreboot, only the COREBOOT region is written, so
+all settings survive (boot with `iomem=relaxed`):
+
+```bash
+sudo flashrom -p internal --fmap -i COREBOOT -w roms/coreboot_t480_pinned_tpmreset.rom
 # boot once, then:
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0
 tpm2_getcap properties-variable                # ownerAuthSet, disableClear = 0
+sudo flashrom -p internal --fmap -i COREBOOT -w roms/coreboot_t480_pinned.rom
+```
+
+Coming straight from the vendor BIOS (e.g. doing the reset as part of the
+first install), flash externally with the programmer instead:
+
+```bash
+sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned_tpmreset.rom
+# boot once and check as above, then:
 sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
 ```
 
