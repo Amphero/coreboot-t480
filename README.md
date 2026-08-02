@@ -465,6 +465,11 @@ settings and Secure Boot keys survive the switch.
 
 ### Signing keys
 
+These are not the Secure Boot keys. The vboot keys sign the firmware
+slots and their root key sits in the GBB inside `WP_RO`; the Secure Boot
+keys (`sbctl`) live in SMMSTORE and are never touched by a firmware
+update, because SMMSTORE is outside the regions that get written.
+
 `config/defconfig` points at `keys/`, which is untracked - generate your
 own before the first vboot build. The build refuses to run without them
 rather than falling back to the public vboot devkeys, which would leave
@@ -513,11 +518,20 @@ futility vbutil_keyblock --unpack firmware.keyblock --signpubkey root_key.vbpubk
 
 </details>
 
-Losing them is not fatal as long as WP_RO is still writable: generate a
-new keyset, rebuild, and flash - the new root key goes into the GBB in
-WP_RO and the new slots match it. Write `WP_RO` along with the slots;
-slots alone would leave the old root key in place and both would be
-refused. The TPM is not cleared again; its vboot spaces already exist.
+Losing them is not fatal as long as WP_RO is still writable:
+
+```bash
+sh scripts/gen-vboot-keys.sh
+python3 scripts/build-firmware.py --mode latest --rebuild-base
+# then flash as under Updating
+```
+
+The new root key goes into the GBB in WP_RO and the new slots match it.
+Write `WP_RO` along with the slots; slots alone would leave the old root
+key in place and both would be refused. Secure Boot keys, boot entries
+and setup options are unaffected - they sit in SMMSTORE. The TPM is not
+cleared again either; its vboot spaces already exist.
+
 Once WP_RO is write-protected (#3) this stops working and a lost keyset
 means an external flash.
 
