@@ -629,7 +629,23 @@ in an RO recovery boot, which still comes up but retrains memory.
 Slot selection is sticky: after a fallback vboot keeps booting the other
 slot, because `VB2_NV_TRY_NEXT` persists and nothing in this firmware
 resets it (upstream leaves that to the ChromeOS updater). Harmless while
-both slots carry the same image.
+both slots carry the same image - but repairing the broken slot does not
+move the machine back onto it. `scripts/vbnv.py` is that missing step:
+
+```bash
+sudo python3 scripts/vbnv.py show
+sudo python3 scripts/vbnv.py try-next A
+```
+
+`show` decodes which slot is running, what the previous boot did and
+which slot the next one takes; `try-next` writes that last field and
+applies on the next reboot. Needs `/dev/nvram`, i.e. a kernel with
+`CONFIG_NVRAM`.
+
+The block sits in CMOS at index 0x34, 16 bytes, with a header signature
+and a CRC-8 of its own. Both are checked before anything is written and
+the block is left alone when they fail. A block that does not verify is
+not fatal either: coreboot falls back to the copy in `RW_NVRAM`.
 
 A recovery boot - both slots unusable - runs the RO copy and comes up
 fully, so the slots can be rewritten from there. It skips the MRC cache
