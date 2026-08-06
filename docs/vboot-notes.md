@@ -10,8 +10,8 @@ and, where it says so, on hardware. Open work lives in the issue tracker.
 `RW_MRC_CACHE` and `SMMSTORE` keep the absolute offsets they had before
 vboot, so existing installs survive the migration and old backups stay
 compatible. `WP_RO` sits at the top of the chip as one contiguous range,
-which is what makes a controller-level write protection possible at all
-(see the issue about it).
+which is what makes the controller-level write protection possible
+(see "The WP_RO lock" below).
 
 SMMSTORE is found at runtime by coreboot's SMM driver through an FMAP
 lookup (`drivers/smmstore/store.c`), not by a hardcoded offset - keeping
@@ -102,7 +102,33 @@ most once.
 
 secdata therefore stays at 0 and no image is refused as too old.
 
-## Generating keys
+## The WP_RO lock
+
+`BOOTMEDIA_LOCK_CONTROLLER` + `BOOTMEDIA_LOCK_WPRO_VBOOT_RO`: in
+ramstage, `boot_device_security_lockdown()` writes one Flash Protected
+Range register covering `WP_RO` (0xaa0000-0xffffff). The FPRs work at
+4 KB granularity (`SPI_FPR_SHIFT = 12`, five registers), so the region
+is covered exactly; the FMAP offsets are flash-absolute because
+`boot_device_ro()` spans `CONFIG_ROM_SIZE`, not the BIOS region. The
+chipset lockdown then sets FLOCKDN and DLOCK, sealing the register until
+the next reset - and the next boot re-arms it before the payload runs.
+
+Consequences, measured and structural:
+
+- Every host write into the range is dropped by the controller - OS, SMM
+  and the `bios_lock` toggle make no difference. The two mechanisms are
+  independent: EISS gates the regions outside, the FPR seals `WP_RO`.
+- The MRC cache is written at `BS_DEV_ENUMERATE/ON_EXIT`, the FPR set at
+  `BS_DEV_RESOURCES/ON_ENTRY`, FLOCKDN at `BS_DEV_RESOURCES/ON_EXIT` -
+  no ordering conflict, and everything writable lies outside the range
+  anyway. `BOOTMEDIA_LOCK_IN_VERSTAGE` is therefore not needed here.
+- `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` (the rollback-protection
+  escape hatch) sits in the GBB inside `WP_RO`: external-only from now
+  on. Same for replacing the keyset.
+- A successful lock prints `BM-LOCKDOWN: Enabled bootmedia protection`
+  plus an FPR line with the range; `No SPI FPR free!` would mean FSP
+  occupied all five registers and the lock silently did not happen -
+  check the log after any coreboot or FSP update.
 
 `scripts/keygeneration/create_new_keys.sh` is unusable here - it insists
 on ChromeOS AP-RO keys. `scripts/gen-vboot-keys.sh` calls the helpers in
