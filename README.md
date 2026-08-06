@@ -287,6 +287,13 @@ from SMM. For an update, open the setup menu, switch **BIOS Lock** off
 (System form), reboot, flash, switch it back on. The toggle lives in
 SMMSTORE, so it survives reboots but not a full BIOS-region reflash.
 
+Builds with the `WP_RO` controller lock
+(`CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) additionally seal the RO region
+on every boot, no matter what BIOS Lock says. The whole-BIOS-region
+commands above then fail; internally writable are only the regions
+outside `WP_RO` - see [Updating](#updating). Anything inside `WP_RO`
+takes the external programmer.
+
 If flashrom says the BIOS region is read-only and BIOS Lock is already
 off, flash externally.
 
@@ -397,7 +404,9 @@ python3 scripts/transfer-settings.py backup.bin roms/coreboot_t480_pinned.rom
 ```
 
 or, when flashing internally, write only the firmware regions and leave
-SMMSTORE alone:
+SMMSTORE alone (drop `WP_RO` from the list on a build that write-protects
+it - flashrom skips regions whose content already matches, but a changed
+`WP_RO` can then only be written externally):
 
 ```bash
 sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
@@ -560,33 +569,38 @@ Two things to watch:
   the slots leaves the old root key in place, both slots fail
   verification, and the machine ends up in a recovery boot. That is
   recoverable - repeat the flash with `WP_RO` included - but avoidable.
-- **Once `WP_RO` is write-protected (#3), this stops working.** The root
-  key is then out of reach from a running system and replacing the keyset
-  needs the external programmer.
+- **With the `WP_RO` controller lock active, this needs the programmer.**
+  The root key sits inside the sealed region, so the internal command
+  above fails there; write the same three regions externally with the
+  CH341A instead. The slots alone can still go in internally afterwards.
 
 A power cut in the middle is survivable: RO and slots no longer match,
 the machine boots the RO copy, and the flash can be repeated from there.
 
 ### Updating
 
-Boot with `iomem=relaxed`, back up the chip first, then write the three
-firmware regions. On a build with SMM BIOS write protection, switch
-**BIOS Lock** off in the setup menu and reboot before this, and back on
-after ([Internal flashing](#internal-flashing)):
+Boot with `iomem=relaxed`, back up the chip first, then write the two
+slots. On a build with SMM BIOS write protection, switch **BIOS Lock**
+off in the setup menu and reboot before this, and back on after
+([Internal flashing](#internal-flashing)):
 
 ```bash
 sudo flashrom -p internal -r backup.bin
-sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+sudo flashrom -p internal --fmap -i RW_SECTION_A -i RW_SECTION_B \
     -w roms/coreboot_t480_<date>.rom
-sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+sudo flashrom -p internal --fmap -i RW_SECTION_A -i RW_SECTION_B \
     -v roms/coreboot_t480_<date>.rom
 ```
 
 SMMSTORE, the MRC cache and the vboot state are outside those regions, so
 settings and Secure Boot keys survive. Reboot afterwards.
 
-Slot-only changes can skip `WP_RO`; anything touching verstage, the
-bootblock, the GBB or the RO payload needs it.
+The machine boots from the slots, so this is the whole regular update.
+`WP_RO` is sealed by the controller lock on every boot and takes the
+external programmer - which is only needed when the RO half actually
+changes: verstage, the bootblock, the GBB (keyset!), the FMAP layout, or
+to refresh the RO fallback copy. Until then the RO copy simply stays at
+its flashed state; recovery boots run that older firmware.
 
 flashrom checks neither of these: that the ROM carries the same MAC as
 the chip (`xxd -s 0x1000 -l 6 -p`), and that both use the same FMAP
@@ -677,11 +691,14 @@ and retrains memory, which costs a minute or two of black screen.
 
 Firmware in the RW slots cannot be swapped for something you did not
 sign: a correctly signed image from a different keyset is refused and the
-machine boots the other slot. `WP_RO` itself is **not** write-protected
-yet, so anyone with root can still rewrite the RO and the root key with
-it - see issue #3. Rollback protection is inert as well: the TPM counter
-only rolls forward when the OS reports a successful boot, which needs a
-component this firmware does not have.
+machine boots the other slot. `WP_RO` - root key, verstage, RO copy - is
+sealed by a PCH protected range on every boot, out of reach of root, SMM
+and the BIOS Lock toggle alike; changing it means opening the machine.
+What remains from a running system: writing correctly-signed images into
+the slots, and everything a person with a programmer can always do.
+Rollback protection is still inert: the TPM counter only rolls forward
+when the OS reports a successful boot, which needs a component this
+firmware does not have (issue #4).
 
 ## TPM reset
 
@@ -704,11 +721,13 @@ python3 scripts/build-firmware.py --mode pinned --tpm-reset
 
 Internal flashing only works with coreboot already on the chip - it needs
 the FMAP that only a coreboot image has, and the vendor BIOS locks the
-flash anyway. Running coreboot, only the firmware regions are written, so
-all settings survive (boot with `iomem=relaxed`):
+flash anyway. Running coreboot, only the slots are written, so all
+settings survive and the sealed `WP_RO` is never touched - the reset hook
+runs from the booted slot, the RO copy stays the normal firmware (boot
+with `iomem=relaxed`):
 
 ```bash
-R="-i WP_RO -i RW_SECTION_A -i RW_SECTION_B"
+R="-i RW_SECTION_A -i RW_SECTION_B"
 sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_pinned_tpmreset.rom
 # boot once, then:
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0
