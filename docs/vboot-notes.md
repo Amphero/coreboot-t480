@@ -53,12 +53,20 @@ overflows.
 
 ## Slot selection is sticky
 
-`vb2_select_fw_slot()` takes the slot from `VB2_NV_TRY_NEXT`, and the
-fallback writes that field permanently (`2misc.c:408`). Restoring the
+`vb2_select_fw_slot()` takes the slot from `VB2_NV_TRY_NEXT`, and a
+failing slot flips that field permanently: `fail_impl()` writes
+`1 - fw_slot` at `2misc.c:123`, reached through `vb2api_fail()` from
+`vb2_load_fw_keyblock()` and `vb2_load_fw_preamble()`. Restoring the
 broken slot does not move the machine back to it, and nothing in the
 firmware ever does - upstream leaves that to the ChromeOS updater
 (`crossystem fw_try_next`). Harmless while both slots carry the same
 image.
+
+The second fallback, the one inside `vb2_select_fw_slot()` itself
+(`2misc.c:394`), is dead code here. It needs
+`last_fw_result == VB2_FW_RESULT_TRYING`, which is only written when
+`VB2_NV_TRY_COUNT` is non-zero, and neither coreboot nor this repo ever
+sets that field. Do not cite it as the reason for the sticky slot.
 
 ## TPM
 
