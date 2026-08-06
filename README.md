@@ -642,6 +642,19 @@ which slot the next one takes; `try-next` writes that last field and
 applies on the next reboot. Needs `/dev/nvram`, i.e. a kernel with
 `CONFIG_NVRAM`.
 
+The first run answers `Input/output error`. The kernel guards
+`/dev/nvram` with the legacy PC CMOS checksum and refuses reads and
+writes while it is stale, and coreboot only maintains that checksum with
+an option table, which this board does not have. Once:
+
+```bash
+sudo python3 scripts/vbnv.py fix-checksum
+```
+
+That writes CMOS 46/47 and nothing else. The checksum covers CMOS 16-45,
+the vboot block sits at 52-67, and no part of this firmware reads either
+of the two bytes.
+
 The block sits in CMOS at index 0x34, 16 bytes, with a header signature
 and a CRC-8 of its own. Both are checked before anything is written and
 the block is left alone when they fail. A block that does not verify is
