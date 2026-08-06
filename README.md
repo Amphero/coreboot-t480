@@ -281,7 +281,14 @@ If flashrom aborts with "Laptop detected", use
 `-p internal:laptop=this_is_not_a_laptop`. Once coreboot is on the chip,
 flashrom finds the coreboot table and usually needs no override.
 
-If flashrom says the BIOS region is read-only, flash externally.
+Builds with SMM BIOS write protection (`CONFIG_BOOTMEDIA_SMM_BWP` in the
+defconfig) refuse internal writes by design - flash writes only succeed
+from SMM. For an update, open the setup menu, switch **BIOS Lock** off
+(System form), reboot, flash, switch it back on. The toggle lives in
+SMMSTORE, so it survives reboots but not a full BIOS-region reflash.
+
+If flashrom says the BIOS region is read-only and BIOS Lock is already
+off, flash externally.
 
 ## Thunderbolt firmware
 
@@ -563,7 +570,9 @@ the machine boots the RO copy, and the flash can be repeated from there.
 ### Updating
 
 Boot with `iomem=relaxed`, back up the chip first, then write the three
-firmware regions:
+firmware regions. On a build with SMM BIOS write protection, switch
+**BIOS Lock** off in the setup menu and reboot before this, and back on
+after ([Internal flashing](#internal-flashing)):
 
 ```bash
 sudo flashrom -p internal -r backup.bin
