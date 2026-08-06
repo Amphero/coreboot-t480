@@ -91,7 +91,7 @@ def open_nvram(mode):
     except FileNotFoundError:
         sys.exit(f"ERROR: {NVRAM_DEV} does not exist - the kernel needs CONFIG_NVRAM.")
     except PermissionError:
-        sys.exit(f"ERROR: {NVRAM_DEV} is root-only - run this with sudo.")
+        sys.exit(f"ERROR: {NVRAM_DEV} is root-only - run this as root.")
 
 
 def read_block():
