@@ -39,6 +39,15 @@ CONFIG_VBOOT_KEYBLOCK="/opt/keys/firmware.keyblock"
 # the OS, but any WP_RO change needs the external programmer.
 #CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 #CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
+# SMM BIOS write protection: flash writes only succeed from SMM, so flashrom
+# from a running OS stops working while SMMSTORE (which goes through SMM) keeps
+# working. The runtime option puts a "BIOS Lock" toggle into the setup menu
+# (patch 0042) - turn it off, reboot, flash, turn it back on. The toggle lives
+# in SMMSTORE, writable from the OS, so this is a tripwire against accidents
+# and remote software, not a boundary against root. That boundary is the
+# controller lock above.
+CONFIG_BOOTMEDIA_SMM_BWP=y
+CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
 CONFIG_SMMSTORE=y
 CONFIG_SMMSTORE_V2=y
 CONFIG_SMMSTORE_SIZE=0x40000
