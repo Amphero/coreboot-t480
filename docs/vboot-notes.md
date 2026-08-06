@@ -84,11 +84,23 @@ version into PCR 10; measured boot keeps using PCR 2.
 ## Rollback protection does not work here
 
 `--version $(CONFIG_VBOOT_KEYBLOCK_VERSION)` does set the preamble
-version, but the TPM counter never advances: the roll-forward in
-`2firmware.c:210` requires `last_fw_result == VB2_FW_RESULT_SUCCESS`, and
-nothing sets SUCCESS. vboot only ever writes FAILURE, TRYING and UNKNOWN;
-the code that reports success is in `2load_kernel.c`, which coreboot does
-not call. secdata stays at 0 and no image is refused as too old.
+version, but the TPM counter never advances. Two things stop it, and
+either one alone would be enough.
+
+The roll-forward at `2firmware.c:210` needs all three of: a version above
+secdata, the same slot as the last boot, and `last_fw_result ==
+VB2_FW_RESULT_SUCCESS`. Nothing ever writes SUCCESS - not in coreboot,
+and not in vboot either outside its own unit tests. vboot writes only
+FAILURE, TRYING and UNKNOWN; on ChromeOS the success report comes from
+userspace (`crossystem fw_result`), which is the piece a coreboot-only
+integration does not have.
+
+And `CONFIG_VBOOT_KEYBLOCK_VERSION` is not set in `config/defconfig`, so
+it keeps its default of 1 and every build carries the same version. Even
+with SUCCESS in place, `fw_version > fw_version_secdata` could be true at
+most once.
+
+secdata therefore stays at 0 and no image is refused as too old.
 
 ## Generating keys
 
