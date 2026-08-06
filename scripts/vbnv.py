@@ -6,11 +6,21 @@ machine with this firmware.
 
   sudo python3 scripts/vbnv.py show
   sudo python3 scripts/vbnv.py try-next A
+  sudo python3 scripts/vbnv.py boot-ok
 
-WHY: when a slot fails verification, vboot flips VB2_NV_TRY_NEXT to the other
-slot and never flips it back (`fail_impl()`, 2misc.c:123). Repairing the broken
-slot does not move the machine back to it - upstream leaves that to the ChromeOS
-updater, which this firmware does not have. `try-next` is that missing piece.
+WHY: two things upstream leaves to the ChromeOS updater, which this firmware
+does not have.
+
+`try-next`: when a slot fails verification, vboot flips VB2_NV_TRY_NEXT to the
+other slot and never flips it back (`fail_impl()`, 2misc.c:123). Repairing the
+broken slot does not move the machine back to it.
+
+`boot-ok`: the TPM rollback counter only moves when the *previous* boot was
+reported successful - `2firmware.c:210` wants a higher version, the same slot as
+last boot, and `last_fw_result == VB2_FW_RESULT_SUCCESS`. Nothing in coreboot or
+vboot ever writes SUCCESS (on ChromeOS that is `crossystem fw_result`), so
+without this the counter stays at 0 forever. Run it late in the boot, when
+"successful" actually means something - see README.md for the systemd unit.
 
 WHERE: CMOS index 0x34, 16 bytes. coreboot reads the block at
 CONFIG_VBOOT_VBNV_OFFSET + 14 (security/vboot/vbnv_cmos.c), and this board's
@@ -65,6 +75,7 @@ BOOT2_PREV_RESULT_SHIFT = 4
 BOOT2_PREV_TRIED        = 0x40
 
 RESULTS = {0: "unknown", 1: "trying", 2: "success", 3: "failure"}
+RESULT_SUCCESS = 2   # VB2_FW_RESULT_SUCCESS
 
 
 def crc8(data):
@@ -129,6 +140,29 @@ def write_block(blk):
             if e.errno == errno.EIO:
                 sys.exit(f"ERROR: cannot write {NVRAM_DEV}: {EIO_HINT}")
             raise
+
+
+def cmd_boot_ok(_args):
+    """Report this boot as successful, so the next one can roll the TPM
+    rollback counter forward (2firmware.c:210)."""
+    blk = read_block()
+    bad = check(blk)
+    if bad:
+        sys.exit(f"ERROR: the VBNV block does not verify ({bad}) - refusing to write.\n"
+                 f"       Reboot once so the firmware rewrites it, then try again.")
+
+    if (blk[OFFS_BOOT2] & BOOT2_RESULT_MASK) == RESULT_SUCCESS:
+        print("this boot is already marked successful - nothing written")
+        return 0
+
+    blk[OFFS_BOOT2] = (blk[OFFS_BOOT2] & ~BOOT2_RESULT_MASK & 0xff) | RESULT_SUCCESS
+    write_block(blk)
+
+    back = read_block()
+    if check(back) or (back[OFFS_BOOT2] & BOOT2_RESULT_MASK) != RESULT_SUCCESS:
+        sys.exit("ERROR: the write did not stick.")
+    print(f"boot marked successful (slot {slot_name(back[OFFS_BOOT2] & BOOT2_TRIED)})")
+    return 0
 
 
 def cmd_fix_checksum(_args):
@@ -201,12 +235,15 @@ def main():
     p = sub.add_parser("try-next", help="pick the slot the next boot selects")
     p.add_argument("slot", choices=["A", "B", "a", "b"], help="slot to boot next")
 
+    sub.add_parser("boot-ok", help="report this boot as successful (rollback counter)")
+
     sub.add_parser("fix-checksum",
                    help="recompute the legacy CMOS checksum so /dev/nvram opens up")
 
     args = ap.parse_args()
     return {"show": cmd_show,
             "try-next": cmd_try_next,
+            "boot-ok": cmd_boot_ok,
             "fix-checksum": cmd_fix_checksum}[args.command](args)
 
 
