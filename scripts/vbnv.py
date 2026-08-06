@@ -18,18 +18,34 @@ VBOOT_VBNV_OFFSET is 0x26. /dev/nvram hides the first 14 RTC bytes, so the file
 offset is 0x26 as well - the two numbers match by construction, not by accident.
 
 The block carries a header signature and a CRC-8; both are checked before
-anything is written back, and nothing is touched when they do not verify. A
-write makes the kernel refresh its own CMOS checksum at index 0x2e/0x2f, which
-is outside the block, and this board ships no cmos.layout, so coreboot keeps no
-CMOS option table that could care.
+anything is written back, and nothing is touched when they do not verify.
+
+FIRST RUN: expect `Input/output error`. The kernel guards /dev/nvram with the
+legacy PC CMOS checksum and refuses both reads and writes while it is stale
+(pc_nvram_read()/pc_nvram_write() in drivers/char/nvram.c). coreboot only
+maintains that checksum with USE_OPTION_TABLE, and this board has no
+cmos.layout, so it never does. `fix-checksum` makes the kernel recompute it
+once.
+
+That is safe here: the checksum covers CMOS 16-45 and lives at 46/47, while
+VBNV sits at 52-67. coreboot reads neither in this configuration - its
+cmos_set_checksum() call sits inside `if (CONFIG(USE_OPTION_TABLE))`
+(drivers/pc80/rtc/mc146818rtc.c). Nothing else writes CMOS 16-45 on this
+machine, so it stays valid afterwards.
 
 Changes apply on the next reboot - the firmware reads VBNV in verstage.
 """
-import argparse, sys
+import argparse, errno, fcntl, sys
 
 NVRAM_DEV  = "/dev/nvram"
 NVRAM_OFF  = 0x26   # = CONFIG_VBOOT_VBNV_OFFSET, see the module docstring
 BLOCK_SIZE = 16     # VBOOT_VBNV_BLOCK_SIZE
+
+NVRAM_SETCKS = 0x7041   # _IO('p', 0x41), uapi/linux/nvram.h - recompute checksum
+
+EIO_HINT = ("the kernel refuses /dev/nvram while the legacy PC CMOS checksum is\n"
+            "       stale, and this firmware never writes it. Run once:\n"
+            "           sudo python3 scripts/vbnv.py fix-checksum")
 
 # offsets inside the block - security/vboot/vbnv_layout.h, 2nvstorage_fields.h
 OFFS_HEADER   = 0
@@ -69,15 +85,24 @@ def slot_name(bit):
     return "B" if bit else "A"
 
 
-def read_block():
+def open_nvram(mode):
     try:
-        with open(NVRAM_DEV, "rb", buffering=0) as f:
-            f.seek(NVRAM_OFF)
-            blk = f.read(BLOCK_SIZE)
+        return open(NVRAM_DEV, mode, buffering=0)
     except FileNotFoundError:
         sys.exit(f"ERROR: {NVRAM_DEV} does not exist - the kernel needs CONFIG_NVRAM.")
     except PermissionError:
         sys.exit(f"ERROR: {NVRAM_DEV} is root-only - run this with sudo.")
+
+
+def read_block():
+    with open_nvram("rb") as f:
+        f.seek(NVRAM_OFF)
+        try:
+            blk = f.read(BLOCK_SIZE)
+        except OSError as e:
+            if e.errno == errno.EIO:
+                sys.exit(f"ERROR: cannot read {NVRAM_DEV}: {EIO_HINT}")
+            raise
     if len(blk) != BLOCK_SIZE:
         sys.exit(f"ERROR: short read from {NVRAM_DEV} ({len(blk)} of {BLOCK_SIZE} bytes).")
     return bytearray(blk)
@@ -96,9 +121,26 @@ def check(blk):
 
 def write_block(blk):
     blk[OFFS_CRC] = crc8(blk[:OFFS_CRC])
-    with open(NVRAM_DEV, "r+b", buffering=0) as f:
+    with open_nvram("r+b") as f:
         f.seek(NVRAM_OFF)
-        f.write(bytes(blk))
+        try:
+            f.write(bytes(blk))
+        except OSError as e:
+            if e.errno == errno.EIO:
+                sys.exit(f"ERROR: cannot write {NVRAM_DEV}: {EIO_HINT}")
+            raise
+
+
+def cmd_fix_checksum(_args):
+    """Have the kernel recompute the legacy PC CMOS checksum. Writes CMOS 46/47
+    and nothing else; the VBNV block at 52-67 is not touched."""
+    with open_nvram("r+b") as f:
+        try:
+            fcntl.ioctl(f, NVRAM_SETCKS)
+        except OSError as e:
+            sys.exit(f"ERROR: NVRAM_SETCKS failed: {e}")
+    print("CMOS checksum recomputed - /dev/nvram is readable now")
+    return cmd_show(None)
 
 
 def cmd_show(_args):
@@ -159,8 +201,13 @@ def main():
     p = sub.add_parser("try-next", help="pick the slot the next boot selects")
     p.add_argument("slot", choices=["A", "B", "a", "b"], help="slot to boot next")
 
+    sub.add_parser("fix-checksum",
+                   help="recompute the legacy CMOS checksum so /dev/nvram opens up")
+
     args = ap.parse_args()
-    return cmd_show(args) if args.command == "show" else cmd_try_next(args)
+    return {"show": cmd_show,
+            "try-next": cmd_try_next,
+            "fix-checksum": cmd_fix_checksum}[args.command](args)
 
 
 if __name__ == "__main__":
