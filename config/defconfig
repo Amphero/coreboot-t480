@@ -27,6 +27,14 @@ CONFIG_VBOOT_ALWAYS_ENABLE_DISPLAY=y
 CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y
 # own signing keys from keys/ (never committed). Drop these four lines to fall
 # back to the public vboot devkeys.
+# Firmware version for rollback protection. futility puts it into the preamble
+# of both slots; vboot combines it with the keyblock's key version into
+# sd->fw_version and refuses anything strictly below the TPM counter. RAISE THIS
+# BY ONE FOR EVERY RELEASE that fixes something worth locking out - the counter
+# can never move without it. Raising it makes every older image unbootable once
+# the counter has followed (scripts/vbnv.py boot-ok), backups included; the
+# recovery path in WP_RO is not version-checked and always boots.
+CONFIG_VBOOT_KEYBLOCK_VERSION=1
 CONFIG_VBOOT_ROOT_KEY="/opt/keys/root_key.vbpubk"
 CONFIG_VBOOT_RECOVERY_KEY="/opt/keys/recovery_key.vbpubk"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="/opt/keys/firmware_data_key.vbprivk"
