@@ -696,9 +696,49 @@ sealed by a PCH protected range on every boot, out of reach of root, SMM
 and the BIOS Lock toggle alike; changing it means opening the machine.
 What remains from a running system: writing correctly-signed images into
 the slots, and everything a person with a programmer can always do.
-Rollback protection is still inert: the TPM counter only rolls forward
-when the OS reports a successful boot, which needs a component this
-firmware does not have (issue #4).
+
+### Rollback protection
+
+vboot keeps a firmware version in the TPM and refuses any slot below it.
+The counter only advances when the *previous* boot was reported
+successful, and nothing in coreboot or vboot ever reports that - upstream
+leaves it to the ChromeOS updater. `scripts/vbnv.py boot-ok` is that
+report; run it late in the boot, so "successful" means the machine
+actually came up:
+
+```ini
+# /etc/systemd/system/vboot-boot-ok.service
+[Unit]
+Description=Report a successful boot to vboot
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /path/to/scripts/vbnv.py boot-ok
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The counter then follows on the next boot. Read it with
+`tpm2_nvread 0x1007 | od -An -tx1` - bytes 3-6 are the version, little
+endian.
+
+Three things to know before enabling this:
+
+- **`CONFIG_VBOOT_KEYBLOCK_VERSION` has to be raised per release.** The
+  counter cannot move past a version that never changes.
+- **Once the counter has followed, older images stop booting** - the ROMs
+  in `roms/` and any backup among them. That is the point of the
+  mechanism, not a side effect.
+- **The way back is a TPM clear.** `factory_initialize_tpm2()` recreates
+  the vboot spaces with the counter at 0, which is what the `--tpm-reset`
+  ROM triggers. It flashes into the slots, so it still works with `WP_RO`
+  write-protected. The other escape, `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`,
+  sits inside `WP_RO` and needs the programmer.
+
+After a fallback the first boot of the new slot does not advance the
+counter - the roll-forward wants the same slot as the previous boot.
 
 ## TPM reset
 
