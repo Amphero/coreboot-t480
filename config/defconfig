@@ -31,14 +31,19 @@ CONFIG_VBOOT_ROOT_KEY="/opt/keys/root_key.vbpubk"
 CONFIG_VBOOT_RECOVERY_KEY="/opt/keys/recovery_key.vbpubk"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="/opt/keys/firmware_data_key.vbprivk"
 CONFIG_VBOOT_KEYBLOCK="/opt/keys/firmware.keyblock"
-# SPI write protection for WP_RO - prepared, deliberately off (docs/vboot-notes.md).
-# Uses the PCH protected range registers, which have 4 KB granularity and can
-# cover WP_RO exactly; the chip's own BP bits only do power-of-two blocks and
-# would round up to the top 8 MB, taking half of RW_SECTION_B with them.
-# Once enabled, SMMSTORE, the MRC cache and both RW slots stay writable from
-# the OS, but any WP_RO change needs the external programmer.
-#CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
-#CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
+# SPI write protection for WP_RO (docs/vboot-notes.md). A PCH protected range
+# register covers WP_RO exactly - 4 KB granularity; the chip's own BP bits only
+# do power-of-two blocks and would round up to the top 8 MB, taking half of
+# RW_SECTION_B with them. The range is sealed with FLOCKDN/DLOCK every boot and
+# blocks every host write including SMM - independent of bios_lock, which only
+# gates the regions outside it. SMMSTORE, the MRC cache and both RW slots stay
+# writable (slot updates keep working internally); any WP_RO change - keyset,
+# GBB, verstage, layout - needs the external programmer from now on.
+# BOOTMEDIA_LOCK_IN_VERSTAGE stays off: it would lock before ramstage and its
+# help text warns it blocks write-protect facilities there; everything running
+# between verstage and the ramstage lock is verified code anyway.
+CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
+CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 # SMM BIOS write protection: flash writes only succeed from SMM, so flashrom
 # from a running OS stops working while SMMSTORE (which goes through SMM) keeps
 # working. The runtime option puts a "BIOS Lock" toggle into the setup menu
