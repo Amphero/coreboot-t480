@@ -111,6 +111,30 @@ def require_vboot_keys():
              "   Generate your own:  sh scripts/gen-vboot-keys.sh")
 
 
+def require_recorded_version():
+    """The rollback version has to be traceable after the fact - which build
+    carried it, and what it locked out. Refuse to build a value that is not in
+    docs/firmware-versions.md, and refuse one vboot cannot represent."""
+    defconfig = (CONFIG / "defconfig").read_text()
+    if not re.search(r"^CONFIG_VBOOT=y", defconfig, re.M):
+        return
+    m = re.search(r"^CONFIG_VBOOT_KEYBLOCK_VERSION=(\d+)", defconfig, re.M)
+    version = int(m.group(1)) if m else 1        # Kconfig default
+    if not 1 <= version <= 0xffff:
+        sys.exit(f"ERROR: CONFIG_VBOOT_KEYBLOCK_VERSION={version} is out of range.\n"
+                 f"   vboot rejects anything above 65535 (VB2_MAX_PREAMBLE_VERSION):\n"
+                 f"   both slots would fail verification and the machine would boot RO.")
+
+    record = PROJECT / "docs" / "firmware-versions.md"
+    listed = re.findall(r"^\|\s*(\d+)\s*\|", record.read_text(), re.M) if record.exists() else []
+    if str(version) not in listed:
+        sys.exit(f"ERROR: CONFIG_VBOOT_KEYBLOCK_VERSION={version} is not recorded in\n"
+                 f"   docs/firmware-versions.md - add a row for it first (what changed,\n"
+                 f"   and what booting the previous image again would mean).\n"
+                 f"   Recorded so far: {', '.join(listed) or '(none)'}")
+    print(f"[vboot]  rollback version {version} (recorded in docs/firmware-versions.md)")
+
+
 def sync_build_config(src):
     """Mirror the current config/defconfig (+splash.bmp) and patches/ into sources/<mode>/.
     That way local defconfig/patch tweaks reach the offline build (context = sources/<mode>/)
@@ -387,6 +411,7 @@ def main():
     src = require_sources(args.mode)
     verify_checksums(src)
     require_vboot_keys()
+    require_recorded_version()
     sync_build_config(src)
     log_versions(src)
 
