@@ -706,19 +706,26 @@ leaves it to the ChromeOS updater. `scripts/vbnv.py boot-ok` is that
 report; run it late in the boot, so "successful" means the machine
 actually came up:
 
-```ini
-# /etc/systemd/system/vboot-boot-ok.service
+```bash
+sudo install -o root -g root -m 755 scripts/vbnv.py /usr/local/bin/vbnv
+sudo tee /etc/systemd/system/vboot-boot-ok.service >/dev/null <<'EOF'
 [Unit]
 Description=Report a successful boot to vboot
 After=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /path/to/scripts/vbnv.py boot-ok
+ExecStart=/usr/local/bin/vbnv boot-ok
 
 [Install]
 WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now vboot-boot-ok.service
 ```
+
+The copy is deliberate: the unit runs as root, and a repo in `$HOME` is
+writable by your user - root should not execute from there. It also means
+the copy has to be refreshed whenever `scripts/vbnv.py` changes.
 
 The counter then follows on the next boot. Read it with
 `tpm2_nvread 0x1007 | od -An -tx1` - bytes 3-6 are the version, little
