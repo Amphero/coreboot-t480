@@ -64,6 +64,21 @@ which this firmware does not use - nothing ever sets that field.
 `roms/` and any backup. That is the mechanism working as intended, not a
 failure - see "Rollback protection" in the README for the two ways back.
 
+**That only holds with `CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` off.**
+coreboot sets it by default, and it makes vboot skip the comparison while the
+counter keeps advancing - so the number moves and stops nobody. Measured on
+this machine: a version-2 slot booted with the counter at 3. The flag sits in
+the GBB inside `WP_RO`, so clearing it takes the external programmer. Check a
+built image before trusting the protection:
+
+```bash
+python3 - <<'EOF'
+import struct
+r = open("roms/<rom>", "rb").read()
+print(hex(struct.unpack_from("<I", r, 0xaa1000 + 12)[0]))   # GBB flags, want 0x10 or 0x00
+EOF
+```
+
 ## When the counter runs out
 
 The value in the TPM is `(key_version << 16) | firmware_version`. With

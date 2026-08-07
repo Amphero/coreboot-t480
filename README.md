@@ -821,6 +821,11 @@ Three things to know before enabling this:
 - **Once the counter has followed, older images stop booting** - the ROMs
   in `roms/` and any backup among them. That is the point of the
   mechanism, not a side effect.
+- **`CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` has to be off.** coreboot
+  enables it by default, and it makes vboot skip the comparison while the
+  counter still advances - a version that moves and stops nobody
+  (measured: a version-2 slot booted with the counter at 3). The flag
+  lives in the GBB inside `WP_RO`, so clearing it takes the programmer.
 - **The way back is a TPM clear.** `factory_initialize_tpm2()` recreates
   the vboot spaces with the counter at 0, which is what the `--tpm-reset`
   ROM triggers. It flashes into the slots, so it still works with `WP_RO`
