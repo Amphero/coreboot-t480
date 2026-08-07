@@ -278,11 +278,29 @@ A bad flash is not fatal as long as the backup exists: flash the backup
 back the same way and the machine is exactly where it started. The only
 real way to lose the machine is to lose the backup.
 
+To update an existing install without losing settings, write only the
+firmware regions - the same idea as an internal update, just with the
+clip on:
+
+```bash
+sudo flashrom -p ch341a_spi --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -w roms/coreboot_t480_<date>.rom
+```
+
+SMMSTORE, the MRC cache and the vboot state are outside those regions, so
+Secure Boot keys and setup options survive. This is the only way to
+refresh `WP_RO` once the controller lock is on.
+
 After flashing: reconnect the internal battery and the CMOS battery, boot
 and set the clock (`sudo timedatectl set-ntp true`).
 
 > [!NOTE]
 > The clock matters. Secure Boot key enrollment silently fails if it's wrong.
+
+Pulling the coin cell clears CMOS, so `vbnv` will report an I/O error
+afterwards - the legacy checksum is stale again. Run
+`sudo vbnv fix-checksum` once, as after the first install. The vboot
+block itself survives: coreboot restores it from its copy in `RW_NVRAM`.
 
 ### Internal flashing
 
