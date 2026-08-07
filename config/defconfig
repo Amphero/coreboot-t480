@@ -34,7 +34,7 @@ CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y
 # can never move without it. Raising it makes every older image unbootable once
 # the counter has followed (scripts/vbnv.py boot-ok), backups included; the
 # recovery path in WP_RO is not version-checked and always boots.
-CONFIG_VBOOT_KEYBLOCK_VERSION=1
+CONFIG_VBOOT_KEYBLOCK_VERSION=2
 CONFIG_VBOOT_ROOT_KEY="/opt/keys/root_key.vbpubk"
 CONFIG_VBOOT_RECOVERY_KEY="/opt/keys/recovery_key.vbpubk"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="/opt/keys/firmware_data_key.vbprivk"

@@ -8,7 +8,8 @@ is not listed here.
 
 | Version | Introduced | coreboot | ROM | SHA256 | Note |
 |---------|------------|----------|-----|--------|------|
-| 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. The TPM counter stands here. |
+| 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. |
+| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-fw2.rom` | `702843b2` | Same firmware as version 1. Raised once deliberately to exercise the whole path - build guard, counter roll-forward, and the RO copy brought to the same state by an external flash. |
 
 ## Rules
 
