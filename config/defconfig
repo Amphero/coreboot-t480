@@ -35,6 +35,16 @@ CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y
 # the counter has followed (scripts/vbnv.py boot-ok), backups included; the
 # recovery path in WP_RO is not version-checked and always boots.
 CONFIG_VBOOT_KEYBLOCK_VERSION=3
+# coreboot sets this GBB flag by default (security/vboot/Kconfig: "default y"),
+# and it makes vboot skip the rollback comparison entirely - 2firmware.c:189
+# logs "Ignoring FW rollback due to GBB flag" and boots the slot anyway. The
+# roll-forward twenty lines below has no such condition, so the counter still
+# advances: it moves and enforces nothing. Measured - a version-2 slot booted
+# with the counter at 3. The flag lives in the GBB inside WP_RO, so changing it
+# needs the external programmer.
+# CONFIG_GBB_FLAG_FORCE_DEV_BOOT_USB is left at its default: it only feeds
+# vb2_fill_dev_boot_flags(), which nothing outside the kernel phase calls.
+# CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK is not set
 CONFIG_VBOOT_ROOT_KEY="/opt/keys/root_key.vbpubk"
 CONFIG_VBOOT_RECOVERY_KEY="/opt/keys/recovery_key.vbpubk"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="/opt/keys/firmware_data_key.vbprivk"
