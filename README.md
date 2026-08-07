@@ -761,6 +761,41 @@ That writes CMOS 46/47 and nothing else. The checksum covers CMOS 16-45,
 the vboot block sits at 52-67, and no part of this firmware reads either
 of the two bytes.
 
+<details>
+<summary>By hand</summary>
+<br>
+
+Reading needs no tool. The block is 16 bytes at CMOS index 0x34, which is
+`CONFIG_VBOOT_VBNV_OFFSET` (0x26) plus the 14 RTC bytes - and `/dev/nvram`
+hides exactly those 14, so the file offset is 0x26 again:
+
+```bash
+sudo od -An -tx1 -j 0x26 -N 16 /dev/nvram
+```
+
+| Byte | Meaning |
+|------|---------|
+| 0 | header - valid when `byte & 0xc3 == 0x40` |
+| 1 | bits 0-3: trial boots left (`TRY_COUNT`) |
+| 2 | recovery request |
+| 7 | bits 0-1 result of this boot, bit 2 running slot, bit 3 next slot, bits 4-5 previous result, bit 6 previous slot (0 = A, 1 = B). Result: 0 unknown, 1 trying, 2 success, 3 failure |
+| 15 | CRC-8 over bytes 0-14 |
+
+So byte 7 = `02` reads as: this boot reported success, slot A is running,
+slot A is next, and the previous boot is unknown on slot A. `2e` would be
+success on B, B next, previous boot successful on A.
+
+Writing is the part that wants a program. Every change needs that CRC
+recomputed - polynomial `x^8 + x^2 + x + 1`, vboot's `vb2_crc8` - and a
+block whose CRC does not match is discarded by the firmware on the next
+boot. `fix-checksum` has no shell equivalent at all: it is the
+`NVRAM_SETCKS` ioctl on `/dev/nvram`.
+
+That is the whole of `vbnv.py`: read 16 bytes, flip bits in byte 1 or 7,
+recompute byte 15, write them back.
+
+</details>
+
 The block sits in CMOS at index 0x34, 16 bytes, with a header signature
 and a CRC-8 of its own. Both are checked before anything is written and
 the block is left alone when they fail. A block that does not verify is

@@ -13,8 +13,8 @@ older image should stop booting. The ROM column names the build that is
 | Version | Introduced | coreboot | Deployed ROM | SHA256 | Note |
 |---------|------------|----------|--------------|--------|------|
 | 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. Superseded. |
-| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Descriptor and ME locked, SPI controller hidden. Still the RO copy in `WP_RO`. |
-| 3 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-fw3.rom` | `66e8906b` | Same firmware as version 2. Raised to rehearse a plain internal update: slots only, RO left where it is. |
+| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Descriptor and ME locked, SPI controller hidden. Superseded. |
+| 3 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-gbbfix.rom` | `e5e38c02` | On the chip, `WP_RO` and both slots. GBB rollback check enabled - the first build where the counter actually refuses anything. |
 
 Checking what is on the chip: verify the firmware regions, not the whole
 image. `RW_MRC_CACHE`, `SMMSTORE` and `RW_NVRAM` hold runtime state and diverge
@@ -33,7 +33,14 @@ Builds of version 2, in order:
 |-----|--------|--------------|
 | `coreboot_t480_20260807-fw2.rom` | `702843b2` | Identical firmware to version 1, version raised to 2. |
 | `coreboot_t480_20260807-ifdlock.rom` | `7b8732ec` | Flash descriptor and ME region locked against the host. Built, never flashed. |
-| `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Same, plus `DT_DEVICE_FAST_SPI=n` - no MTD device for the OS. Currently on the chip. |
+| `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Same, plus `DT_DEVICE_FAST_SPI=n` - no MTD device for the OS. |
+
+Builds of version 3, in order:
+
+| ROM | SHA256 | What changed |
+|-----|--------|--------------|
+| `coreboot_t480_20260807-fw3.rom` | `66e8906b` | Identical firmware to version 2, version raised to 3. |
+| `coreboot_t480_20260807-gbbfix.rom` | `e5e38c02` | `CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` off - GBB flags `0x30` -> `0x10`. Until this build the rollback check was skipped entirely. On the chip. |
 
 ## Rules
 
