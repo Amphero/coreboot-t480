@@ -62,7 +62,8 @@ in the firmware itself.
 </details>
 
 Trade-off: Libreboot's payload lives entirely in its own tree, this one adds
-MrChromebox's EDK2. No UEFI, Secure Boot or TPM needed? Take Libreboot.
+MrChromebox's EDK2. Without a need for UEFI, Secure Boot or TPM, Libreboot is
+the smaller dependency.
 
 > [!WARNING]
 > Flashing firmware can permanently brick your laptop. Everything in this repo
@@ -210,7 +211,7 @@ live in `board.conf`):
 ```
 DT_DEVICE_SMBUS=y        # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
 DT_DEVICE_HECI1=n        # HECI1 (PCI 16.0)
-DT_DEVICE_FAST_SPI=y     # Fast SPI (PCI 1f.5)
+DT_DEVICE_FAST_SPI=n     # Fast SPI (PCI 1f.5)
 ```
 
 A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
@@ -274,9 +275,9 @@ sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
 sudo flashrom -p ch341a_spi -v roms/coreboot_t480_pinned.rom
 ```
 
-A bad flash is not fatal as long as the backup exists: flash the backup
-back the same way and the machine is exactly where it started. The only
-real way to lose the machine is to lose the backup.
+A bad flash is not fatal as long as the backup exists: write it back the
+same way and the machine is where it started. Keep the backup off the
+machine.
 
 To update an existing install without losing settings, write only the
 firmware regions - the same idea as an internal update, just with the
@@ -334,28 +335,32 @@ Both are on by default in this repo.
 
 The second one has no off switch by design. It is a protected range in
 the SPI controller, sealed with `FLOCKDN` before the payload runs, and it
-ignores BIOS Lock, root and SMM alike. `WP_RO` changes need the CH341A -
-that is the point of it.
+ignores BIOS Lock, root and SMM alike. `WP_RO` changes need the CH341A.
 
 Everything outside `WP_RO` - both slots, SMMSTORE, the MRC cache - stays
 writable internally once BIOS Lock is off, which is the normal update
 path. Check the current state:
 
 ```bash
-sudo setpci -s 00:1f.5 dc.b        # aa = BIOS Lock on, 8b = off
 grep -a "BM-LOCKDOWN\|FPR 0" /sys/firmware/log
+sudo flashrom -p internal --flash-name          # needs iomem=relaxed
 ```
 
-The log should show `FPR 0 is enabled for range 0x00aa0000-0x00ffffff`
-and `Enabled bootmedia protection` on every boot. `No SPI FPR free!`
-would mean the lock silently did not happen - worth checking after a
-coreboot or FSP update.
+The log shows `FPR 0 is enabled for range 0x00aa0000-0x00ffffff` and
+`Enabled bootmedia protection` on every boot. `No SPI FPR free!` means
+the lock did not happen - check after a coreboot or FSP update.
+
+flashrom prints the rest: `BIOS Control at 0xdc` (`aa` = BIOS Lock on,
+`8b` = off), the `FREG` lines with the descriptor and ME permissions, and
+`PR0` for the `WP_RO` range. `setpci` cannot read that register, because
+`DT_DEVICE_FAST_SPI=n` keeps 00:1f.5 out of the PCI enumeration.
 
 > [!NOTE]
-> With the SPI controller visible to the OS (`DT_DEVICE_FAST_SPI=y`) the
-> kernel binds it and flashrom goes through `/dev/mtd0`. That path prints
-> `Erase/write done` even when the hardware dropped every write - only
-> the `VERIFIED.` line at the end proves anything.
+> With `DT_DEVICE_FAST_SPI=y` the kernel binds the controller and exposes
+> the chip as `/dev/mtd0`. flashrom then prints `Erase/write done` even
+> when the hardware dropped every write - only the `VERIFIED.` line
+> proves anything. That path also needs no `iomem=relaxed`, which is why
+> the default is `n`.
 
 If flashrom says the BIOS region is read-only and BIOS Lock is already
 off, flash externally.
@@ -662,8 +667,8 @@ sudo flashrom -p internal --fmap -i RW_SECTION_<other> \
 sudo vbnv arm-update                              # one trial boot
 ```
 
-Switch BIOS Lock back on and reboot. Two reboots in total - the same as
-writing both slots, and it buys a fallback.
+Switch BIOS Lock back on and reboot. Two reboots, the same as writing both
+slots.
 
 vboot marks that boot `TRYING`, and `vboot-boot-ok.service` turns it into
 `SUCCESS` once the system is up. If the new firmware never gets that far,
@@ -679,10 +684,11 @@ version-checked.
 SMMSTORE, the MRC cache and the vboot state sit outside the slots, so
 settings and Secure Boot keys survive either way.
 
-`WP_RO` itself is sealed by the controller lock on every boot and takes
-the external programmer. That is only needed when the RO half really
-changes - verstage, the bootblock, the GBB (keyset!), the FMAP layout -
-or to refresh the RO fallback copy, which otherwise stays at whatever was
+`WP_RO` needs the programmer
+([What the write protections allow](#what-the-write-protections-allow)),
+which is only the case when the RO half really changes - verstage, the
+bootblock, the GBB (keyset, rollback flag), the FMAP layout - or to
+refresh the RO fallback copy, which otherwise stays at whatever was
 flashed last.
 
 flashrom checks neither of these: that the ROM carries the same MAC as
@@ -704,7 +710,7 @@ Which slot booted, and whether it was a recovery boot - that MRC message
 appears only in recovery, since there is no recovery MRC region here:
 
 ```bash
-sudo cbmem -1 | grep -iE 'slot [ab] is|MRC: failed to locate region type 0'
+grep -aE 'Slot [AB] is|MRC: failed to locate region type 0' /sys/firmware/log
 ```
 
 <details>
@@ -849,49 +855,31 @@ The counter then follows on the next boot. Read it with
 `tpm2_nvread 0x1007 | od -An -tx1` - bytes 3-6 are the version, little
 endian.
 
-Three things to know before enabling this:
+Two settings decide whether any of this has an effect:
 
-- **`CONFIG_VBOOT_KEYBLOCK_VERSION` has to be raised per release.** The
-  counter cannot move past a version that never changes.
-- **Once the counter has followed, older images stop booting** - the ROMs
-  in `roms/` and any backup among them. That is the point of the
-  mechanism, not a side effect.
-- **`CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` has to be off.** coreboot
-  enables it by default, and it makes vboot skip the comparison while the
-  counter still advances - a version that moves and stops nobody
-  (measured: a version-2 slot booted with the counter at 3). The flag
-  lives in the GBB inside `WP_RO`, so clearing it takes the programmer.
-- **The way back is a TPM clear.** `factory_initialize_tpm2()` recreates
-  the vboot spaces with the counter at 0, which is what the `--tpm-reset`
-  ROM triggers. It flashes into the slots, so it still works with `WP_RO`
-  write-protected. The other escape, `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`,
-  sits inside `WP_RO` and needs the programmer.
+- **`CONFIG_VBOOT_KEYBLOCK_VERSION`**, raised per release. The counter
+  cannot move past a version that never changes.
+- **`CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`**, off. coreboot enables
+  it by default, and it makes vboot skip the comparison while the counter
+  still advances - measured here, a version-2 slot booted with the
+  counter at 3. It sits in the GBB, so changing it is a `WP_RO` write.
 
-After a fallback the first boot of the new slot does not advance the
-counter - the roll-forward wants the same slot as the previous boot.
+Once the counter has followed a version, every older image is refused:
+the ROMs in `roms/` and any backup among them.
 
-It does *not* check that the previous boot ran the same image, though.
-Flashing a raised version while the running one has already reported
-success advances the counter on the very next boot, in verstage, before
-the new firmware runs at all - a broken update included. To hold it back
-until the new image has proven itself, stop the unit before flashing:
-
-```bash
-sudo systemctl disable --now vboot-boot-ok.service
-# flash, boot, convince yourself it works
-sudo systemctl enable --now vboot-boot-ok.service
-```
-
-ChromeOS avoids this with `VB2_NV_TRY_COUNT`: the updater writes only the
-inactive slot, arms a try counter, and vboot marks the boot `TRYING`
-instead of trusting the last one. Nothing sets that field here, so the
-mechanism is inert.
+The roll-forward wants a success report from the previous boot and the
+same slot. It does not check that the report came from the same image -
+which is what `vbnv arm-update` is for. Arming a trial run marks the boot
+`TRYING` instead, so the counter waits for the new firmware to report for
+itself, and a slot that never comes up falls back on its own. Without it,
+flashing a raised version onto a machine that has already reported
+success advances the counter in verstage, before the new firmware runs.
 
 #### Making an old image bootable again
 
 Once the counter has moved past an image, that image is refused and the
 machine falls back to the other slot, or to a recovery boot if both are
-too old. Two ways out, neither needs the programmer.
+too old. Three ways out; the first two need no programmer.
 
 **Re-sign it with a higher version.** The firmware body is not touched -
 only the signature blocks are rewritten, so this stays a two-sector write
@@ -913,18 +901,16 @@ on the host - it comes from the build image, which also carries the keys.
 The kernel subkey is the one the build used (`CONFIG_VBOOT_KERNEL_KEY`,
 the vboot devkey by default); it plays no part in firmware verification.
 
-Be clear about what this does: the image is now allowed past the counter,
-which is exactly the protection you asked for being switched off for that
-one image. Fine for a firmware of your own you want back; not fine as a
-habit.
+This lifts the counter for that one image - rollback protection off, for
+it alone.
 
 **Or clear the TPM.** The `--tpm-reset` ROM recreates the vboot spaces
 with the counter at 0 (`vb2api_secdata_firmware_create()` zeroes the
 struct). It flashes into the slots, so the `WP_RO` lock does not stand in
 the way - but everything sealed to the TPM is invalidated, LUKS included.
 
-The third route, the GBB flag `DISABLE_FW_ROLLBACK_CHECK`, sits inside
-`WP_RO` and does need the programmer.
+**Or set `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`**, which disables the check
+altogether. That one is a `WP_RO` write.
 
 ## TPM reset
 
