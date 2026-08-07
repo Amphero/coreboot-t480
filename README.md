@@ -810,6 +810,23 @@ Three things to know before enabling this:
 After a fallback the first boot of the new slot does not advance the
 counter - the roll-forward wants the same slot as the previous boot.
 
+It does *not* check that the previous boot ran the same image, though.
+Flashing a raised version while the running one has already reported
+success advances the counter on the very next boot, in verstage, before
+the new firmware runs at all - a broken update included. To hold it back
+until the new image has proven itself, stop the unit before flashing:
+
+```bash
+sudo systemctl disable --now vboot-boot-ok.service
+# flash, boot, convince yourself it works
+sudo systemctl enable --now vboot-boot-ok.service
+```
+
+ChromeOS avoids this with `VB2_NV_TRY_COUNT`: the updater writes only the
+inactive slot, arms a try counter, and vboot marks the boot `TRYING`
+instead of trusting the last one. Nothing sets that field here, so the
+mechanism is inert.
+
 #### Making an old image bootable again
 
 Once the counter has moved past an image, that image is refused and the
