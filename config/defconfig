@@ -61,6 +61,18 @@ CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 # controller lock above.
 CONFIG_BOOTMEDIA_SMM_BWP=y
 CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
+# Flash descriptor: without this coreboot takes its default UNLOCK_FLASH_REGIONS
+# and runs `ifdtool -u`, which hands the host write access to every region -
+# descriptor, ME and GbE included, none of which SMM BWP or the WP_RO range
+# cover (measured: a GbE write succeeds on a fully locked machine). Locking
+# leaves the host read-only on the descriptor and shuts it out of ME writes;
+# ALLOW_CPU_READ_ACCESS keeps ME readable so a full-chip backup still works.
+# BIOS region stays read/write, so slot updates are unaffected. Note that
+# ifdtool deliberately keeps GbE host-writable on this platform - changing the
+# MAC keeps working, and that hole stays open (issue #5).
+# One-way: after this the descriptor itself needs the external programmer.
+CONFIG_LOCK_MANAGEMENT_ENGINE=y
+CONFIG_ME_REGION_ALLOW_CPU_READ_ACCESS=y
 CONFIG_SMMSTORE=y
 CONFIG_SMMSTORE_V2=y
 CONFIG_SMMSTORE_SIZE=0x40000
