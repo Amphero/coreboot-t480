@@ -157,7 +157,30 @@ MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py --mode pinned
 show up in your diffs. Without a MAC from one of the three sources the build
 aborts.
 
-### Options
+### Choosing what to build
+
+Two kinds of switch decide what ends up on the chip. **Build flags** pick
+a payload variant and are passed per run - the base image is shared, so
+they are cheap. **Config changes** in `config/` alter the firmware itself
+and need `--rebuild-base` (about 20 minutes; the toolchain layer is
+cached).
+
+The defaults produce the machine this repo is built for: verified boot
+with your own keys, both write protections on, Secure Boot in Setup Mode,
+TPM enabled.
+
+| If you want | change | note |
+|-------------|--------|------|
+| no verified boot at all | drop `CONFIG_VBOOT`/`CONFIG_FMDFILE` from `config/defconfig` | different flash layout - needs an external flash, settings are lost |
+| verified boot with your own keys | `sh scripts/gen-vboot-keys.sh` | the build refuses to sign with the public devkeys |
+| flash writes blocked outside SMM | `CONFIG_BOOTMEDIA_SMM_BWP` + `..._RUNTIME_OPTION` | adds the **BIOS Lock** toggle to the setup menu |
+| `WP_RO` sealed against the OS | `CONFIG_BOOTMEDIA_LOCK_CONTROLLER` + `CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO` | RO changes need the programmer afterwards |
+| rollback protection to bite | raise `CONFIG_VBOOT_KEYBLOCK_VERSION`, record it | see [docs/firmware-versions.md](docs/firmware-versions.md) |
+| the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, but also fwupd's SPI checks |
+| a different boot logo | replace `config/splash.bmp` | 24-bit uncompressed BMP, max 1920x1080 |
+| a different MAC | `--mac` or `MAC=` in `config/board.conf` | `board.conf` is tracked - a MAC there shows up in diffs |
+
+Build flags, no rebuild needed:
 
 | Flag | Effect |
 |------|--------|
@@ -166,7 +189,7 @@ aborts.
 | `--auto-enroll` | enroll Microsoft's Secure Boot keys instead of Setup Mode |
 | `--no-rng` | leave out the RNG |
 | `--plain` | just the raw base ROM (TPM on, Microsoft keys auto-enrolled) |
-| `--version NAME` | version part of the ROM file name (default: `pinned` or the date) |
+| `--version NAME` | version part of the ROM **file name** - unrelated to the rollback version |
 | `--rebuild-base` | rebuild from scratch after editing `config/defconfig`, `config/board.conf` or `patches/` |
 
 Patches in `patches/base/` are applied to the coreboot tree when the base
@@ -187,7 +210,7 @@ live in `board.conf`):
 ```
 DT_DEVICE_SMBUS=y        # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
 DT_DEVICE_HECI1=n        # HECI1 (PCI 16.0)
-DT_DEVICE_FAST_SPI=n     # Fast SPI (PCI 1f.5)
+DT_DEVICE_FAST_SPI=y     # Fast SPI (PCI 1f.5)
 ```
 
 A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
