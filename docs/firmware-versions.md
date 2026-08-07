@@ -47,10 +47,18 @@ one. The counter cannot move at all while the number stays the same.
 refused and the machine lands in a recovery boot. Dates like `20260807` do not
 fit - that is why this is a counter.
 
-**Nothing happens until the counter follows.** The TPM value only advances on
-the boot *after* a successful one was reported (`vbnv boot-ok`), and only when
-the same slot booted twice in a row. Until then the raised version is just a
-number in the image.
+**The counter follows on the first boot of the new image, not the second.**
+The roll-forward wants a success report from the previous boot and the same
+slot - it does not check that the report was about the same *image*. Flash a
+raised version while the running one has already reported success, and verstage
+advances the counter on the very next boot, before the new firmware has run a
+single instruction. Measured going from version 2 to 3.
+
+That is worth knowing because it cuts both ways: a broken update advances the
+counter too. To hold the counter back until the new image has proven itself,
+disable `vboot-boot-ok.service` before flashing and re-enable it after the new
+firmware has booted a few times. ChromeOS solves this with `VB2_NV_TRY_COUNT`,
+which this firmware does not use - nothing ever sets that field.
 
 **Once it has followed, every older image stops booting**, including the ROMs in
 `roms/` and any backup. That is the mechanism working as intended, not a
