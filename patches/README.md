@@ -388,6 +388,22 @@ same pattern as google/glados, inside the existing
 `if BOARD_LENOVO_SKLKBL_THINKPAD_COMMON` guard so it stays scoped to
 this board. No effect until `CONFIG_VBOOT=y` is set.
 
+## base/0042-cfr-bios-lock-option.patch
+
+**File:** `src/mainboard/lenovo/sklkbl_thinkpad/cfr.c`
+
+Adds `&bios_lock` to the "System" form of the setup menu. Same shape as
+0001: the object already exists upstream in `intelblocks/cfr.h`,
+complete with a callback that hides the entry unless
+`BOOTMEDIA_SMM_BWP_RUNTIME_OPTION` is set - so the patch is inert until
+the defconfig enables SMM BIOS write protection. The option is the
+documented way to flash internally with that protection on: toggle
+"BIOS Lock" off, reboot, flash, toggle it back.
+
+Maintenance note: this patch touches the same `obj_list` as 0001, so it
+is generated against the tree with 0001 (and 0020) already applied.
+When rebasing, keep that order.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`

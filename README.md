@@ -157,7 +157,30 @@ MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py --mode pinned
 show up in your diffs. Without a MAC from one of the three sources the build
 aborts.
 
-### Options
+### Choosing what to build
+
+Two kinds of switch decide what ends up on the chip. **Build flags** pick
+a payload variant and are passed per run - the base image is shared, so
+they are cheap. **Config changes** in `config/` alter the firmware itself
+and need `--rebuild-base` (about 20 minutes; the toolchain layer is
+cached).
+
+The defaults produce the machine this repo is built for: verified boot
+with your own keys, both write protections on, Secure Boot in Setup Mode,
+TPM enabled.
+
+| If you want | change | note |
+|-------------|--------|------|
+| no verified boot at all | drop `CONFIG_VBOOT`/`CONFIG_FMDFILE` from `config/defconfig` | different flash layout - needs an external flash, settings are lost |
+| verified boot with your own keys | `sh scripts/gen-vboot-keys.sh` | the build refuses to sign with the public devkeys |
+| flash writes blocked outside SMM | `CONFIG_BOOTMEDIA_SMM_BWP` + `..._RUNTIME_OPTION` | adds the **BIOS Lock** toggle to the setup menu |
+| `WP_RO` sealed against the OS | `CONFIG_BOOTMEDIA_LOCK_CONTROLLER` + `CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO` | RO changes need the programmer afterwards |
+| rollback protection to bite | raise `CONFIG_VBOOT_KEYBLOCK_VERSION`, record it | see [docs/firmware-versions.md](docs/firmware-versions.md) |
+| the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, but also fwupd's SPI checks |
+| a different boot logo | replace `config/splash.bmp` | 24-bit uncompressed BMP, max 1920x1080 |
+| a different MAC | `--mac` or `MAC=` in `config/board.conf` | `board.conf` is tracked - a MAC there shows up in diffs |
+
+Build flags, no rebuild needed:
 
 | Flag | Effect |
 |------|--------|
@@ -166,7 +189,7 @@ aborts.
 | `--auto-enroll` | enroll Microsoft's Secure Boot keys instead of Setup Mode |
 | `--no-rng` | leave out the RNG |
 | `--plain` | just the raw base ROM (TPM on, Microsoft keys auto-enrolled) |
-| `--version NAME` | version part of the ROM file name (default: `pinned` or the date) |
+| `--version NAME` | version part of the ROM **file name** - unrelated to the rollback version |
 | `--rebuild-base` | rebuild from scratch after editing `config/defconfig`, `config/board.conf` or `patches/` |
 
 Patches in `patches/base/` are applied to the coreboot tree when the base
@@ -187,7 +210,7 @@ live in `board.conf`):
 ```
 DT_DEVICE_SMBUS=y        # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
 DT_DEVICE_HECI1=n        # HECI1 (PCI 16.0)
-DT_DEVICE_FAST_SPI=n     # Fast SPI (PCI 1f.5)
+DT_DEVICE_FAST_SPI=y     # Fast SPI (PCI 1f.5)
 ```
 
 A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
@@ -255,11 +278,29 @@ A bad flash is not fatal as long as the backup exists: flash the backup
 back the same way and the machine is exactly where it started. The only
 real way to lose the machine is to lose the backup.
 
+To update an existing install without losing settings, write only the
+firmware regions - the same idea as an internal update, just with the
+clip on:
+
+```bash
+sudo flashrom -p ch341a_spi --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -w roms/coreboot_t480_<date>.rom
+```
+
+SMMSTORE, the MRC cache and the vboot state are outside those regions, so
+Secure Boot keys and setup options survive. This is the only way to
+refresh `WP_RO` once the controller lock is on.
+
 After flashing: reconnect the internal battery and the CMOS battery, boot
 and set the clock (`sudo timedatectl set-ntp true`).
 
 > [!NOTE]
 > The clock matters. Secure Boot key enrollment silently fails if it's wrong.
+
+Pulling the coin cell clears CMOS, so `vbnv` will report an I/O error
+afterwards - the legacy checksum is stale again. Run
+`sudo vbnv fix-checksum` once, as after the first install. The vboot
+block itself survives: coreboot restores it from its copy in `RW_NVRAM`.
 
 ### Internal flashing
 
@@ -275,13 +316,49 @@ sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_pinned.rom
 That writes the whole BIOS region, SMMSTORE included, so settings and
 Secure Boot keys are gone afterwards. To update an existing install and
 keep them, write only the firmware regions - see
-[Verified boot](#verified-boot).
+[Updating](#updating).
 
 If flashrom aborts with "Laptop detected", use
 `-p internal:laptop=this_is_not_a_laptop`. Once coreboot is on the chip,
 flashrom finds the coreboot table and usually needs no override.
 
-If flashrom says the BIOS region is read-only, flash externally.
+### What the write protections allow
+
+Two independent mechanisms sit between a running system and the chip.
+Both are on by default in this repo.
+
+| | blocks | switch |
+|---|--------|--------|
+| **SMM BIOS write protect** (`BOOTMEDIA_SMM_BWP`) | every write from the OS - the whole BIOS region | **BIOS Lock** in the setup menu, System form |
+| **`WP_RO` controller lock** (`BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) | writes to `WP_RO` only - FMAP, GBB with the root key, RO copy | none; re-armed on every boot |
+
+The second one has no off switch by design. It is a protected range in
+the SPI controller, sealed with `FLOCKDN` before the payload runs, and it
+ignores BIOS Lock, root and SMM alike. `WP_RO` changes need the CH341A -
+that is the point of it.
+
+Everything outside `WP_RO` - both slots, SMMSTORE, the MRC cache - stays
+writable internally once BIOS Lock is off, which is the normal update
+path. Check the current state:
+
+```bash
+sudo setpci -s 00:1f.5 dc.b        # aa = BIOS Lock on, 8b = off
+grep -a "BM-LOCKDOWN\|FPR 0" /sys/firmware/log
+```
+
+The log should show `FPR 0 is enabled for range 0x00aa0000-0x00ffffff`
+and `Enabled bootmedia protection` on every boot. `No SPI FPR free!`
+would mean the lock silently did not happen - worth checking after a
+coreboot or FSP update.
+
+> [!NOTE]
+> With the SPI controller visible to the OS (`DT_DEVICE_FAST_SPI=y`) the
+> kernel binds it and flashrom goes through `/dev/mtd0`. That path prints
+> `Erase/write done` even when the hardware dropped every write - only
+> the `VERIFIED.` line at the end proves anything.
+
+If flashrom says the BIOS region is read-only and BIOS Lock is already
+off, flash externally.
 
 ## Thunderbolt firmware
 
@@ -390,7 +467,9 @@ python3 scripts/transfer-settings.py backup.bin roms/coreboot_t480_pinned.rom
 ```
 
 or, when flashing internally, write only the firmware regions and leave
-SMMSTORE alone:
+SMMSTORE alone (drop `WP_RO` from the list on a build that write-protects
+it - flashrom skips regions whose content already matches, but a changed
+`WP_RO` can then only be written externally):
 
 ```bash
 sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
@@ -553,31 +632,38 @@ Two things to watch:
   the slots leaves the old root key in place, both slots fail
   verification, and the machine ends up in a recovery boot. That is
   recoverable - repeat the flash with `WP_RO` included - but avoidable.
-- **Once `WP_RO` is write-protected (#3), this stops working.** The root
-  key is then out of reach from a running system and replacing the keyset
-  needs the external programmer.
+- **With the `WP_RO` controller lock active, this needs the programmer.**
+  The root key sits inside the sealed region, so the internal command
+  above fails there; write the same three regions externally with the
+  CH341A instead. The slots alone can still go in internally afterwards.
 
 A power cut in the middle is survivable: RO and slots no longer match,
 the machine boots the RO copy, and the flash can be repeated from there.
 
 ### Updating
 
-Boot with `iomem=relaxed`, back up the chip first, then write the three
-firmware regions:
+Boot with `iomem=relaxed`, back up the chip first, then write the two
+slots. On a build with SMM BIOS write protection, switch **BIOS Lock**
+off in the setup menu and reboot before this, and back on after
+([Internal flashing](#internal-flashing)):
 
 ```bash
 sudo flashrom -p internal -r backup.bin
-sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+sudo flashrom -p internal --fmap -i RW_SECTION_A -i RW_SECTION_B \
     -w roms/coreboot_t480_<date>.rom
-sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+sudo flashrom -p internal --fmap -i RW_SECTION_A -i RW_SECTION_B \
     -v roms/coreboot_t480_<date>.rom
 ```
 
 SMMSTORE, the MRC cache and the vboot state are outside those regions, so
 settings and Secure Boot keys survive. Reboot afterwards.
 
-Slot-only changes can skip `WP_RO`; anything touching verstage, the
-bootblock, the GBB or the RO payload needs it.
+The machine boots from the slots, so this is the whole regular update.
+`WP_RO` is sealed by the controller lock on every boot and takes the
+external programmer - which is only needed when the RO half actually
+changes: verstage, the bootblock, the GBB (keyset!), the FMAP layout, or
+to refresh the RO fallback copy. Until then the RO copy simply stays at
+its flashed state; recovery boots run that older firmware.
 
 flashrom checks neither of these: that the ROM carries the same MAC as
 the chip (`xxd -s 0x1000 -l 6 -p`), and that both use the same FMAP
@@ -629,7 +715,36 @@ in an RO recovery boot, which still comes up but retrains memory.
 Slot selection is sticky: after a fallback vboot keeps booting the other
 slot, because `VB2_NV_TRY_NEXT` persists and nothing in this firmware
 resets it (upstream leaves that to the ChromeOS updater). Harmless while
-both slots carry the same image.
+both slots carry the same image - but repairing the broken slot does not
+move the machine back onto it. `scripts/vbnv.py` is that missing step:
+
+```bash
+sudo python3 scripts/vbnv.py show
+sudo python3 scripts/vbnv.py try-next A
+```
+
+`show` decodes which slot is running, what the previous boot did and
+which slot the next one takes; `try-next` writes that last field and
+applies on the next reboot. Needs `/dev/nvram`, i.e. a kernel with
+`CONFIG_NVRAM`.
+
+The first run answers `Input/output error`. The kernel guards
+`/dev/nvram` with the legacy PC CMOS checksum and refuses reads and
+writes while it is stale, and coreboot only maintains that checksum with
+an option table, which this board does not have. Once:
+
+```bash
+sudo python3 scripts/vbnv.py fix-checksum
+```
+
+That writes CMOS 46/47 and nothing else. The checksum covers CMOS 16-45,
+the vboot block sits at 52-67, and no part of this firmware reads either
+of the two bytes.
+
+The block sits in CMOS at index 0x34, 16 bytes, with a header signature
+and a CRC-8 of its own. Both are checked before anything is written and
+the block is left alone when they fail. A block that does not verify is
+not fatal either: coreboot falls back to the copy in `RW_NVRAM`.
 
 A recovery boot - both slots unusable - runs the RO copy and comes up
 fully, so the slots can be rewritten from there. It skips the MRC cache
@@ -639,11 +754,100 @@ and retrains memory, which costs a minute or two of black screen.
 
 Firmware in the RW slots cannot be swapped for something you did not
 sign: a correctly signed image from a different keyset is refused and the
-machine boots the other slot. `WP_RO` itself is **not** write-protected
-yet, so anyone with root can still rewrite the RO and the root key with
-it - see issue #3. Rollback protection is inert as well: the TPM counter
-only rolls forward when the OS reports a successful boot, which needs a
-component this firmware does not have.
+machine boots the other slot. `WP_RO` - root key, verstage, RO copy - is
+sealed by a PCH protected range on every boot, out of reach of root, SMM
+and the BIOS Lock toggle alike; changing it means opening the machine.
+What remains from a running system: writing correctly-signed images into
+the slots, and everything a person with a programmer can always do.
+
+### Rollback protection
+
+vboot keeps a firmware version in the TPM and refuses any slot below it.
+The counter only advances when the *previous* boot was reported
+successful, and nothing in coreboot or vboot ever reports that - upstream
+leaves it to the ChromeOS updater. `scripts/vbnv.py boot-ok` is that
+report; run it late in the boot, so "successful" means the machine
+actually came up:
+
+```bash
+sudo install -o root -g root -m 755 scripts/vbnv.py /usr/local/bin/vbnv
+sudo tee /etc/systemd/system/vboot-boot-ok.service >/dev/null <<'EOF'
+[Unit]
+Description=Report a successful boot to vboot
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vbnv boot-ok
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now vboot-boot-ok.service
+```
+
+The copy is deliberate: the unit runs as root, and a repo in `$HOME` is
+writable by your user - root should not execute from there. It also means
+the copy has to be refreshed whenever `scripts/vbnv.py` changes.
+
+The counter then follows on the next boot. Read it with
+`tpm2_nvread 0x1007 | od -An -tx1` - bytes 3-6 are the version, little
+endian.
+
+Three things to know before enabling this:
+
+- **`CONFIG_VBOOT_KEYBLOCK_VERSION` has to be raised per release.** The
+  counter cannot move past a version that never changes.
+- **Once the counter has followed, older images stop booting** - the ROMs
+  in `roms/` and any backup among them. That is the point of the
+  mechanism, not a side effect.
+- **The way back is a TPM clear.** `factory_initialize_tpm2()` recreates
+  the vboot spaces with the counter at 0, which is what the `--tpm-reset`
+  ROM triggers. It flashes into the slots, so it still works with `WP_RO`
+  write-protected. The other escape, `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`,
+  sits inside `WP_RO` and needs the programmer.
+
+After a fallback the first boot of the new slot does not advance the
+counter - the roll-forward wants the same slot as the previous boot.
+
+#### Making an old image bootable again
+
+Once the counter has moved past an image, that image is refused and the
+machine falls back to the other slot, or to a recovery boot if both are
+too old. Two ways out, neither needs the programmer.
+
+**Re-sign it with a higher version.** The firmware body is not touched -
+only the signature blocks are rewritten, so this stays a two-sector write
+inside the slots:
+
+```bash
+podman run --rm --network=none --user root -v "$PWD/roms":/w:z \
+    coreboot-t480-latest \
+    /opt/coreboot/build/util/futility/futility sign \
+        --signprivate /opt/keys/firmware_data_key.vbprivk \
+        --keyblock    /opt/keys/firmware.keyblock \
+        --kernelkey   /opt/coreboot/3rdparty/vboot/tests/devkeys/kernel_subkey.vbpubk \
+        --version <at least the counter> --flags 0 \
+        /w/coreboot_t480_<date>.rom
+```
+
+Then flash the two slots as in [Updating](#updating). `futility` is not
+on the host - it comes from the build image, which also carries the keys.
+The kernel subkey is the one the build used (`CONFIG_VBOOT_KERNEL_KEY`,
+the vboot devkey by default); it plays no part in firmware verification.
+
+Be clear about what this does: the image is now allowed past the counter,
+which is exactly the protection you asked for being switched off for that
+one image. Fine for a firmware of your own you want back; not fine as a
+habit.
+
+**Or clear the TPM.** The `--tpm-reset` ROM recreates the vboot spaces
+with the counter at 0 (`vb2api_secdata_firmware_create()` zeroes the
+struct). It flashes into the slots, so the `WP_RO` lock does not stand in
+the way - but everything sealed to the TPM is invalidated, LUKS included.
+
+The third route, the GBB flag `DISABLE_FW_ROLLBACK_CHECK`, sits inside
+`WP_RO` and does need the programmer.
 
 ## TPM reset
 
@@ -666,11 +870,13 @@ python3 scripts/build-firmware.py --mode pinned --tpm-reset
 
 Internal flashing only works with coreboot already on the chip - it needs
 the FMAP that only a coreboot image has, and the vendor BIOS locks the
-flash anyway. Running coreboot, only the firmware regions are written, so
-all settings survive (boot with `iomem=relaxed`):
+flash anyway. Running coreboot, only the slots are written, so all
+settings survive and the sealed `WP_RO` is never touched - the reset hook
+runs from the booted slot, the RO copy stays the normal firmware (boot
+with `iomem=relaxed`):
 
 ```bash
-R="-i WP_RO -i RW_SECTION_A -i RW_SECTION_B"
+R="-i RW_SECTION_A -i RW_SECTION_B"
 sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_pinned_tpmreset.rom
 # boot once, then:
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0

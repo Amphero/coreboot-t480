@@ -1,0 +1,12 @@
+diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
+index 0b7e1af5..335acf06 100644
+--- a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
++++ b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
+@@ -50,6 +50,7 @@ static const struct sm_object fan_profile = SM_DECLARE_ENUM({
+ static struct sm_obj_form system = {
+ 	.ui_name = "System",
+ 	.obj_list = (const struct sm_object *[]) {
++		&bios_lock,
+ 		&dgpu,
+ 		&hyper_threading,
+ 		&igd_dvmt,
