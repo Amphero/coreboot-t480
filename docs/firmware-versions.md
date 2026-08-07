@@ -13,7 +13,8 @@ older image should stop booting. The ROM column names the build that is
 | Version | Introduced | coreboot | Deployed ROM | SHA256 | Note |
 |---------|------------|----------|--------------|--------|------|
 | 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. Superseded. |
-| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | The TPM counter stands here. Raised once deliberately to exercise the path end to end - build guard, roll-forward, external flash of the RO copy. |
+| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Descriptor and ME locked, SPI controller hidden. Still the RO copy in `WP_RO`. |
+| 3 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-fw3.rom` | `66e8906b` | Same firmware as version 2. Raised to rehearse a plain internal update: slots only, RO left where it is. |
 
 Checking what is on the chip: verify the firmware regions, not the whole
 image. `RW_MRC_CACHE`, `SMMSTORE` and `RW_NVRAM` hold runtime state and diverge
