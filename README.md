@@ -298,24 +298,46 @@ sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_pinned.rom
 That writes the whole BIOS region, SMMSTORE included, so settings and
 Secure Boot keys are gone afterwards. To update an existing install and
 keep them, write only the firmware regions - see
-[Verified boot](#verified-boot).
+[Updating](#updating).
 
 If flashrom aborts with "Laptop detected", use
 `-p internal:laptop=this_is_not_a_laptop`. Once coreboot is on the chip,
 flashrom finds the coreboot table and usually needs no override.
 
-Builds with SMM BIOS write protection (`CONFIG_BOOTMEDIA_SMM_BWP` in the
-defconfig) refuse internal writes by design - flash writes only succeed
-from SMM. For an update, open the setup menu, switch **BIOS Lock** off
-(System form), reboot, flash, switch it back on. The toggle lives in
-SMMSTORE, so it survives reboots but not a full BIOS-region reflash.
+### What the write protections allow
 
-Builds with the `WP_RO` controller lock
-(`CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) additionally seal the RO region
-on every boot, no matter what BIOS Lock says. The whole-BIOS-region
-commands above then fail; internally writable are only the regions
-outside `WP_RO` - see [Updating](#updating). Anything inside `WP_RO`
-takes the external programmer.
+Two independent mechanisms sit between a running system and the chip.
+Both are on by default in this repo.
+
+| | blocks | switch |
+|---|--------|--------|
+| **SMM BIOS write protect** (`BOOTMEDIA_SMM_BWP`) | every write from the OS - the whole BIOS region | **BIOS Lock** in the setup menu, System form |
+| **`WP_RO` controller lock** (`BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) | writes to `WP_RO` only - FMAP, GBB with the root key, RO copy | none; re-armed on every boot |
+
+The second one has no off switch by design. It is a protected range in
+the SPI controller, sealed with `FLOCKDN` before the payload runs, and it
+ignores BIOS Lock, root and SMM alike. `WP_RO` changes need the CH341A -
+that is the point of it.
+
+Everything outside `WP_RO` - both slots, SMMSTORE, the MRC cache - stays
+writable internally once BIOS Lock is off, which is the normal update
+path. Check the current state:
+
+```bash
+sudo setpci -s 00:1f.5 dc.b        # aa = BIOS Lock on, 8b = off
+grep -a "BM-LOCKDOWN\|FPR 0" /sys/firmware/log
+```
+
+The log should show `FPR 0 is enabled for range 0x00aa0000-0x00ffffff`
+and `Enabled bootmedia protection` on every boot. `No SPI FPR free!`
+would mean the lock silently did not happen - worth checking after a
+coreboot or FSP update.
+
+> [!NOTE]
+> With the SPI controller visible to the OS (`DT_DEVICE_FAST_SPI=y`) the
+> kernel binds it and flashrom goes through `/dev/mtd0`. That path prints
+> `Erase/write done` even when the hardware dropped every write - only
+> the `VERIFIED.` line at the end proves anything.
 
 If flashrom says the BIOS region is read-only and BIOS Lock is already
 off, flash externally.
