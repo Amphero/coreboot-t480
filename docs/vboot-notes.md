@@ -10,8 +10,8 @@ and, where it says so, on hardware. Open work lives in the issue tracker.
 `RW_MRC_CACHE` and `SMMSTORE` keep the absolute offsets they had before
 vboot, so existing installs survive the migration and old backups stay
 compatible. `WP_RO` sits at the top of the chip as one contiguous range,
-which is what makes a controller-level write protection possible at all
-(see the issue about it).
+which is what makes the controller-level write protection possible
+(see "The WP_RO lock" below).
 
 SMMSTORE is found at runtime by coreboot's SMM driver through an FMAP
 lookup (`drivers/smmstore/store.c`), not by a hardcoded offset - keeping
@@ -53,12 +53,20 @@ overflows.
 
 ## Slot selection is sticky
 
-`vb2_select_fw_slot()` takes the slot from `VB2_NV_TRY_NEXT`, and the
-fallback writes that field permanently (`2misc.c:408`). Restoring the
+`vb2_select_fw_slot()` takes the slot from `VB2_NV_TRY_NEXT`, and a
+failing slot flips that field permanently: `fail_impl()` writes
+`1 - fw_slot` at `2misc.c:123`, reached through `vb2api_fail()` from
+`vb2_load_fw_keyblock()` and `vb2_load_fw_preamble()`. Restoring the
 broken slot does not move the machine back to it, and nothing in the
 firmware ever does - upstream leaves that to the ChromeOS updater
 (`crossystem fw_try_next`). Harmless while both slots carry the same
 image.
+
+The second fallback, the one inside `vb2_select_fw_slot()` itself
+(`2misc.c:394`), is dead code here. It needs
+`last_fw_result == VB2_FW_RESULT_TRYING`, which is only written when
+`VB2_NV_TRY_COUNT` is non-zero, and neither coreboot nor this repo ever
+sets that field. Do not cite it as the reason for the sticky slot.
 
 ## TPM
 
@@ -76,13 +84,51 @@ version into PCR 10; measured boot keeps using PCR 2.
 ## Rollback protection does not work here
 
 `--version $(CONFIG_VBOOT_KEYBLOCK_VERSION)` does set the preamble
-version, but the TPM counter never advances: the roll-forward in
-`2firmware.c:210` requires `last_fw_result == VB2_FW_RESULT_SUCCESS`, and
-nothing sets SUCCESS. vboot only ever writes FAILURE, TRYING and UNKNOWN;
-the code that reports success is in `2load_kernel.c`, which coreboot does
-not call. secdata stays at 0 and no image is refused as too old.
+version, but the TPM counter never advances. Two things stop it, and
+either one alone would be enough.
 
-## Generating keys
+The roll-forward at `2firmware.c:210` needs all three of: a version above
+secdata, the same slot as the last boot, and `last_fw_result ==
+VB2_FW_RESULT_SUCCESS`. Nothing ever writes SUCCESS - not in coreboot,
+and not in vboot either outside its own unit tests. vboot writes only
+FAILURE, TRYING and UNKNOWN; on ChromeOS the success report comes from
+userspace (`crossystem fw_result`), which is the piece a coreboot-only
+integration does not have.
+
+And `CONFIG_VBOOT_KEYBLOCK_VERSION` is not set in `config/defconfig`, so
+it keeps its default of 1 and every build carries the same version. Even
+with SUCCESS in place, `fw_version > fw_version_secdata` could be true at
+most once.
+
+secdata therefore stays at 0 and no image is refused as too old.
+
+## The WP_RO lock
+
+`BOOTMEDIA_LOCK_CONTROLLER` + `BOOTMEDIA_LOCK_WPRO_VBOOT_RO`: in
+ramstage, `boot_device_security_lockdown()` writes one Flash Protected
+Range register covering `WP_RO` (0xaa0000-0xffffff). The FPRs work at
+4 KB granularity (`SPI_FPR_SHIFT = 12`, five registers), so the region
+is covered exactly; the FMAP offsets are flash-absolute because
+`boot_device_ro()` spans `CONFIG_ROM_SIZE`, not the BIOS region. The
+chipset lockdown then sets FLOCKDN and DLOCK, sealing the register until
+the next reset - and the next boot re-arms it before the payload runs.
+
+Consequences, measured and structural:
+
+- Every host write into the range is dropped by the controller - OS, SMM
+  and the `bios_lock` toggle make no difference. The two mechanisms are
+  independent: EISS gates the regions outside, the FPR seals `WP_RO`.
+- The MRC cache is written at `BS_DEV_ENUMERATE/ON_EXIT`, the FPR set at
+  `BS_DEV_RESOURCES/ON_ENTRY`, FLOCKDN at `BS_DEV_RESOURCES/ON_EXIT` -
+  no ordering conflict, and everything writable lies outside the range
+  anyway. `BOOTMEDIA_LOCK_IN_VERSTAGE` is therefore not needed here.
+- `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` (the rollback-protection
+  escape hatch) sits in the GBB inside `WP_RO`: external-only from now
+  on. Same for replacing the keyset.
+- A successful lock prints `BM-LOCKDOWN: Enabled bootmedia protection`
+  plus an FPR line with the range; `No SPI FPR free!` would mean FSP
+  occupied all five registers and the lock silently did not happen -
+  check the log after any coreboot or FSP update.
 
 `scripts/keygeneration/create_new_keys.sh` is unusable here - it insists
 on ChromeOS AP-RO keys. `scripts/gen-vboot-keys.sh` calls the helpers in
