@@ -22,6 +22,14 @@ vboot ever writes SUCCESS (on ChromeOS that is `crossystem fw_result`), so
 without this the counter stays at 0 forever. Run it late in the boot, when
 "successful" actually means something - see README.md for the systemd unit.
 
+`arm-update`: the guard above checks the slot, not the image. Flash a raised
+version while the running one has already reported success and the counter
+advances on the next boot, before the new firmware runs - a broken update
+included. Arming a trial run closes that: vboot marks the boot TRYING, which
+is not SUCCESS, so the counter waits for the new image to report for itself.
+Runs out of tries without a report and the boot after falls back to the other
+slot on its own. Write only the inactive slot, arm, reboot.
+
 WHERE: CMOS index 0x34, 16 bytes. coreboot reads the block at
 CONFIG_VBOOT_VBNV_OFFSET + 14 (security/vboot/vbnv_cmos.c), and this board's
 VBOOT_VBNV_OFFSET is 0x26. /dev/nvram hides the first 14 RTC bytes, so the file
@@ -59,9 +67,12 @@ EIO_HINT = ("the kernel refuses /dev/nvram while the legacy PC CMOS checksum is\
 
 # offsets inside the block - security/vboot/vbnv_layout.h, 2nvstorage_fields.h
 OFFS_HEADER   = 0
+OFFS_BOOT     = 1
 OFFS_RECOVERY = 2
 OFFS_BOOT2    = 7
 OFFS_CRC      = 15
+
+BOOT_TRY_COUNT_MASK = 0x0f   # fields in VB2_NV_OFFS_BOOT
 
 HEADER_MASK      = 0xc3
 HEADER_SIGNATURE = 0x40
@@ -189,8 +200,42 @@ def cmd_show(_args):
     print(f"previous slot     {slot_name(boot2 & BOOT2_PREV_TRIED)}")
     print(f"previous result   {RESULTS[prev_result]}")
     print(f"next boot         slot {slot_name(boot2 & BOOT2_TRY_NEXT)}")
+    print(f"trial boots left  {blk[OFFS_BOOT] & BOOT_TRY_COUNT_MASK}")
     print(f"recovery request  {blk[OFFS_RECOVERY]:#04x}")
     return 1 if bad else 0
+
+
+def cmd_arm_update(args):
+    """Point the next boot at a freshly written slot and give it a trial run.
+
+    vboot then marks that boot TRYING instead of trusting the previous one, so
+    the rollback counter cannot move until the new image itself reports
+    success - and if it never boots, the next attempt falls back to the old
+    slot on its own."""
+    blk = read_block()
+    bad = check(blk)
+    if bad:
+        sys.exit(f"ERROR: the VBNV block does not verify ({bad}) - refusing to write.")
+
+    running = 1 if blk[OFFS_BOOT2] & BOOT2_TRIED else 0
+    slot = {"A": 0, "B": 1}[args.slot.upper()] if args.slot else 1 - running
+    if slot == running and not args.slot:
+        sys.exit("ERROR: could not tell which slot is inactive - name one explicitly.")
+
+    if slot:
+        blk[OFFS_BOOT2] |= BOOT2_TRY_NEXT
+    else:
+        blk[OFFS_BOOT2] &= ~BOOT2_TRY_NEXT & 0xff
+    blk[OFFS_BOOT] = (blk[OFFS_BOOT] & ~BOOT_TRY_COUNT_MASK & 0xff) | args.tries
+    write_block(blk)
+
+    back = read_block()
+    if check(back):
+        sys.exit("ERROR: the block does not verify after writing.")
+    print(f"next boot tries slot {slot_name(slot)} ({args.tries} attempt"
+          f"{'' if args.tries == 1 else 's'}), running slot {slot_name(running)} stays as fallback")
+    print("reboot to apply")
+    return 0
 
 
 def cmd_try_next(args):
@@ -235,6 +280,12 @@ def main():
     p = sub.add_parser("try-next", help="pick the slot the next boot selects")
     p.add_argument("slot", choices=["A", "B", "a", "b"], help="slot to boot next")
 
+    p = sub.add_parser("arm-update", help="try a freshly written slot, keep the old one as fallback")
+    p.add_argument("slot", nargs="?", choices=["A", "B", "a", "b"],
+                   help="slot to try (default: the one not running)")
+    p.add_argument("--tries", type=int, default=1, choices=range(1, 16), metavar="1-15",
+                   help="trial boots before falling back (default: 1)")
+
     sub.add_parser("boot-ok", help="report this boot as successful (rollback counter)")
 
     sub.add_parser("fix-checksum",
@@ -243,6 +294,7 @@ def main():
     args = ap.parse_args()
     return {"show": cmd_show,
             "try-next": cmd_try_next,
+            "arm-update": cmd_arm_update,
             "boot-ok": cmd_boot_ok,
             "fix-checksum": cmd_fix_checksum}[args.command](args)
 
