@@ -6,10 +6,33 @@ version is *below* the counter in the TPM. This file is the record of which
 value meant what - `scripts/build-firmware.py` refuses to build a version that
 is not listed here.
 
-| Version | Introduced | coreboot | ROM | SHA256 | Note |
-|---------|------------|----------|-----|--------|------|
-| 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. |
-| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-fw2.rom` | `702843b2` | Same firmware as version 1. Raised once deliberately to exercise the whole path - build guard, counter roll-forward, and the RO copy brought to the same state by an external flash. |
+A version can outlive several builds - the number only has to move when an
+older image should stop booting. The ROM column names the build that is
+**deployed**; earlier builds of the same version are listed under it.
+
+| Version | Introduced | coreboot | Deployed ROM | SHA256 | Note |
+|---------|------------|----------|--------------|--------|------|
+| 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. Superseded. |
+| 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | The TPM counter stands here. Raised once deliberately to exercise the path end to end - build guard, roll-forward, external flash of the RO copy. |
+
+Checking what is on the chip: verify the firmware regions, not the whole
+image. `RW_MRC_CACHE`, `SMMSTORE` and `RW_NVRAM` hold runtime state and diverge
+from any ROM the moment the machine boots, and the ME writes a few bytes of its
+own into `SI_ME`. A full-chip verify therefore always fails once the firmware
+has run; it says nothing.
+
+```bash
+sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
+    -v roms/<rom>
+```
+
+Builds of version 2, in order:
+
+| ROM | SHA256 | What changed |
+|-----|--------|--------------|
+| `coreboot_t480_20260807-fw2.rom` | `702843b2` | Identical firmware to version 1, version raised to 2. |
+| `coreboot_t480_20260807-ifdlock.rom` | `7b8732ec` | Flash descriptor and ME region locked against the host. Built, never flashed. |
+| `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Same, plus `DT_DEVICE_FAST_SPI=n` - no MTD device for the OS. Currently on the chip. |
 
 ## Rules
 
