@@ -642,28 +642,48 @@ the machine boots the RO copy, and the flash can be repeated from there.
 
 ### Updating
 
-Boot with `iomem=relaxed`, back up the chip first, then write the two
-slots. On a build with SMM BIOS write protection, switch **BIOS Lock**
-off in the setup menu and reboot before this, and back on after
-([Internal flashing](#internal-flashing)):
+The machine boots from the slots, so a normal update never touches
+`WP_RO`. Write the slot that is *not* running, give it a trial boot, and
+keep the other one as the way back.
+
+Boot with `iomem=relaxed`, switch **BIOS Lock** off in the setup menu and
+reboot ([Internal flashing](#internal-flashing)). Then, with `<other>`
+being whichever slot `show` does not report as running:
 
 ```bash
+sudo vbnv show                                    # "running slot"
+
 sudo flashrom -p internal -r backup.bin
-sudo flashrom -p internal --fmap -i RW_SECTION_A -i RW_SECTION_B \
+sudo flashrom -p internal --fmap -i RW_SECTION_<other> \
     -w roms/coreboot_t480_<date>.rom
-sudo flashrom -p internal --fmap -i RW_SECTION_A -i RW_SECTION_B \
+sudo flashrom -p internal --fmap -i RW_SECTION_<other> \
     -v roms/coreboot_t480_<date>.rom
+
+sudo vbnv arm-update                              # one trial boot
 ```
 
-SMMSTORE, the MRC cache and the vboot state are outside those regions, so
-settings and Secure Boot keys survive. Reboot afterwards.
+Switch BIOS Lock back on and reboot. Two reboots in total - the same as
+writing both slots, and it buys a fallback.
 
-The machine boots from the slots, so this is the whole regular update.
-`WP_RO` is sealed by the controller lock on every boot and takes the
-external programmer - which is only needed when the RO half actually
-changes: verstage, the bootblock, the GBB (keyset!), the FMAP layout, or
-to refresh the RO fallback copy. Until then the RO copy simply stays at
-its flashed state; recovery boots run that older firmware.
+vboot marks that boot `TRYING`, and `vboot-boot-ok.service` turns it into
+`SUCCESS` once the system is up. If the new firmware never gets that far,
+the boot after falls back to the old slot on its own: no recovery boot,
+no memory retraining, and the rollback counter has not moved, so the old
+version still passes verification.
+
+The old slot stops being a way back once the counter follows the new
+version - that is what the trial run is for. After it, `WP_RO` is the
+fallback, and it always boots because the recovery path is not
+version-checked.
+
+SMMSTORE, the MRC cache and the vboot state sit outside the slots, so
+settings and Secure Boot keys survive either way.
+
+`WP_RO` itself is sealed by the controller lock on every boot and takes
+the external programmer. That is only needed when the RO half really
+changes - verstage, the bootblock, the GBB (keyset!), the FMAP layout -
+or to refresh the RO fallback copy, which otherwise stays at whatever was
+flashed last.
 
 flashrom checks neither of these: that the ROM carries the same MAC as
 the chip (`xxd -s 0x1000 -l 6 -p`), and that both use the same FMAP
