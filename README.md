@@ -792,6 +792,45 @@ Three things to know before enabling this:
 After a fallback the first boot of the new slot does not advance the
 counter - the roll-forward wants the same slot as the previous boot.
 
+#### Making an old image bootable again
+
+Once the counter has moved past an image, that image is refused and the
+machine falls back to the other slot, or to a recovery boot if both are
+too old. Two ways out, neither needs the programmer.
+
+**Re-sign it with a higher version.** The firmware body is not touched -
+only the signature blocks are rewritten, so this stays a two-sector write
+inside the slots:
+
+```bash
+podman run --rm --network=none --user root -v "$PWD/roms":/w:z \
+    coreboot-t480-latest \
+    /opt/coreboot/build/util/futility/futility sign \
+        --signprivate /opt/keys/firmware_data_key.vbprivk \
+        --keyblock    /opt/keys/firmware.keyblock \
+        --kernelkey   /opt/coreboot/3rdparty/vboot/tests/devkeys/kernel_subkey.vbpubk \
+        --version <at least the counter> --flags 0 \
+        /w/coreboot_t480_<date>.rom
+```
+
+Then flash the two slots as in [Updating](#updating). `futility` is not
+on the host - it comes from the build image, which also carries the keys.
+The kernel subkey is the one the build used (`CONFIG_VBOOT_KERNEL_KEY`,
+the vboot devkey by default); it plays no part in firmware verification.
+
+Be clear about what this does: the image is now allowed past the counter,
+which is exactly the protection you asked for being switched off for that
+one image. Fine for a firmware of your own you want back; not fine as a
+habit.
+
+**Or clear the TPM.** The `--tpm-reset` ROM recreates the vboot spaces
+with the counter at 0 (`vb2api_secdata_firmware_create()` zeroes the
+struct). It flashes into the slots, so the `WP_RO` lock does not stand in
+the way - but everything sealed to the TPM is invalidated, LUKS included.
+
+The third route, the GBB flag `DISABLE_FW_ROLLBACK_CHECK`, sits inside
+`WP_RO` and does need the programmer.
+
 ## TPM reset
 
 If the TPM is stuck in a vendor-BIOS state (MFG mode, owner auth set,
