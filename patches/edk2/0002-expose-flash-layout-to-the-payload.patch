@@ -1,0 +1,235 @@
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index be364f914a..aa6ca41207 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -206,6 +206,21 @@ struct cb_cbmem_ref {
+   UINT64    cbmem_addr;
+ };
+ 
++#define CB_TAG_BOOT_MEDIA_PARAMS  0x0030
++struct cb_boot_media_params {
++  UINT32    tag;
++  UINT32    size;
++  // offsets are relative to the start of the boot media
++  UINT64    fmap_offset;
++  UINT64    cbfs_offset;
++  UINT64    cbfs_size;
++  UINT64    boot_media_size;
++};
++
++// Both are cbmem references, i.e. struct cb_cbmem_ref.
++#define CB_TAG_VBOOT_WORKBUF  0x0034
++#define CB_TAG_FMAP           0x0037
++
+ #define CB_TAG_FRAMEBUFFER  0x0012
+ struct cb_framebuffer {
+   UINT32    tag;
+diff --git a/UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h b/UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h
+new file mode 100644
+index 0000000000..fb97c92126
+--- /dev/null
++++ b/UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h
+@@ -0,0 +1,36 @@
++/** @file
++  Hob structure describing where things sit on the boot medium, for payload
++  components that write to it.
++
++  Copyright (c) 2026, Amphero.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#pragma once
++
++///
++/// Flash layout information GUID
++///
++extern EFI_GUID  gEfiFlashLayoutInfoHobGuid;
++
++typedef struct {
++  ///
++  /// Address of the bootloader's in-memory copy of the flash map. coreboot
++  /// keeps one in CBMEM unconditionally and points at it with CB_TAG_FMAP,
++  /// so a consumer does not have to read or search the flash itself.
++  ///
++  UINT64    FmapAddress;
++  ///
++  /// Where that map lives on the medium, and how big the medium is.
++  ///
++  UINT64    FmapOffset;
++  UINT64    BootMediaSize;
++  ///
++  /// The CBFS the bootloader actually booted from. Under verified boot this
++  /// identifies the running slot without having to parse vboot's own state,
++  /// whose layout is not a stable interface.
++  ///
++  UINT64    CbfsOffset;
++  UINT64    CbfsSize;
++} FLASH_LAYOUT_INFO;
+diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
+index 6e070869db..24c6c66f15 100644
+--- a/UefiPayloadPkg/Include/Library/BlParseLib.h
++++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
+@@ -15,6 +15,7 @@
+ #include <Guid/SerialPortInfoGuid.h>
+ #include <Guid/AcpiBoardInfoGuid.h>
+ #include <Guid/FirmwareInfoGuid.h>
++#include <Guid/FlashLayoutInfoGuid.h>
+ #include <UniversalPayload/AcpiTable.h>
+ #include <UniversalPayload/SmbiosTable.h>
+ #include <Guid/TcgPhysicalPresenceGuid.h>
+@@ -170,6 +171,21 @@ ParseFirmwareInfo (
+   OUT FIRMWARE_INFO  *FwInfo
+   );
+ 
++/**
++  Parse the flash layout information passed in by the bootloader
++
++  @param  LayoutInfo  Where things sit on the boot medium.
++
++  @retval RETURN_INVALID_PARAMETER  The parameter is NULL.
++  @retval RETURN_SUCCESS            Successfully parsed information.
++  @retval RETURN_NOT_FOUND          The information is missing.
++**/
++RETURN_STATUS
++EFIAPI
++ParseFlashLayoutInfo (
++  OUT FLASH_LAYOUT_INFO  *LayoutInfo
++  );
++
+ /**
+   Parse update capsules passed in by bootloader
+ 
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index 42759a2e86..b62ec6b9b7 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -844,6 +844,44 @@ ParseInfoString (
+   @retval RETURN_SUCCESS            Successfully parsed information.
+   @retval RETURN_NOT_FOUND          The information is missing.
+ **/
++RETURN_STATUS
++EFIAPI
++ParseFlashLayoutInfo (
++  OUT FLASH_LAYOUT_INFO  *LayoutInfo
++  )
++{
++  struct cb_boot_media_params  *Media;
++  struct cb_cbmem_ref          *FmapRef;
++
++  if (LayoutInfo == NULL) {
++    return RETURN_INVALID_PARAMETER;
++  }
++
++  Media = FindCbTag (CB_TAG_BOOT_MEDIA_PARAMS);
++  if (Media == NULL) {
++    return RETURN_NOT_FOUND;
++  }
++
++  ZeroMem (LayoutInfo, sizeof (*LayoutInfo));
++
++  LayoutInfo->FmapOffset    = Media->fmap_offset;
++  LayoutInfo->BootMediaSize = Media->boot_media_size;
++  LayoutInfo->CbfsOffset    = Media->cbfs_offset;
++  LayoutInfo->CbfsSize      = Media->cbfs_size;
++
++  //
++  // The in-memory copy is optional as far as this record is concerned - the
++  // offset above is enough to find the map on the medium. Report what is
++  // there and let the consumer decide.
++  //
++  FmapRef = FindCbTag (CB_TAG_FMAP);
++  if (FmapRef != NULL) {
++    LayoutInfo->FmapAddress = FmapRef->cbmem_addr;
++  }
++
++  return RETURN_SUCCESS;
++}
++
+ RETURN_STATUS
+ EFIAPI
+ ParseFirmwareInfo (
+diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+index c409d9d94a..b260f76671 100644
+--- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
++++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+@@ -329,6 +329,24 @@ ParseFirmwareInfo (
+   return RETURN_NOT_FOUND;
+ }
+ 
++/**
++  Parse the flash layout information passed in by the bootloader
++
++  @param  LayoutInfo  Where things sit on the boot medium.
++
++  @retval RETURN_INVALID_PARAMETER  The parameter is NULL.
++  @retval RETURN_SUCCESS            Successfully parsed information.
++  @retval RETURN_NOT_FOUND          The information is missing.
++**/
++RETURN_STATUS
++EFIAPI
++ParseFlashLayoutInfo (
++  OUT FLASH_LAYOUT_INFO  *LayoutInfo
++  )
++{
++  return RETURN_NOT_FOUND;
++}
++
+ /**
+   Parse update capsules passed in by bootloader
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index 83b5502bab..b3336691af 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -344,6 +344,8 @@ BuildHobFromBl (
+   SMMSTORE_INFO                     *NewSmmStoreInfo;
+   FIRMWARE_INFO                     FirmwareInfo;
+   FIRMWARE_INFO                     *NewFirmwareInfo;
++  FLASH_LAYOUT_INFO                 FlashLayoutInfo;
++  FLASH_LAYOUT_INFO                 *NewFlashLayoutInfo;
+   TCG_PHYSICAL_PRESENCE_INFO        PhysicalPresenceInfo;
+   TCG_PHYSICAL_PRESENCE_INFO        *NewPhysicalPresenceInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         GfxInfo;
+@@ -415,6 +417,17 @@ BuildHobFromBl (
+     DEBUG ((DEBUG_INFO, "Created firmware info hob\n"));
+   }
+ 
++  //
++  // Create guid hob for the flash layout
++  //
++  Status = ParseFlashLayoutInfo (&FlashLayoutInfo);
++  if (!EFI_ERROR (Status)) {
++    NewFlashLayoutInfo = BuildGuidHob (&gEfiFlashLayoutInfoHobGuid, sizeof (FlashLayoutInfo));
++    ASSERT (NewFlashLayoutInfo != NULL);
++    CopyMem (NewFlashLayoutInfo, &FlashLayoutInfo, sizeof (FlashLayoutInfo));
++    DEBUG ((DEBUG_INFO, "Created flash layout info hob\n"));
++  }
++
+   //
+   // Create guid hob for Tcg Physical Presence Interface
+   //
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+index 11198c0b13..1e04c37f11 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+@@ -71,6 +71,7 @@
+   gUniversalPayloadAcpiTableGuid
+   gUniversalPayloadSerialPortInfoGuid
+   gEfiFirmwareInfoHobGuid
++  gEfiFlashLayoutInfoHobGuid
+   gEfiSmmStoreInfoHobGuid
+   gEfiTcgPhysicalPresenceInfoHobGuid
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 3e5bc43d99..82e75335e3 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -61,6 +61,7 @@
+ 
+   gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
+   gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
++  gEfiFlashLayoutInfoHobGuid = { 0xa308e200, 0xdbfb, 0x5bb8, { 0x98, 0x75, 0x4d, 0x7d, 0x84, 0x91, 0xfe, 0xb4 } }
+ 
+   gEfiTcgPhysicalPresenceInfoHobGuid = { 0xf367be59, 0x5891, 0x40eb, { 0x21, 0x44, 0xed, 0x2e, 0xac, 0x57, 0xfd, 0x14 }}
+ 
