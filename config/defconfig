@@ -93,6 +93,26 @@ CONFIG_SMMSTORE=y
 CONFIG_SMMSTORE_V2=y
 CONFIG_SMMSTORE_SIZE=0x40000
 CONFIG_EDK2_SECURE_BOOT_SUPPORT=y
+# --- ESRT, measurement (branch capsule-slot-only) ---------------------------
+# Publishes an EFI System Resource Table so fwupd sees the firmware at all.
+# This is the whole mechanism: BlSupportDxe sits unconditionally in DXEFV,
+# reads coreboot's firmware-info HOB and installs the ESRT itself
+# (UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c). EsrtDxe and FmpDxe are a
+# separate, FMP-based path and are not needed for this.
+#
+# Nothing here can apply a capsule. FmpDxe is not in the firmware at all - the
+# dsc builds it only to be embedded into a capsule - and
+# DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS is off, so a capsule carrying one
+# is refused. The ESRT is a statement about the running firmware, nothing more.
+#
+# GUID is reproducible, not random:
+#   uuid5(NAMESPACE_DNS, "system-firmware.custom-coreboot-t480.Amphero")
+# Version follows coreboot's own encoding, (major << 16) | minor for 26.08.
+# LSV 0 means "same as the current version".
+CONFIG_DRIVERS_EFI_FW_INFO=y
+CONFIG_DRIVERS_EFI_MAIN_FW_GUID="271c57fb-af28-5d13-96d4-c8ad68ef4ea1"
+CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=0x001A0008
+CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x00000000
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
 # measure all stages/blobs into TPM PCR 2 before running them (log: cbmem -L)
 CONFIG_TPM_MEASURED_BOOT=y
