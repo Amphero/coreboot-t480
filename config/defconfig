@@ -34,7 +34,7 @@ CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y
 # can never move without it. Raising it makes every older image unbootable once
 # the counter has followed (scripts/vbnv.py boot-ok), backups included; the
 # recovery path in WP_RO is not version-checked and always boots.
-CONFIG_VBOOT_KEYBLOCK_VERSION=3
+CONFIG_VBOOT_KEYBLOCK_VERSION=4
 # coreboot sets this GBB flag by default (security/vboot/Kconfig: "default y"),
 # and it makes vboot skip the rollback comparison entirely - 2firmware.c:189
 # logs "Ignoring FW rollback due to GBB flag" and boots the slot anyway. The
