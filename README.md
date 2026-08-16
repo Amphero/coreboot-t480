@@ -359,9 +359,12 @@ the current state:
 
 ```bash
 grep -a "BM-LOCKDOWN\|FPR " /sys/firmware/log
-sudo python3 scripts/spi-ranges.py              # only with iomem=relaxed
 sudo setpci -s 00:1f.5 dc.b                     # aa = BIOS Lock on, 8b = off
 ```
+
+Nothing in the normal workflow needs `iomem=relaxed` any more. flashrom
+reaches the chip through `/dev/mtd0` and only fell back to mapping ECAM
+while `DT_DEVICE_FAST_SPI=n` hid the controller.
 
 The log shows two `FPR` lines, one for `0x00aa0000-0x00ffffff` and one
 for `0x00000000-0x00002fff`, plus `Enabled bootmedia protection` and
@@ -374,8 +377,15 @@ which prints no `BIOS Control`, `FREG` or `PR` lines at all. BIOS Control
 is PCI config space and `setpci` reads it; the protected ranges live in
 SPIBAR at offset 0x84. Nothing in the kernel exports them - no debugfs
 entry, no sysfs attribute - so `scripts/spi-ranges.py` maps them through
-`/dev/mem`, which needs `iomem=relaxed` on the kernel command line. The
-log is the everyday check and says what was programmed at boot; the
+`/dev/mem`:
+
+```bash
+sudo python3 scripts/spi-ranges.py
+```
+
+That one does need `iomem=relaxed`, which loosens the kernel's `/dev/mem`
+restrictions in general, so add it for the check and take it out again.
+The log is the everyday answer and says what was programmed at boot; the
 registers say what is in force.
 
 > [!NOTE]
