@@ -370,7 +370,7 @@ def verify(rom):
 def main():
     ap = argparse.ArgumentParser(description="Build the T480 coreboot+EDK2 firmware (phase 2, offline)",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("--mac", help="override the MAC (default: marker '# MAC=' in config/defconfig)")
+    ap.add_argument("--mac", help="override the MAC (default: the MAC= line in config/board.conf)")
     ap.add_argument("--no-tpm", action="store_true",
                     help="disable the TPM (OS sees no TPM). Default: TPM is ON")
     ap.add_argument("--tpm-reset", action="store_true",

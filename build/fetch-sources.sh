@@ -27,7 +27,8 @@ SRC="/sources"
 LOCK_IN="/config/versions.lock"      # input, read-only
 NPROC="$(nproc)"
 # Throwaway MAC for the PHASE-1 lbmk populate run ONLY (this inject result is
-# discarded). The REAL MAC lives in config/defconfig and is injected in PHASE 2.
+# discarded). The REAL MAC comes from config/board.conf (or --mac) and is
+# injected in PHASE 2.
 POPULATE_MAC="02:00:00:00:00:01"
 
 # git identity (lbmk + submodule ops need one; container user has no ~/.gitconfig)
