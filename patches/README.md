@@ -451,6 +451,50 @@ SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
 failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
 means all five registers were taken and the range did not happen.
 
+## edk2/0001-fmpdxe-slot-capsule-scaffolding.patch
+
+**Files:** `UefiPayloadPkg/UefiPayloadPkg.dsc`,
+`UefiPayloadPkg/UefiPayloadPkg.fdf`
+
+Adds `SLOT_CAPSULE_SUPPORT` (default FALSE) next to upstream's
+`CAPSULE_SUPPORT`, and with it a second arrangement of `FmpDxe`.
+
+Upstream builds `FmpDxe` only to be embedded into a capsule, where it
+runs `FmpDeviceSmmLib` and updates the whole flash chip - which its own
+header says needs every flash protection lifted. That is the opposite of
+this build. `SLOT_CAPSULE_SUPPORT` puts `FmpDxe` into the firmware
+instead (fdf) and points its `FmpDeviceLib` at `FmpDeviceSlotLib`, which
+writes only the inactive vboot slot. Nothing has to be unlocked for
+that: the protected ranges are programmed at `BS_DEV_RESOURCES`, long
+before capsules are parsed at `BS_DEV_INIT`, and they leave the BIOS
+region writable while sealing `WP_RO`, `SI_DESC` and `SI_GBE`.
+
+The two defines are mutually exclusive and the dsc raises `!error` if
+both are set - they disagree about where `FmpDxe` lives and what it may
+touch.
+
+Also widens the `CAPSULE_SUPPORT` library block (`CapsuleLib`,
+`FmpAuthenticationLib`, the `FmpDependency*` set, `FmpPayloadHeaderLib`)
+and forces `PcdCapsuleFmpSupport` and `PcdSupportUpdateCapsuleReset`
+true, because `FmpDxe` needs all of it either way.
+
+**Inert on its own, and not yet switchable.** With the define at FALSE
+the build is byte-identical to before. Setting it TRUE fails until
+`FmpDeviceSlotLib` exists - the dsc names an `.inf` that no patch
+provides yet.
+
+Open decision, deliberately not taken here: whether to add `EsrtFmpDxe`
+alongside. It is not a conflict question - `BlSupportDxe` installs its
+static entry at its entry point, both ESRT drivers install theirs on
+ReadyToBoot, and `InstallConfigurationTable` replaces an entry of the
+same GUID, so the later one simply wins. `EsrtFmpDxe` also bails out
+without installing when it finds no FMP instance, so it cannot blank a
+working table.
+
+The reason to add it is `LastAttemptStatus`. `BlSupportDxe` never sets
+that field, so it stays 0 and fwupd can never tell whether an update
+worked. `EsrtFmpDxe` fills it from the FMP instance.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
