@@ -2,8 +2,9 @@
 
 Findings from porting Google verified boot to this board, kept because
 they explain non-obvious configuration and would otherwise have to be
-re-derived. Everything here was checked against the coreboot 26.06 tree
-and, where it says so, on hardware. Open work lives in the issue tracker.
+re-derived. Checked against the coreboot tree named in
+`config/versions.lock` (26.06 at the time of writing) and, where it says
+so, on hardware.
 
 ## Layout
 
@@ -81,26 +82,25 @@ vboot, the EDK2 Tcg2 stack and measured boot coexist on the one TPM.
 vboot measures the boot mode and GBB HWID into PCR 1 and the firmware
 version into PCR 10; measured boot keeps using PCR 2.
 
-## Rollback protection does not work here
+## What rollback protection needed on top of vboot
 
-`--version $(CONFIG_VBOOT_KEYBLOCK_VERSION)` does set the preamble
-version, but the TPM counter never advances. Two things stop it, and
-either one alone would be enough.
-
-The roll-forward at `2firmware.c:210` needs all three of: a version above
+The roll-forward at `2firmware.c:210` wants all three of: a version above
 secdata, the same slot as the last boot, and `last_fw_result ==
-VB2_FW_RESULT_SUCCESS`. Nothing ever writes SUCCESS - not in coreboot,
-and not in vboot either outside its own unit tests. vboot writes only
-FAILURE, TRYING and UNKNOWN; on ChromeOS the success report comes from
-userspace (`crossystem fw_result`), which is the piece a coreboot-only
-integration does not have.
+VB2_FW_RESULT_SUCCESS`. The third one is the problem. Nothing writes
+SUCCESS - not in coreboot, and not in vboot either outside its own unit
+tests. vboot writes only FAILURE, TRYING and UNKNOWN; on ChromeOS the
+success report comes from userspace (`crossystem fw_result`), and a
+coreboot-only integration has no equivalent.
 
-And `CONFIG_VBOOT_KEYBLOCK_VERSION` is not set in `config/defconfig`, so
-it keeps its default of 1 and every build carries the same version. Even
-with SUCCESS in place, `fw_version > fw_version_secdata` could be true at
-most once.
+`scripts/vbnv.py boot-ok` is that missing report, written into the VBNV
+block in CMOS. Two more things had to follow: `CONFIG_VBOOT_KEYBLOCK_VERSION`
+has to actually move between releases, and coreboot's
+`GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` (`default y`) has to be off, or vboot
+skips the comparison while the counter keeps advancing.
 
-secdata therefore stays at 0 and no image is refused as too old.
+Details on all three, and the measured roll-forward, live in
+[firmware-versions.md](firmware-versions.md) and the README's "Rollback
+protection" section.
 
 ## The WP_RO lock
 
@@ -129,6 +129,8 @@ Consequences, measured and structural:
   plus an FPR line with the range; `No SPI FPR free!` would mean FSP
   occupied all five registers and the lock silently did not happen -
   check the log after any coreboot or FSP update.
+
+## Generating keys
 
 `scripts/keygeneration/create_new_keys.sh` is unusable here - it insists
 on ChromeOS AP-RO keys. `scripts/gen-vboot-keys.sh` calls the helpers in
