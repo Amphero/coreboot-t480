@@ -179,7 +179,7 @@ index c409d9d94a..b260f76671 100644
    Parse update capsules passed in by bootloader
  
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
-index 83b5502bab..b3336691af 100644
+index 83b5502bab..b4a4cbfd2b 100644
 --- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 +++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 @@ -344,6 +344,8 @@ BuildHobFromBl (
@@ -191,7 +191,7 @@ index 83b5502bab..b3336691af 100644
    TCG_PHYSICAL_PRESENCE_INFO        PhysicalPresenceInfo;
    TCG_PHYSICAL_PRESENCE_INFO        *NewPhysicalPresenceInfo;
    EFI_PEI_GRAPHICS_INFO_HOB         GfxInfo;
-@@ -415,6 +417,17 @@ BuildHobFromBl (
+@@ -415,6 +417,25 @@ BuildHobFromBl (
      DEBUG ((DEBUG_INFO, "Created firmware info hob\n"));
    }
  
@@ -203,7 +203,15 @@ index 83b5502bab..b3336691af 100644
 +    NewFlashLayoutInfo = BuildGuidHob (&gEfiFlashLayoutInfoHobGuid, sizeof (FlashLayoutInfo));
 +    ASSERT (NewFlashLayoutInfo != NULL);
 +    CopyMem (NewFlashLayoutInfo, &FlashLayoutInfo, sizeof (FlashLayoutInfo));
-+    DEBUG ((DEBUG_INFO, "Created flash layout info hob\n"));
++    DEBUG ((
++      DEBUG_INFO,
++      "Flash layout: fmap@%lx (mem %lx) cbfs@%lx+%lx media %lx\n",
++      FlashLayoutInfo.FmapOffset,
++      FlashLayoutInfo.FmapAddress,
++      FlashLayoutInfo.CbfsOffset,
++      FlashLayoutInfo.CbfsSize,
++      FlashLayoutInfo.BootMediaSize
++      ));
 +  }
 +
    //

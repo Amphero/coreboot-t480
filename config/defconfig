@@ -113,6 +113,11 @@ CONFIG_DRIVERS_EFI_FW_INFO=y
 CONFIG_DRIVERS_EFI_MAIN_FW_GUID="271c57fb-af28-5d13-96d4-c8ad68ef4ea1"
 CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=0x001A0008
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x00000000
+# To see the payload's own DEBUG() output, add -D USE_CBMEM_FOR_CONSOLE=TRUE
+# here. It routes SerialPortLib to CbSerialPortLib so the text lands in
+# coreboot's CBMEM console (/sys/firmware/log), and it suppresses
+# -DMDEPKG_NDEBUG in the dsc, which is what keeps DEBUG() alive in a RELEASE
+# build. No EDK2_DEBUG and no oversized debug payload needed.
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
 # measure all stages/blobs into TPM PCR 2 before running them (log: cbmem -L)
 CONFIG_TPM_MEASURED_BOOT=y
