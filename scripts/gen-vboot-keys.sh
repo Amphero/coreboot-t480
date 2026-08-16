@@ -22,13 +22,9 @@ IMAGE="${IMAGE:-coreboot-t480-deps}"
 
 die() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-# Any fetched tree will do - only the vboot sources are used here.
+# Only the vboot sources are used here.
 CB=""
-for m in ${MODE:-pinned latest}; do
-	if [ -d "$PROJECT/sources/$m/coreboot/3rdparty/vboot" ]; then
-		CB="$PROJECT/sources/$m/coreboot"; break
-	fi
-done
+[ -d "$PROJECT/sources/coreboot/3rdparty/vboot" ] && CB="$PROJECT/sources/coreboot"
 
 command -v podman >/dev/null || die "podman is missing"
 [ -n "$CB" ] || die "no fetched sources with a vboot tree - run ./fetch.sh first"

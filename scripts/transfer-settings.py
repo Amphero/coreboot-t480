@@ -22,8 +22,8 @@ WHAT is deliberately NOT transferred:
 FMAP-aware: locates the regions in both ROMs via their FMAP (offsets may differ
 between builds); only requires equal region SIZE.
 
-Reliability: works between builds with the same SMMSTORE config (true for
-pinned/latest here - both SMMSTORE 0x40000, edk2 variable format compatible).
+Reliability: works between builds with the same SMMSTORE config (true across
+this repo's builds - SMMSTORE 0x40000, edk2 variable format compatible).
 Verify after flashing; if Secure Boot ever doesn't take: flash the fresh ROM +
 `sbctl enroll-keys -m` (the sbctl keys live on the OS disk anyway). ALWAYS take
 a backup before flashing.

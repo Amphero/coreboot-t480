@@ -1,0 +1,23 @@
+# versions.lock  -  the upstream sources this firmware is built from.
+#
+# INPUT, not output. ./fetch.sh reads this file and fetches exactly these refs.
+# Nothing rewrites it behind your back; the one thing that does is
+# `./fetch.sh --latest`, which resolves the newest upstream versions and writes
+# them here, so the change lands in `git diff` and gets reviewed, built and
+# committed like any other change.
+#
+# A git tag pins strictly more than this file does: the same four refs plus
+# config/defconfig, the patch series, the Dockerfiles and the scripts. To
+# reproduce a release, check out its tag - not just these versions.
+#
+# LIBREBOOT_TARBALL is derived from LIBREBOOT_VERSION by the fetch; it is
+# recorded here so the file states the full set on its own.
+
+COREBOOT_REF=26.06
+COREBOOT_COMMIT=5cbf8afc4c08949c9b4ee1cb9dc5439add8a937e
+EDK2_BRANCH=uefipayload_2605
+EDK2_COMMIT=92584d64c3e808397fba14d700384294d52a46da
+LIBREBOOT_VERSION=26.01rev1
+LIBREBOOT_TARBALL=libreboot-26.01rev1_t480_vfsp_16mb.tar.xz
+LBMK_REF=26.01rev1
+LBMK_COMMIT=a0857f449ae78cf90fdb81fcdf1c15259df79efe

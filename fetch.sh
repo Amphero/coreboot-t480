@@ -3,41 +3,42 @@
 # fetch.sh  -  PHASE 1 (FETCH).  Host wrapper; only needs `podman`.
 #
 # Builds the build-environment image (coreboot-t480-deps) and runs the fetch
-# INSIDE it WITH network, populating ./sources/<BUILD_MODE>/ with EVERYTHING the
-# offline build (PHASE 2) needs. After this has run once, PHASE 2 builds fully
-# offline (--network=none).
+# INSIDE it WITH network, populating ./sources/ with EVERYTHING the offline
+# build (PHASE 2) needs. After this has run once, PHASE 2 builds fully offline
+# (--network=none).
 #
-#   ./fetch.sh                     # BUILD_MODE=pinned (default, HW-tested combo)
-#   ./fetch.sh pinned
-#   ./fetch.sh latest              # auto-detect newest coreboot/edk2/libreboot/lbmk
-#   ./fetch.sh latest --refresh    # re-resolve 'latest' (otherwise versions.lock is frozen)
-#   BUILD_MODE=latest ./fetch.sh
+#   ./fetch.sh                     # fetch the versions in config/versions.lock
+#   ./fetch.sh --latest            # resolve newest upstream, REWRITE config/versions.lock
+#   ./fetch.sh --refresh           # re-fetch sources even where stamps exist
 #
-# Optional per-component overrides (win in BOTH modes), via env:
+# --latest picks WHICH versions, --refresh whether to re-download; they are
+# independent and can be combined. A ref that changed in the lock re-fetches
+# its own component on the next run without --refresh.
+#
+# Optional per-component overrides for --latest only (env):
 #   COREBOOT_REF=<commit|tag>  EDK2_BRANCH=uefipayload_JJMM  LBMK_REF=<tag|commit>
 #   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/..._t480_vfsp_16mb.tar.xz
 #
-# Flags: --refresh  --rebuild-deps
+# Flags: --latest  --refresh  --rebuild-deps
 set -euo pipefail
 
 PROJECT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$PROJECT/build"        # build recipes: Dockerfile.deps/.offline, fetch-sources.sh, apply-devicetree.sh
-CONFIG="$PROJECT/config"      # board config + boot logo: defconfig, board.conf, splash.bmp
+CONFIG="$PROJECT/config"      # board config + boot logo: defconfig, board.conf, versions.lock, splash.bmp
 DEPS_IMAGE="coreboot-t480-deps"
 
-MODE="${BUILD_MODE:-pinned}"
+LATEST=0
 REFRESH=0
 REBUILD_DEPS=0
 for a in "$@"; do
   case "$a" in
-    pinned|latest) MODE="$a" ;;
+    --latest)       LATEST=1 ;;
     --refresh)      REFRESH=1 ;;
     --rebuild-deps) REBUILD_DEPS=1 ;;
     -h|--help) sed -n '3,/^set -euo pipefail/p' "$0" | head -n -1; exit 0 ;;
     *) echo "Unknown argument: $a" >&2; exit 2 ;;
   esac
 done
-[ "$MODE" = "pinned" ] || [ "$MODE" = "latest" ] || { echo "BUILD_MODE must be pinned|latest" >&2; exit 2; }
 
 die(){ printf '\n\033[1;31mfetch.sh ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 command -v podman >/dev/null || die "podman is missing (sudo pacman -S podman)"
@@ -46,8 +47,21 @@ if [ -f /etc/subuid ] && ! grep -q "^$(id -un):" /etc/subuid; then
   echo "    sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $(id -un)"
 fi
 
-SRC="$PROJECT/sources/$MODE"
+SRC="$PROJECT/sources"
 mkdir -p "$SRC/libreboot"
+
+# Leftovers from the two-mode layout. They are not read any more and just eat
+# disk, so say so once instead of letting the build fail on a missing tree.
+for old in pinned latest; do
+  if [ -d "$SRC/$old" ]; then
+    echo "fetch.sh: sources/$old/ is from the old pinned/latest layout and is no longer used."
+    echo "    rm -rf sources/$old   (and: podman rmi coreboot-t480-$old)"
+  fi
+done
+
+[ "$LATEST" = "1" ] || [ -f "$CONFIG/versions.lock" ] \
+  || die "config/versions.lock is missing - it is the input for the fetch.
+   Run ./fetch.sh --latest to resolve the newest upstream versions and create it."
 
 # --- optional externally-provided libreboot tarball -------------------------
 PROVIDED=0
@@ -78,22 +92,36 @@ fi
 # --- run the fetch inside the deps image (network ON, as the host user) ------
 # --userns=keep-id: run as the host uid so (a) files under ./sources are owned
 # by you and (b) lbmk runs non-root (it refuses uid 0).
-echo "fetch.sh: PHASE 1 in the container (BUILD_MODE=$MODE, network on) ..."
+# config/ goes in read-only: the container never writes into the working tree.
+# With --latest it writes the resolved set to /sources/versions.lock and the
+# host copies it back below, so a fetch that dies halfway cannot leave
+# config/versions.lock half-updated.
+echo "fetch.sh: PHASE 1 in the container (network on) ..."
 podman run --rm \
   --userns=keep-id \
   -e HOME=/tmp/fetchhome \
-  -e BUILD_MODE="$MODE" \
+  -e LATEST="$LATEST" \
   -e REFRESH="$REFRESH" \
   -e LIBREBOOT_TARBALL_PROVIDED="$PROVIDED" \
   -e COREBOOT_REF="${COREBOOT_REF:-}" \
   -e EDK2_BRANCH="${EDK2_BRANCH:-}" \
   -e LIBREBOOT_VERSION="${LIBREBOOT_VERSION:-}" \
   -e LBMK_REF="${LBMK_REF:-}" \
-  -v "$PROJECT/sources":/sources:z \
+  -v "$SRC":/sources:z \
   -v "$BUILD":/work:ro,z \
+  -v "$CONFIG":/config:ro,z \
   "$DEPS_IMAGE" \
   bash /work/fetch-sources.sh \
   || die "PHASE 1 (fetch-sources.sh) failed - see output above."
+
+# --latest resolved new versions inside the container; take them over now that
+# the fetch actually succeeded.
+if [ "$LATEST" = "1" ]; then
+  cp -f "$SRC/versions.lock" "$CONFIG/versions.lock"
+  echo
+  echo "fetch.sh: config/versions.lock updated - review and commit it:"
+  echo "    git diff config/versions.lock"
+fi
 
 # --- freeze the build config next to the sources (self-contained context) ----
 cp -f "$CONFIG/defconfig" "$SRC/defconfig"
@@ -105,5 +133,5 @@ rm -rf "$SRC/keys"; mkdir -p "$SRC/keys"                        # vboot signing 
 rm -rf "$SRC/patches" && cp -a "$PROJECT/patches" "$SRC/patches" # base patches (Dockerfile.offline) + tpm-reset
 
 echo
-echo "fetch.sh: sources/$MODE ready. Continue with the offline build:"
-echo "    python3 scripts/build-firmware.py --mode $MODE"
+echo "fetch.sh: sources/ ready. Continue with the offline build:"
+echo "    python3 scripts/build-firmware.py"
