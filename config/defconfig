@@ -62,6 +62,12 @@ CONFIG_VBOOT_KEYBLOCK="/opt/keys/firmware.keyblock"
 # between verstage and the ramstage lock is verified code anyway.
 CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
+# Second range over SI_DESC + SI_GBE (patch 0043), the regions the first one
+# and BIOS_CONTROL both miss. Write protection only, so a full-chip backup
+# still reads them. Protected ranges bind the master that sets them, so the ME
+# and the GbE controller keep their own access. Closes issue #5; after this the
+# descriptor and the MAC need the external programmer.
+CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE=y
 # SMM BIOS write protection: flash writes only succeed from SMM, so flashrom
 # from a running OS stops working while SMMSTORE (which goes through SMM) keeps
 # working. The runtime option puts a "BIOS Lock" toggle into the setup menu
@@ -77,9 +83,9 @@ CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
 # cover (measured: a GbE write succeeds on a fully locked machine). Locking
 # leaves the host read-only on the descriptor and shuts it out of ME writes;
 # ALLOW_CPU_READ_ACCESS keeps ME readable so a full-chip backup still works.
-# BIOS region stays read/write, so slot updates are unaffected. Note that
-# ifdtool deliberately keeps GbE host-writable on this platform - changing the
-# MAC keeps working, and that hole stays open (issue #5).
+# BIOS region stays read/write, so slot updates are unaffected. ifdtool
+# deliberately keeps GbE host-writable on this platform; the range above is
+# what closes that.
 # One-way: after this the descriptor itself needs the external programmer.
 CONFIG_LOCK_MANAGEMENT_ENGINE=y
 CONFIG_ME_REGION_ALLOW_CPU_READ_ACCESS=y
