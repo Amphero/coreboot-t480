@@ -495,6 +495,45 @@ The reason to add it is `LastAttemptStatus`. `BlSupportDxe` never sets
 that field, so it stays 0 and fwupd can never tell whether an update
 worked. `EsrtFmpDxe` fills it from the FMP instance.
 
+## edk2/0002-expose-flash-layout-to-the-payload.patch
+
+**Files:** `UefiPayloadPkg/Include/Coreboot.h`,
+`UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h` (new),
+`UefiPayloadPkg/Include/Library/BlParseLib.h`,
+`UefiPayloadPkg/Library/CbParseLib/CbParseLib.c`,
+`UefiPayloadPkg/Library/SblParseLib/SblParseLib.c`,
+`UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c` + `.inf`,
+`UefiPayloadPkg/UefiPayloadPkg.dec`
+
+A DXE driver cannot reach `BlParseLib` - that one runs in the payload
+entry phase. So the coreboot table is read there and handed on as a HOB,
+the same way `gEfiFirmwareInfoHobGuid` already works, and
+`FmpDeviceSlotLib` will pick it up with `GetFirstGuidHob`.
+
+`FLASH_LAYOUT_INFO` carries two things a writer needs:
+
+- `FmapAddress`, coreboot's in-memory copy of the flash map. It keeps one
+  in CBMEM unconditionally (`fmap_setup_cbmem_cache`, a `CBMEM_READY_HOOK`)
+  and points at it with `CB_TAG_FMAP`. Nothing has to search the flash or
+  hardcode an offset, and the map describes the firmware that is running.
+  `FmapOffset` and `BootMediaSize` come along for the case where the copy
+  is missing.
+- `CbfsOffset`, the CBFS coreboot actually booted from. Under verified
+  boot that is `FW_MAIN_A` or `FW_MAIN_B`, so it identifies the running
+  slot. The alternative was `CB_TAG_VBOOT_WORKBUF`, which means parsing
+  `vb2_shared_data` - vboot's internal state, not a stable interface.
+
+`SblParseLib` gets a stub returning `RETURN_NOT_FOUND`. Every function of
+the class is implemented by both bootloader backends; without it the Slim
+Bootloader build would fail to link.
+
+Applies unconditionally - unlike 0001 there is no define. That also means
+a plain build exercises it.
+
+Maintenance note: the new header is CRLF like every other file in that
+tree, so `git apply` reports whitespace warnings for it. Expected, not a
+defect.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
