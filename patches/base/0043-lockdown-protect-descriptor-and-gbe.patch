@@ -1,0 +1,98 @@
+diff --git a/src/security/lockdown/Kconfig b/src/security/lockdown/Kconfig
+index d59f6d3a..647ab578 100644
+--- a/src/security/lockdown/Kconfig
++++ b/src/security/lockdown/Kconfig
+@@ -87,6 +87,28 @@ config BOOTMEDIA_LOCK_TOPSWAP
+ 
+ endchoice
+ 
++config BOOTMEDIA_LOCK_DESCRIPTOR_GBE
++	bool "Also write-protect the flash descriptor and the GbE region"
++	depends on BOOTMEDIA_LOCK_CONTROLLER
++	help
++	  Select this to put a second protected range over the SI_DESC and
++	  SI_GBE FMAP regions, in addition to whichever range the choice above
++	  programs.
++
++	  Neither region is covered by the BIOS-region mechanisms: BIOS_CONTROL
++	  (BIOSWE/EISS) gates the BIOS region only, and a range over WP_RO does
++	  not reach them either. Left open, a host with the SPI controller
++	  enumerated can rewrite the descriptor - which grants the region
++	  permissions in the first place - and the GbE NVM holding the MAC.
++
++	  Protected ranges apply to the accesses of the master that programs
++	  them, so this does not restrict the ME or the GbE controller reaching
++	  their own regions. Write protection only; reads stay possible, so a
++	  full-chip backup still works.
++
++	  Afterwards the descriptor and the MAC can only be changed with an
++	  external programmer.
++
+ config BOOTMEDIA_LOCK_IN_VERSTAGE
+ 	depends on BOOTMEDIA_LOCK_WPRO_VBOOT_RO
+ 	bool "Lock boot media down in verstage"
+diff --git a/src/security/lockdown/lockdown.c b/src/security/lockdown/lockdown.c
+index 6a75111f..2595c601 100644
+--- a/src/security/lockdown/lockdown.c
++++ b/src/security/lockdown/lockdown.c
+@@ -6,6 +6,50 @@
+ #include <bootstate.h>
+ #include <fmap.h>
+ 
++/*
++ * Cover SI_DESC and SI_GBE with one protected range.
++ *
++ * They sit outside every other mechanism: BIOS_CONTROL gates the BIOS region,
++ * and the range over WP_RO does not reach offset 0. The descriptor is what
++ * grants the region permissions to begin with, so leaving it writable leaves
++ * every other permission revocable by whoever can write it.
++ *
++ * The two regions are adjacent on all layouts that place the descriptor first,
++ * and a protected range may cross region boundaries, so one register is enough.
++ * Bail out rather than guess if a layout ever separates them.
++ *
++ * Always CTRLR_WP, never the lock_type of the choice above: with
++ * BOOTMEDIA_LOCK_WHOLE_NO_ACCESS that would be CTRLR_RWP and would take the
++ * descriptor out of a full-chip backup as well.
++ */
++static void lock_descriptor_and_gbe(void)
++{
++	struct region desc, gbe, both;
++	struct region_device rdev;
++
++	if (fmap_locate_area("SI_DESC", &desc) || fmap_locate_area("SI_GBE", &gbe)) {
++		printk(BIOS_ERR, "BM-LOCKDOWN: Could not find 'SI_DESC'/'SI_GBE'\n");
++		return;
++	}
++
++	if (region_offset(&desc) + region_sz(&desc) != region_offset(&gbe)) {
++		printk(BIOS_ERR, "BM-LOCKDOWN: SI_DESC and SI_GBE are not adjacent\n");
++		return;
++	}
++
++	both = region_create(region_offset(&desc), region_sz(&desc) + region_sz(&gbe));
++
++	if (boot_device_ro_subregion(&both, &rdev) < 0) {
++		printk(BIOS_ERR, "BM-LOCKDOWN: Could not build the SI_DESC + SI_GBE range\n");
++		return;
++	}
++
++	if (boot_device_wp_region(&rdev, CTRLR_WP) >= 0)
++		printk(BIOS_INFO, "BM-LOCKDOWN: Enabled protection for SI_DESC + SI_GBE\n");
++	else
++		printk(BIOS_ERR, "BM-LOCKDOWN: Failed to protect SI_DESC + SI_GBE\n");
++}
++
+ /*
+  * Enables read- /write protection of the bootmedia.
+  */
+@@ -62,6 +106,9 @@ void boot_device_security_lockdown(void)
+ 	else
+ 		printk(BIOS_ERR, "BM-LOCKDOWN: Failed to enable bootmedia protection\n");
+ 
++	if (CONFIG(BOOTMEDIA_LOCK_DESCRIPTOR_GBE))
++		lock_descriptor_and_gbe();
++
+ 	if (CONFIG(BOOTMEDIA_LOCK_TOPSWAP)) {
+ 		/*
+ 		 * Additionally set a protected range for the BOOTBLOCK region
