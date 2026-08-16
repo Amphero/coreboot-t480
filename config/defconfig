@@ -113,11 +113,23 @@ CONFIG_DRIVERS_EFI_FW_INFO=y
 CONFIG_DRIVERS_EFI_MAIN_FW_GUID="271c57fb-af28-5d13-96d4-c8ad68ef4ea1"
 CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=0x001A0008
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x00000000
+# The SMI handler only hands out full-flash access when coreboot found a
+# capsule this boot, so the writer needs this to be able to write at all.
+# SLOT_UPDATE then picks the payload arrangement (patch 0044): FmpDxe stays in
+# the firmware and writes the inactive slot, rather than being embedded into
+# the capsule to rewrite the whole chip. Without it the edk2 Makefile passes
+# -D CAPSULE_SUPPORT=TRUE and the payload builds the other one.
+CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
+CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE=y
 # To see the payload's own DEBUG() output, add -D USE_CBMEM_FOR_CONSOLE=TRUE
 # here. It routes SerialPortLib to CbSerialPortLib so the text lands in
 # coreboot's CBMEM console (/sys/firmware/log), and it suppresses
 # -DMDEPKG_NDEBUG in the dsc, which is what keeps DEBUG() alive in a RELEASE
 # build. No EDK2_DEBUG and no oversized debug payload needed.
+# EDK2 builds quiet (-q in payloads/external/edk2/Makefile), which swallows
+# compiler and linker errors - a failing module then reports only "Failed to
+# execute command". Append -v here to get them back; this list is added after
+# -q, so it wins.
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
 # measure all stages/blobs into TPM PCR 2 before running them (log: cbmem -L)
 CONFIG_TPM_MEASURED_BOOT=y
