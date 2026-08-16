@@ -66,6 +66,13 @@ CB_SUBMODULES=(3rdparty/vboot 3rdparty/libgfxinit 3rdparty/libhwbase \
 LOCK="$SRC/versions.lock"            # effective set, consumed by PHASE 2
 mkdir -p "$SRC"
 
+# What the previous run fetched. Read BEFORE the new lock overwrites it, so a
+# changed ref can drop just that component's stamp further down.
+lock_field(){ [ -f "$1" ] && sed -n "s/^$2=//p" "$1" | head -1 || true; }
+PREV_COREBOOT="$(lock_field "$LOCK" COREBOOT_COMMIT)"
+PREV_EDK2="$(lock_field "$LOCK" EDK2_COMMIT)"
+PREV_LBMK="$(lock_field "$LOCK" LBMK_COMMIT)"
+
 sortver(){ sort -V; }
 
 resolve_latest(){
@@ -176,7 +183,25 @@ LIBREBOOT_TARBALL=$LIBREBOOT_TARBALL
 LBMK_REF=$LBMK_REF
 LBMK_COMMIT=$LBMK_COMMIT
 EOF
-log "versions in use:"; sed 's/^/    /" "$LOCK"
+log "versions in use:"; sed 's/^/    /' "$LOCK"
+
+# A component whose ref moved since the last fetch must be re-fetched, but the
+# other three must not - re-cloning 8-12 GB to change one ref is what --refresh
+# used to force. Drop only the affected stamps; the existing skip logic below
+# then does the work.
+invalidate(){                 # $1 label  $2 previous  $3 now  $4.. stamps
+  local label="$1" prev="$2" now="$3"; shift 3
+  [ -n "$prev" ] || return 0                  # first fetch, nothing to compare
+  [ "$prev" != "$now" ] || return 0
+  log "$label changed ($prev -> $now) - will re-fetch it"
+  rm -f "$@"
+}
+invalidate coreboot "$PREV_COREBOOT" "$COREBOOT_COMMIT" \
+    "$SRC/coreboot/.stamp-clone" "$SRC/coreboot/.stamp-fetch"
+invalidate edk2     "$PREV_EDK2"     "$EDK2_COMMIT"     "$SRC/edk2/.stamp-fetch"
+invalidate lbmk     "$PREV_LBMK"     "$LBMK_COMMIT"     "$SRC/lbmk/.stamp-populated"
+# libreboot needs no stamp: the tarball carries the version in its file name,
+# so a new version is simply a file that is not there yet.
 
 # =====================================================================
 # 2) coreboot  (source + selected submodules + crossgcc toolchain tarballs)
