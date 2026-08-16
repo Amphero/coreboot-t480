@@ -87,28 +87,41 @@ Two steps. The first downloads all sources (8-12 GB, needs internet), the
 second builds offline:
 
 ```bash
-./fetch.sh pinned
+./fetch.sh
 sh scripts/gen-vboot-keys.sh                    # once, see Verified boot
-python3 scripts/build-firmware.py --mode pinned
+python3 scripts/build-firmware.py
 ```
 
-The ROM ends up in `roms/coreboot_t480_pinned.rom`. The first build takes
-30-60 minutes because coreboot builds its own toolchain, after that it's fast.
+The ROM ends up in `roms/coreboot_t480_<version>.rom`, where `<version>` is
+`git describe` of the checkout it was built from. The first build takes 30-60
+minutes because coreboot builds its own toolchain, after that it's fast.
 
 The build signs both firmware slots, so it needs a keyset in `keys/` and
 aborts without one rather than falling back to the public vboot devkeys.
 
-`pinned` builds the versions this port was originally validated with;
-`latest` resolves the newest upstream versions at fetch time. The recent
-fan-control releases were built and tested from `latest` - the exact
-versions of every build are recorded in `roms/versions_<mode>.lock`.
+`config/versions.lock` names the four upstream sources (coreboot, EDK2,
+libreboot, lbmk) down to the commit, and `./fetch.sh` fetches exactly those.
+It is tracked, so a checkout of a git tag pins the versions together with the
+defconfig, the patch series and the build scripts - which is what actually
+reproduces a release.
+
+To move it, `./fetch.sh --latest` resolves the newest upstream versions and
+writes them into the file. That shows up in `git diff`; build, test and commit
+it like any other change. `--refresh` is separate and only forces a re-download
+of sources already on disk. Changing a single ref in the lock re-fetches that
+component alone on the next run.
+
+> [!NOTE]
+> Coming from a checkout with the old `pinned`/`latest` modes: those trees and
+> images are not used any more. `rm -rf sources/pinned sources/latest`,
+> `podman rmi coreboot-t480-pinned coreboot-t480-latest`, then `./fetch.sh`.
 
 <details>
 <summary>Manual build without the scripts</summary>
 <br>
 
 The first step only exists as a script, it downloads too much to type by hand.
-But once `sources/<mode>/` is filled you can run the build itself manually:
+But once `sources/` is filled you can run the build itself manually:
 
 ```bash
 # build-environment image (only needed if it doesn't exist yet)
@@ -119,12 +132,12 @@ podman build -t coreboot-t480-deps -f build/Dockerfile.deps build
 # the GbE region verbatim.
 MAC=AA:BB:CC:DD:EE:FF
 podman build --network=none --build-arg MAC_ADDRESS="$MAC" \
-    -f build/Dockerfile.offline -t coreboot-t480-pinned sources/pinned
+    -f build/Dockerfile.offline -t coreboot-t480 sources
 
 # copy the ROM out of the image
 mkdir -p roms
 podman run --rm --network=none -v "$PWD/roms":/out:z --user root \
-    coreboot-t480-pinned bash -c 'cp /opt/coreboot/build/coreboot.rom /out/coreboot.rom'
+    coreboot-t480 bash -c 'cp /opt/coreboot/build/coreboot.rom /out/coreboot.rom'
 ```
 
 This gives you the base image (TPM on, Microsoft keys auto-enrolled). The
@@ -150,7 +163,7 @@ xxd -s 0x1000 -l 6 -p backup.bin | sed 's/../&:/g;s/:$//'
 Then pass it to the build - preferred, because nothing lands in a tracked file:
 
 ```bash
-MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py --mode pinned
+MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py
 ```
 
 (or `--mac AA:BB:CC:DD:EE:FF`). Alternatively uncomment the `MAC=` line in
@@ -177,6 +190,7 @@ TPM enabled.
 | flash writes blocked outside SMM | `CONFIG_BOOTMEDIA_SMM_BWP` + `..._RUNTIME_OPTION` | adds the **BIOS Lock** toggle to the setup menu |
 | `WP_RO` sealed against the OS | `CONFIG_BOOTMEDIA_LOCK_CONTROLLER` + `CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO` | RO changes need the programmer afterwards |
 | rollback protection to bite | raise `CONFIG_VBOOT_KEYBLOCK_VERSION`, record it | see [docs/firmware-versions.md](docs/firmware-versions.md) |
+| newer upstream sources | `./fetch.sh --latest`, or edit `config/versions.lock` | only the components whose ref moved are re-fetched |
 | the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, but also fwupd's SPI checks |
 | a different boot logo | replace `config/splash.bmp` | 24-bit uncompressed BMP, max 1920x1080 |
 | a different MAC | `--mac` or `MAC=` in `config/board.conf` | `board.conf` is tracked - a MAC there shows up in diffs |
@@ -271,8 +285,8 @@ sudo flashrom -p ch341a_spi -r backup1.bin
 sudo flashrom -p ch341a_spi -r backup2.bin
 diff backup1.bin backup2.bin
 
-sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
-sudo flashrom -p ch341a_spi -v roms/coreboot_t480_pinned.rom
+sudo flashrom -p ch341a_spi -w roms/coreboot_t480_<version>.rom
+sudo flashrom -p ch341a_spi -v roms/coreboot_t480_<version>.rom
 ```
 
 A bad flash is not fatal as long as the backup exists: write it back the
@@ -285,7 +299,7 @@ clip on:
 
 ```bash
 sudo flashrom -p ch341a_spi --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
-    -w roms/coreboot_t480_<date>.rom
+    -w roms/coreboot_t480_<version>.rom
 ```
 
 SMMSTORE, the MRC cache and the vboot state are outside those regions, so
@@ -310,8 +324,8 @@ bricks the machine, so keep the programmer at hand:
 
 ```bash
 sudo flashrom -p internal -r backup.bin
-sudo flashrom -p internal --ifd -i bios -w roms/coreboot_t480_pinned.rom
-sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_pinned.rom
+sudo flashrom -p internal --ifd -i bios -w roms/coreboot_t480_<version>.rom
+sudo flashrom -p internal --ifd -i bios -v roms/coreboot_t480_<version>.rom
 ```
 
 That writes the whole BIOS region, SMMSTORE included, so settings and
@@ -468,7 +482,7 @@ To keep the settings of a previous coreboot install (keys, boot entries),
 either copy the SMMSTORE from a backup into the new ROM:
 
 ```bash
-python3 scripts/transfer-settings.py backup.bin roms/coreboot_t480_pinned.rom
+python3 scripts/transfer-settings.py backup.bin roms/coreboot_t480_<version>.rom
 ```
 
 or, when flashing internally, write only the firmware regions and leave
@@ -478,7 +492,7 @@ it - flashrom skips regions whose content already matches, but a changed
 
 ```bash
 sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
-    -w roms/coreboot_t480_pinned.rom
+    -w roms/coreboot_t480_<version>.rom
 ```
 
 <details>
@@ -489,7 +503,7 @@ The SMMSTORE region sits at offset 0x250000 and is 0x40000 bytes. To copy it
 from a backup into a fresh ROM without the script:
 
 ```bash
-cp roms/coreboot_t480_pinned.rom new_with_settings.rom
+cp roms/coreboot_t480_<version>.rom new_with_settings.rom
 dd if=backup.bin of=new_with_settings.rom bs=1 conv=notrunc \
    skip=$((0x250000)) seek=$((0x250000)) count=$((0x40000))
 ```
@@ -511,7 +525,7 @@ tpm2_pcrread sha256:2
 ```
 
 `cbmem` is not packaged; build it from the fetched tree:
-`make -C sources/<mode>/coreboot/util/cbmem`.
+`make -C sources/coreboot/util/cbmem`.
 
 LUKS can be bound to it on top of the usual policy
 (`systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=2`), so the disk
@@ -616,9 +630,9 @@ key:
 ```bash
 mv keys keys.old                     # gen-vboot-keys.sh will not overwrite
 sh scripts/gen-vboot-keys.sh
-python3 scripts/build-firmware.py --mode latest --rebuild-base
+python3 scripts/build-firmware.py --rebuild-base
 sudo flashrom -p internal --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
-    -w roms/coreboot_t480_<date>.rom
+    -w roms/coreboot_t480_<version>.rom
 ```
 
 Nothing else has to be prepared, and nothing is lost:
@@ -660,9 +674,9 @@ sudo vbnv show                                    # "running slot"
 
 sudo flashrom -p internal -r backup.bin
 sudo flashrom -p internal --fmap -i RW_SECTION_<other> \
-    -w roms/coreboot_t480_<date>.rom
+    -w roms/coreboot_t480_<version>.rom
 sudo flashrom -p internal --fmap -i RW_SECTION_<other> \
-    -v roms/coreboot_t480_<date>.rom
+    -v roms/coreboot_t480_<version>.rom
 
 sudo vbnv arm-update                              # one trial boot
 ```
@@ -722,7 +736,7 @@ slot fails verification. VBLOCK_A is at 0x2a0000, VBLOCK_B at 0x6a0000,
 both 0x10000 long.
 
 ```bash
-cp roms/coreboot_t480_<date>.rom /tmp/w.rom
+cp roms/coreboot_t480_<version>.rom /tmp/w.rom
 dd if=/dev/zero of=/tmp/w.rom bs=1 conv=notrunc seek=$((0x2a0000)) count=$((0x10000))
 sudo flashrom -p internal --fmap -i VBLOCK_A -w /tmp/w.rom
 ```
@@ -887,7 +901,7 @@ inside the slots:
 
 ```bash
 podman run --rm --network=none --user root -v "$PWD/roms":/w:z \
-    coreboot-t480-latest \
+    coreboot-t480 \
     /opt/coreboot/build/util/futility/futility sign \
         --signprivate /opt/keys/firmware_data_key.vbprivk \
         --keyblock    /opt/keys/firmware.keyblock \
@@ -928,7 +942,7 @@ that clears the TPM on every boot via TPM2_Clear.
 <br>
 
 ```bash
-python3 scripts/build-firmware.py --mode pinned --tpm-reset
+python3 scripts/build-firmware.py --tpm-reset
 ```
 
 Internal flashing only works with coreboot already on the chip - it needs
@@ -940,20 +954,20 @@ with `iomem=relaxed`):
 
 ```bash
 R="-i RW_SECTION_A -i RW_SECTION_B"
-sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_pinned_tpmreset.rom
+sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_<version>_tpmreset.rom
 # boot once, then:
 sudo grep -i "TPM-RESET" /sys/firmware/log     # step2/step3 should say rc=0x0
 tpm2_getcap properties-variable                # ownerAuthSet, disableClear = 0
-sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_pinned.rom
+sudo flashrom -p internal --fmap $R -w roms/coreboot_t480_<version>.rom
 ```
 
 Coming straight from the vendor BIOS (e.g. doing the reset as part of the
 first install), flash externally with the programmer instead:
 
 ```bash
-sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned_tpmreset.rom
+sudo flashrom -p ch341a_spi -w roms/coreboot_t480_<version>_tpmreset.rom
 # boot once and check as above, then:
-sudo flashrom -p ch341a_spi -w roms/coreboot_t480_pinned.rom
+sudo flashrom -p ch341a_spi -w roms/coreboot_t480_<version>.rom
 ```
 
 step1 may report INVALID_POSTINIT, that's fine (coreboot already started the
@@ -1034,16 +1048,15 @@ podman image prune -a -f
 rm -rf sources/
 ```
 
-The exact versions of a build are recorded in `roms/versions_<mode>.lock`, so
-everything can be rebuilt later.
+The versions are in `config/versions.lock`, tracked, so everything can be
+fetched and rebuilt later. `sources/` only saves the download.
 
-`sources/<mode>/` is what makes rebuilds independent of upstream staying
-online. To also keep the built toolchain, save the image itself - that
-turns a 30-60 minute rebuild into a `podman load`:
+To also keep the built toolchain, save the image itself - that turns a
+30-60 minute rebuild into a `podman load`:
 
 ```bash
-podman save coreboot-t480-pinned | zstd -T0 > coreboot-t480-pinned.tar.zst
-zstd -dc coreboot-t480-pinned.tar.zst | podman load        # restore
+podman save coreboot-t480 | zstd -T0 > coreboot-t480.tar.zst
+zstd -dc coreboot-t480.tar.zst | podman load               # restore
 ```
 
 ## License
