@@ -1,0 +1,1008 @@
+diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
+new file mode 100644
+index 0000000000..7ce8b71b1e
+--- /dev/null
++++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
+@@ -0,0 +1,959 @@
++/** @file
++  Firmware device services that update the inactive verified-boot slot.
++
++  UefiPayloadPkg's other FmpDeviceLib, FmpDeviceSmmLib, rewrites the whole
++  flash chip and therefore needs every flash protection lifted while it runs.
++  This one writes a single RW_SECTION and needs nothing unlocked: coreboot
++  programs its protected ranges at BS_DEV_RESOURCES and seals them there,
++  which is before capsules are parsed at BS_DEV_INIT, and those ranges cover
++  WP_RO, SI_DESC and SI_GBE while leaving the BIOS region writable. The slots
++  are in the BIOS region.
++
++  Where things are comes from gEfiFlashLayoutInfoHobGuid, which carries
++  coreboot's in-memory copy of the flash map and the offset of the CBFS that
++  was actually booted from. That offset falls inside exactly one RW_SECTION
++  and so names the running slot; the other one is the target. Reading vboot's
++  own state was the alternative and was rejected - vb2_shared_data is internal
++  and not an interface.
++
++  Writing only works during a boot where coreboot found a pending capsule.
++  Full-flash access through the SMI handler is latched once per boot from the
++  capsule count (smmstore_preprocess_cmd), so outside that the block calls
++  come back as unsupported. That is the intended flow, not a defect: fwupd
++  stages the capsule, the reboot makes coreboot find it, and the payload
++  applies it.
++
++  After a successful write the trial boot is armed in VBNV, so the next boot
++  runs the new image once and falls back on its own if it does not come up.
++  Reporting that it did come up stays with the OS - scripts/vbnv.py boot-ok -
++  because firmware cannot know it.
++
++  Copyright (c) 2026, Amphero.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <PiDxe.h>
++#include <Guid/FirmwareInfoGuid.h>
++#include <Guid/SystemResourceTable.h>
++#include <Guid/FlashLayoutInfoGuid.h>
++#include <Library/BaseLib.h>
++#include <Library/BaseMemoryLib.h>
++#include <Library/DebugLib.h>
++#include <Library/FmpDeviceLib.h>
++#include <Library/HobLib.h>
++#include <Library/IoLib.h>
++#include <Library/MemoryAllocationLib.h>
++#include <Library/SmmStoreLib.h>
++
++#define FMAP_SIGNATURE  "__FMAP__"
++#define FMAP_NAMELEN    32
++
++//
++// The vboot non-volatile block in CMOS. coreboot reads it from
++// CONFIG_VBOOT_VBNV_OFFSET + 14 (security/vboot/vbnv_cmos.c) and only falls
++// back to its flash copy when the block does not verify, so a write here is
++// what the next boot sees.
++//
++#define VBNV_CMOS_INDEX       0x34
++#define VBNV_BLOCK_SIZE       16
++#define VBNV_OFFS_HEADER      0
++#define VBNV_OFFS_BOOT        1
++#define VBNV_OFFS_BOOT2       7
++#define VBNV_OFFS_CRC         15
++#define VBNV_HEADER_MASK      0xc3
++#define VBNV_HEADER_SIGNATURE 0x40
++#define VBNV_BOOT_TRY_COUNT   0x0f
++#define VBNV_BOOT2_TRY_NEXT   0x08
++
++#define CMOS_INDEX_PORT  0x70
++#define CMOS_DATA_PORT   0x71
++
++#pragma pack(push, 1)
++typedef struct {
++  UINT32    Offset;
++  UINT32    Size;
++  UINT8     Name[FMAP_NAMELEN];
++  UINT16    Flags;
++} FMAP_AREA;
++
++typedef struct {
++  UINT8        Signature[8];
++  UINT8        VerMajor;
++  UINT8        VerMinor;
++  UINT64       Base;
++  UINT32       Size;
++  UINT8        Name[FMAP_NAMELEN];
++  UINT16       NAreas;
++  FMAP_AREA    Areas[];
++} FMAP;
++#pragma pack(pop)
++
++//
++// The slot this library writes: the one the running firmware did not boot
++// from. Resolved once, on first use.
++//
++STATIC BOOLEAN  mSlotResolved = FALSE;
++STATIC UINT32   mSlotOffset   = 0;
++STATIC UINT32   mSlotSize     = 0;
++STATIC BOOLEAN  mSlotIsB      = FALSE;
++
++/**
++  Return the firmware information coreboot passed up, or NULL.
++
++  The version reported to the FMP stack is the running firmware's. It is not
++  read from the flash, so it stays correct even when the inactive slot holds
++  something else.
++
++  @retval  Pointer to the information, or NULL when it is missing.
++**/
++STATIC
++CONST FIRMWARE_INFO *
++GetFwInfo (
++  VOID
++  )
++{
++  EFI_HOB_GUID_TYPE  *Hob;
++
++  Hob = GetFirstGuidHob (&gEfiFirmwareInfoHobGuid);
++  if (Hob == NULL) {
++    return NULL;
++  }
++
++  return (CONST FIRMWARE_INFO *)GET_GUID_HOB_DATA (Hob);
++}
++
++/**
++  Look up an area in the flash map by name.
++
++  @param[in]  Fmap   The map.
++  @param[in]  Name   Area name, NUL terminated.
++  @param[out] Area   The area found.
++
++  @retval  TRUE   The area exists.
++  @retval  FALSE  It does not.
++**/
++STATIC
++BOOLEAN
++FindArea (
++  IN  CONST FMAP   *Fmap,
++  IN  CONST CHAR8  *Name,
++  OUT CONST FMAP_AREA  **Area
++  )
++{
++  UINTN  Index;
++  UINTN  Length;
++
++  Length = AsciiStrLen (Name);
++  if (Length >= FMAP_NAMELEN) {
++    return FALSE;
++  }
++
++  for (Index = 0; Index < Fmap->NAreas; Index++) {
++    //
++    // Area names are padded with zeroes, so comparing the name plus its
++    // terminator is enough to rule out a longer name with the same prefix.
++    //
++    if (CompareMem (Fmap->Areas[Index].Name, Name, Length + 1) == 0) {
++      *Area = &Fmap->Areas[Index];
++      return TRUE;
++    }
++  }
++
++  return FALSE;
++}
++
++/**
++  Work out which slot to write, and remember it.
++
++  @retval  EFI_SUCCESS    mSlotOffset and mSlotSize are usable.
++  @retval  EFI_NOT_FOUND  The information needed is missing or inconsistent.
++**/
++STATIC
++EFI_STATUS
++ResolveSlot (
++  VOID
++  )
++{
++  EFI_HOB_GUID_TYPE        *Hob;
++  CONST FLASH_LAYOUT_INFO  *Layout;
++  CONST FMAP               *Fmap;
++  CONST FMAP_AREA          *SlotA;
++  CONST FMAP_AREA          *SlotB;
++  CONST FMAP_AREA          *Target;
++
++  if (mSlotResolved) {
++    return EFI_SUCCESS;
++  }
++
++  Hob = GetFirstGuidHob (&gEfiFlashLayoutInfoHobGuid);
++  if (Hob == NULL) {
++    DEBUG ((DEBUG_ERROR, "%a: no flash layout hob\n", __func__));
++    return EFI_NOT_FOUND;
++  }
++
++  Layout = (CONST FLASH_LAYOUT_INFO *)GET_GUID_HOB_DATA (Hob);
++
++  if (Layout->FmapAddress == 0) {
++    //
++    // Only the offset on the medium is known. Reading the map from flash
++    // would work but needs the same SMI access as writing, which is not
++    // available outside a capsule boot - so there would be nothing to gain.
++    //
++    DEBUG ((DEBUG_ERROR, "%a: bootloader kept no flash map in memory\n", __func__));
++    return EFI_NOT_FOUND;
++  }
++
++  Fmap = (CONST FMAP *)(UINTN)Layout->FmapAddress;
++  if (CompareMem (Fmap->Signature, FMAP_SIGNATURE, sizeof (Fmap->Signature)) != 0) {
++    DEBUG ((DEBUG_ERROR, "%a: no flash map at %lx\n", __func__, Layout->FmapAddress));
++    return EFI_NOT_FOUND;
++  }
++
++  if (!FindArea (Fmap, "RW_SECTION_A", &SlotA) ||
++      !FindArea (Fmap, "RW_SECTION_B", &SlotB))
++  {
++    DEBUG ((DEBUG_ERROR, "%a: no RW_SECTION_A/B - not a verified boot layout\n", __func__));
++    return EFI_NOT_FOUND;
++  }
++
++  //
++  // The CBFS that was booted from sits inside the running slot. Take the
++  // other one. Its own size is not the region size, so it is used to place
++  // the offset and nothing else.
++  //
++  if ((Layout->CbfsOffset >= SlotA->Offset) &&
++      (Layout->CbfsOffset < (UINT64)SlotA->Offset + SlotA->Size))
++  {
++    Target = SlotB;
++  } else if ((Layout->CbfsOffset >= SlotB->Offset) &&
++             (Layout->CbfsOffset < (UINT64)SlotB->Offset + SlotB->Size))
++  {
++    Target = SlotA;
++  } else {
++    DEBUG ((
++      DEBUG_ERROR,
++      "%a: booted cbfs at %lx is in neither slot\n",
++      __func__,
++      Layout->CbfsOffset
++      ));
++    return EFI_NOT_FOUND;
++  }
++
++  mSlotOffset   = Target->Offset;
++  mSlotSize     = Target->Size;
++  mSlotIsB      = (BOOLEAN)(Target == SlotB);
++  mSlotResolved = TRUE;
++
++  DEBUG ((
++    DEBUG_INFO,
++    "%a: will write %a at %x size %x\n",
++    __func__,
++    (Target == SlotA) ? "RW_SECTION_A" : "RW_SECTION_B",
++    mSlotOffset,
++    mSlotSize
++    ));
++
++  return EFI_SUCCESS;
++}
++
++/**
++  CRC-8 ITU, x^8 + x^2 + x + 1.
++
++  The same routine as vboot's vb2_crc8() and coreboot's crc8_vbnv(). The block
++  is rejected by both if this does not match, so it has to agree exactly.
++
++  @param[in] Data    The bytes.
++  @param[in] Length  How many.
++
++  @retval  The checksum.
++**/
++STATIC
++UINT8
++Crc8 (
++  IN CONST UINT8  *Data,
++  IN UINTN        Length
++  )
++{
++  UINT16  Crc;
++  UINTN   Index;
++  UINTN   Bit;
++
++  Crc = 0;
++  for (Index = 0; Index < Length; Index++) {
++    Crc ^= (UINT16)Data[Index] << 8;
++    for (Bit = 0; Bit < 8; Bit++) {
++      if ((Crc & 0x8000) != 0) {
++        Crc ^= 0x1070 << 3;
++      }
++
++      Crc <<= 1;
++    }
++  }
++
++  return (UINT8)(Crc >> 8);
++}
++
++/**
++  Point the next boot at the slot just written and give it one attempt.
++
++  vboot then marks that boot TRYING rather than trusting the previous one, so
++  the rollback counter cannot move until the new image reports success itself.
++  A slot that never comes up costs one boot and the machine returns to the old
++  one without help.
++
++  Refuses to touch a block that does not verify - a bad write here would cost
++  the vboot state, and the update has already succeeded at that point.
++
++  @retval EFI_SUCCESS       The next boot will try the new slot.
++  @retval EFI_DEVICE_ERROR  The block did not verify, before or after writing.
++**/
++STATIC
++EFI_STATUS
++ArmTrialBoot (
++  VOID
++  )
++{
++  UINT8  Block[VBNV_BLOCK_SIZE];
++  UINT8  Verify[VBNV_BLOCK_SIZE];
++  UINTN  Index;
++
++  for (Index = 0; Index < VBNV_BLOCK_SIZE; Index++) {
++    IoWrite8 (CMOS_INDEX_PORT, (UINT8)(VBNV_CMOS_INDEX + Index));
++    Block[Index] = IoRead8 (CMOS_DATA_PORT);
++  }
++
++  if (((Block[VBNV_OFFS_HEADER] & VBNV_HEADER_MASK) != VBNV_HEADER_SIGNATURE) ||
++      (Block[VBNV_OFFS_CRC] != Crc8 (Block, VBNV_OFFS_CRC)))
++  {
++    DEBUG ((DEBUG_ERROR, "%a: vbnv block does not verify, leaving it alone\n", __func__));
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (mSlotIsB) {
++    Block[VBNV_OFFS_BOOT2] |= VBNV_BOOT2_TRY_NEXT;
++  } else {
++    Block[VBNV_OFFS_BOOT2] &= (UINT8)~VBNV_BOOT2_TRY_NEXT;
++  }
++
++  Block[VBNV_OFFS_BOOT] = (UINT8)((Block[VBNV_OFFS_BOOT] & ~VBNV_BOOT_TRY_COUNT) | 1);
++  Block[VBNV_OFFS_CRC]  = Crc8 (Block, VBNV_OFFS_CRC);
++
++  for (Index = 0; Index < VBNV_BLOCK_SIZE; Index++) {
++    IoWrite8 (CMOS_INDEX_PORT, (UINT8)(VBNV_CMOS_INDEX + Index));
++    IoWrite8 (CMOS_DATA_PORT, Block[Index]);
++  }
++
++  //
++  // Read it back. CMOS is a different device on a different bus and this is
++  // the last thing standing between a written slot and a machine that boots
++  // it, so a silent failure here is worth one more read.
++  //
++  for (Index = 0; Index < VBNV_BLOCK_SIZE; Index++) {
++    IoWrite8 (CMOS_INDEX_PORT, (UINT8)(VBNV_CMOS_INDEX + Index));
++    Verify[Index] = IoRead8 (CMOS_DATA_PORT);
++  }
++
++  if (CompareMem (Verify, Block, VBNV_BLOCK_SIZE) != 0) {
++    DEBUG ((DEBUG_ERROR, "%a: vbnv write did not stick\n", __func__));
++    return EFI_DEVICE_ERROR;
++  }
++
++  DEBUG ((DEBUG_INFO, "%a: next boot tries slot %a\n", __func__, mSlotIsB ? "B" : "A"));
++
++  return EFI_SUCCESS;
++}
++
++/**
++  Register a function that installs the Firmware Management Protocol.
++
++  Not used. FmpDxe installs it itself; a device library only overrides that
++  when one driver has to publish several instances.
++
++  @param[in] Function  Unused.
++
++  @retval EFI_UNSUPPORTED  Always.
++**/
++EFI_STATUS
++EFIAPI
++RegisterFmpInstaller (
++  IN FMP_DEVICE_LIB_REGISTER_FMP_INSTALLER  Function
++  )
++{
++  return EFI_UNSUPPORTED;
++}
++
++/**
++  Register a function that uninstalls the Firmware Management Protocol.
++
++  Not used, for the same reason as the installer above.
++
++  @param[in] Function  Unused.
++
++  @retval EFI_UNSUPPORTED  Always.
++**/
++EFI_STATUS
++EFIAPI
++RegisterFmpUninstaller (
++  IN FMP_DEVICE_LIB_REGISTER_FMP_UNINSTALLER  Function
++  )
++{
++  return EFI_UNSUPPORTED;
++}
++
++/**
++  Provide a firmware device specific method to detect and process a firmware
++  device.
++
++  @param[in]      Handle   Device handle for the firmware device.
++  @param[in, out] Context  Firmware device context.
++
++  @retval EFI_SUCCESS  The firmware device was detected.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceSetContext (
++  IN EFI_HANDLE  Handle,
++  IN OUT VOID    **Context
++  )
++{
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the size of the firmware image, i.e. of one slot.
++
++  @param[out] Size  The size in bytes.
++
++  @retval EFI_SUCCESS            The size was returned.
++  @retval EFI_INVALID_PARAMETER  Size is NULL.
++  @retval EFI_NOT_FOUND          The slot could not be determined.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetSize (
++  OUT UINTN  *Size
++  )
++{
++  EFI_STATUS  Status;
++
++  if (Size == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  Status = ResolveSlot ();
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  *Size = mSlotSize;
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the GUID identifying this firmware to the update stack.
++
++  @param[out] Guid  Pointer to the GUID.
++
++  @retval EFI_SUCCESS      The GUID was returned.
++  @retval EFI_UNSUPPORTED  The bootloader named none.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetImageTypeIdGuidPtr (
++  OUT EFI_GUID  **Guid
++  )
++{
++  CONST FIRMWARE_INFO  *Info;
++
++  Info = GetFwInfo ();
++  if (Info == NULL) {
++    return EFI_UNSUPPORTED;
++  }
++
++  *Guid = (EFI_GUID *)&Info->Type;
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the attributes supported and set for this firmware device.
++
++  Resetting after an update is required: the written slot only becomes the
++  running one on a later boot.
++
++  @param[out] Supported  Attributes this device understands.
++  @param[out] Setting    Attributes currently in effect.
++
++  @retval EFI_SUCCESS            The attributes were returned.
++  @retval EFI_INVALID_PARAMETER  A parameter is NULL.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetAttributes (
++  OUT UINT64  *Supported,
++  OUT UINT64  *Setting
++  )
++{
++  if ((Supported == NULL) || (Setting == NULL)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  *Supported = IMAGE_ATTRIBUTE_IMAGE_UPDATABLE |
++               IMAGE_ATTRIBUTE_RESET_REQUIRED |
++               IMAGE_ATTRIBUTE_IN_USE;
++  *Setting = *Supported;
++
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the lowest version the running firmware will accept.
++
++  @param[out] LowestSupportedVersion  The version.
++
++  @retval EFI_SUCCESS      The version was returned.
++  @retval EFI_UNSUPPORTED  The bootloader reported none.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetLowestSupportedVersion (
++  OUT UINT32  *LowestSupportedVersion
++  )
++{
++  CONST FIRMWARE_INFO  *Info;
++
++  if (LowestSupportedVersion == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  Info = GetFwInfo ();
++  if (Info == NULL) {
++    return EFI_UNSUPPORTED;
++  }
++
++  *LowestSupportedVersion = Info->LowestSupportedVersion;
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the version of the running firmware as text.
++
++  The caller frees the string.
++
++  @param[out] VersionString  The version, or NULL on error.
++
++  @retval EFI_SUCCESS           The string was returned.
++  @retval EFI_UNSUPPORTED       The bootloader reported none.
++  @retval EFI_OUT_OF_RESOURCES  Allocation failed.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetVersionString (
++  OUT CHAR16  **VersionString
++  )
++{
++  CONST FIRMWARE_INFO  *Info;
++  UINTN                Length;
++
++  if (VersionString == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  *VersionString = NULL;
++
++  Info = GetFwInfo ();
++  if (Info == NULL) {
++    return EFI_UNSUPPORTED;
++  }
++
++  Length = AsciiStrnLenS (Info->VersionStr, sizeof (Info->VersionStr));
++
++  *VersionString = AllocateZeroPool ((Length + 1) * sizeof (CHAR16));
++  if (*VersionString == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  AsciiStrToUnicodeStrS (Info->VersionStr, *VersionString, Length + 1);
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the version of the running firmware.
++
++  @param[out] Version  The version.
++
++  @retval EFI_SUCCESS      The version was returned.
++  @retval EFI_UNSUPPORTED  The bootloader reported none.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetVersion (
++  OUT UINT32  *Version
++  )
++{
++  CONST FIRMWARE_INFO  *Info;
++
++  if (Version == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  Info = GetFwInfo ();
++  if (Info == NULL) {
++    return EFI_UNSUPPORTED;
++  }
++
++  *Version = Info->Version;
++  return EFI_SUCCESS;
++}
++
++/**
++  Returns the hardware instance this firmware device belongs to.
++
++  There is one flash chip, so the concept does not apply.
++
++  @param[out] HardwareInstance  Unused.
++
++  @retval EFI_UNSUPPORTED  Always.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetHardwareInstance (
++  OUT UINT64  *HardwareInstance
++  )
++{
++  return EFI_UNSUPPORTED;
++}
++
++/**
++  Reads the current firmware image back.
++
++  Not provided. The inactive slot is not the running firmware, and reading it
++  needs the same SMI access as writing, which only a capsule boot has.
++
++  @param[out]     Image      Unused.
++  @param[in, out] ImageSize  Unused.
++
++  @retval EFI_UNSUPPORTED  Always.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceGetImage (
++  OUT    VOID   *Image,
++  IN OUT UINTN  *ImageSize
++  )
++{
++  return EFI_UNSUPPORTED;
++}
++
++/**
++  Checks whether an image can be written, and says why when it cannot.
++
++  @param[in]  Image              The image.
++  @param[in]  ImageSize          Its size in bytes.
++  @param[out] ImageUpdatable     Whether it is usable.
++  @param[out] LastAttemptStatus  Detail for the ESRT.
++
++  @retval EFI_SUCCESS            The check ran; see ImageUpdatable.
++  @retval EFI_INVALID_PARAMETER  A parameter is NULL.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceCheckImageWithStatus (
++  IN  CONST VOID  *Image,
++  IN  UINTN       ImageSize,
++  OUT UINT32      *ImageUpdatable,
++  OUT UINT32      *LastAttemptStatus
++  )
++{
++  EFI_STATUS  Status;
++  UINTN       BlockSize;
++
++  if ((Image == NULL) || (ImageUpdatable == NULL) || (LastAttemptStatus == NULL)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  *ImageUpdatable    = IMAGE_UPDATABLE_VALID;
++  *LastAttemptStatus = LAST_ATTEMPT_STATUS_SUCCESS;
++
++  Status = ResolveSlot ();
++  if (EFI_ERROR (Status)) {
++    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    return EFI_SUCCESS;
++  }
++
++  //
++  // A slot is written whole. Anything else would leave it part new, part old,
++  // and vboot would reject the result on the next boot without saying why.
++  //
++  if (ImageSize != mSlotSize) {
++    DEBUG ((
++      DEBUG_ERROR,
++      "%a: image is %x bytes, a slot is %x\n",
++      __func__,
++      ImageSize,
++      mSlotSize
++      ));
++    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_INVALID_FORMAT;
++    return EFI_SUCCESS;
++  }
++
++  Status = SmmStoreLibGetBlockSize (&BlockSize);
++  if (EFI_ERROR (Status) || (BlockSize == 0) ||
++      (mSlotOffset % BlockSize != 0) || (mSlotSize % BlockSize != 0))
++  {
++    DEBUG ((DEBUG_ERROR, "%a: slot is not block aligned\n", __func__));
++    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    return EFI_SUCCESS;
++  }
++
++  return EFI_SUCCESS;
++}
++
++/**
++  Checks whether an image can be written.
++
++  @param[in]  Image           The image.
++  @param[in]  ImageSize       Its size in bytes.
++  @param[out] ImageUpdatable  Whether it is usable.
++
++  @retval EFI_SUCCESS  The check ran; see ImageUpdatable.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceCheckImage (
++  IN  CONST VOID  *Image,
++  IN  UINTN       ImageSize,
++  OUT UINT32      *ImageUpdatable
++  )
++{
++  UINT32  LastAttemptStatus;
++
++  return FmpDeviceCheckImageWithStatus (
++           Image,
++           ImageSize,
++           ImageUpdatable,
++           &LastAttemptStatus
++           );
++}
++
++/**
++  Writes the image into the inactive slot.
++
++  Block by block, skipping blocks that already hold the wanted contents. A
++  failure part way through leaves the inactive slot broken - which is why it
++  is the inactive one.
++
++  @param[in]  Image              The image.
++  @param[in]  ImageSize          Its size in bytes.
++  @param[in]  VendorCode         Unused.
++  @param[in]  Progress           Called with a percentage, may be NULL.
++  @param[in]  CapsuleFwVersion   Unused.
++  @param[out] AbortReason        Unused.
++  @param[out] LastAttemptStatus  Detail for the ESRT.
++
++  @retval EFI_SUCCESS            The slot was written.
++  @retval EFI_INVALID_PARAMETER  A parameter is NULL.
++  @retval EFI_DEVICE_ERROR       A block could not be written.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceSetImageWithStatus (
++  IN  CONST VOID                                     *Image,
++  IN  UINTN                                          ImageSize,
++  IN  CONST VOID                                     *VendorCode        OPTIONAL,
++  IN  EFI_FIRMWARE_MANAGEMENT_UPDATE_IMAGE_PROGRESS  Progress           OPTIONAL,
++  IN  UINT32                                         CapsuleFwVersion,
++  OUT CHAR16                                         **AbortReason,
++  OUT UINT32                                         *LastAttemptStatus
++  )
++{
++  EFI_STATUS   Status;
++  UINT32       Updatable;
++  UINTN        BlockSize;
++  UINTN        BlockCount;
++  UINTN        Block;
++  UINTN        FirstBlock;
++  UINTN        NumBytes;
++  CONST UINT8  *Next;
++  UINT8        *ReadBuffer;
++
++  if ((Image == NULL) || (LastAttemptStatus == NULL)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  Status = FmpDeviceCheckImageWithStatus (Image, ImageSize, &Updatable, LastAttemptStatus);
++  if (EFI_ERROR (Status) || (Updatable != IMAGE_UPDATABLE_VALID)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  Status = SmmStoreLibGetBlockSize (&BlockSize);
++  if (EFI_ERROR (Status)) {
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    return Status;
++  }
++
++  ReadBuffer = AllocatePool (BlockSize);
++  if (ReadBuffer == NULL) {
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_INSUFFICIENT_RESOURCES;
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  //
++  // Block numbers count from the start of the medium, not of the slot,
++  // because full-flash access is what the SMI handler hands out.
++  //
++  FirstBlock = mSlotOffset / BlockSize;
++  BlockCount = mSlotSize / BlockSize;
++  Next       = (CONST UINT8 *)Image;
++
++  DEBUG ((
++    DEBUG_INFO,
++    "%a: writing %u blocks from block %u\n",
++    __func__,
++    (UINT32)BlockCount,
++    (UINT32)FirstBlock
++    ));
++
++  for (Block = 0; Block < BlockCount; Block++, Next += BlockSize) {
++    if (Progress != NULL) {
++      Progress ((Block * 100) / BlockCount);
++    }
++
++    //
++    // Erasing and writing a block that already matches would cost a flash
++    // cycle for nothing, and the two slots differ in only part of their
++    // contents most of the time.
++    //
++    NumBytes = BlockSize;
++    Status   = SmmStoreLibReadAnyBlock (FirstBlock + Block, 0, &NumBytes, ReadBuffer);
++    if (!EFI_ERROR (Status) && (NumBytes == BlockSize) &&
++        (CompareMem (ReadBuffer, Next, BlockSize) == 0))
++    {
++      continue;
++    }
++
++    Status = SmmStoreLibEraseAnyBlock (FirstBlock + Block);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a: erasing block %u failed: %r\n",
++        __func__,
++        (UINT32)(FirstBlock + Block),
++        Status
++        ));
++      goto Failed;
++    }
++
++    NumBytes = BlockSize;
++    Status   = SmmStoreLibWriteAnyBlock (FirstBlock + Block, 0, &NumBytes, (UINT8 *)Next);
++    if (EFI_ERROR (Status) || (NumBytes != BlockSize)) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a: writing block %u failed: %r\n",
++        __func__,
++        (UINT32)(FirstBlock + Block),
++        Status
++        ));
++      goto Failed;
++    }
++  }
++
++  if (Progress != NULL) {
++    Progress (100);
++  }
++
++  FreePool (ReadBuffer);
++
++  DEBUG ((DEBUG_INFO, "%a: slot written\n", __func__));
++
++  //
++  // The slot is good but nothing selects it yet. If this fails the image is
++  // still on the chip and `vbnv arm-update` from the OS finishes the job, so
++  // report it and let the caller see the update as failed rather than
++  // pretending a machine will boot something it will not.
++  //
++  Status = ArmTrialBoot ();
++  if (EFI_ERROR (Status)) {
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    return Status;
++  }
++
++  *LastAttemptStatus = LAST_ATTEMPT_STATUS_SUCCESS;
++  return EFI_SUCCESS;
++
++Failed:
++  FreePool (ReadBuffer);
++
++  //
++  // Outside a boot with a pending capsule the SMI handler refuses full-flash
++  // access and every block call comes back unsupported. Name that case, or
++  // the next person reads it as broken hardware.
++  //
++  if (Status == EFI_UNSUPPORTED) {
++    DEBUG ((
++      DEBUG_ERROR,
++      "%a: no full flash access - is a capsule pending this boot?\n",
++      __func__
++      ));
++  }
++
++  *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++  return EFI_DEVICE_ERROR;
++}
++
++/**
++  Writes the image into the inactive slot.
++
++  @param[in]  Image             The image.
++  @param[in]  ImageSize         Its size in bytes.
++  @param[in]  VendorCode        Unused.
++  @param[in]  Progress          Called with a percentage, may be NULL.
++  @param[in]  CapsuleFwVersion  Unused.
++  @param[out] AbortReason       Unused.
++
++  @retval EFI_SUCCESS  The slot was written.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceSetImage (
++  IN  CONST VOID                                     *Image,
++  IN  UINTN                                          ImageSize,
++  IN  CONST VOID                                     *VendorCode        OPTIONAL,
++  IN  EFI_FIRMWARE_MANAGEMENT_UPDATE_IMAGE_PROGRESS  Progress           OPTIONAL,
++  IN  UINT32                                         CapsuleFwVersion,
++  OUT CHAR16                                         **AbortReason
++  )
++{
++  UINT32  LastAttemptStatus;
++
++  return FmpDeviceSetImageWithStatus (
++           Image,
++           ImageSize,
++           VendorCode,
++           Progress,
++           CapsuleFwVersion,
++           AbortReason,
++           &LastAttemptStatus
++           );
++}
++
++/**
++  Locks the firmware device against further writes.
++
++  Nothing to do. coreboot programmed its protected ranges before the payload
++  started and sealed them with FLOCKDN, and the write path here goes through
++  an SMI that is only open while a capsule is pending.
++
++  @retval EFI_SUCCESS  Always.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceLock (
++  VOID
++  )
++{
++  return EFI_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
+new file mode 100644
+index 0000000000..0aa63f5ed7
+--- /dev/null
++++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
+@@ -0,0 +1,37 @@
++## @file
++#  Firmware device services that update the inactive verified-boot slot.
++#
++#  Copyright (c) 2026, Amphero.<BR>
++#
++#  SPDX-License-Identifier: BSD-2-Clause-Patent
++##
++
++[Defines]
++  INF_VERSION     = 0x00010005
++  BASE_NAME       = FmpDeviceSlotLib
++  FILE_GUID       = 6d0cb4ba-9e4f-5c2a-b7d3-1f8a2c5e9b41
++  MODULE_TYPE     = DXE_DRIVER
++  VERSION_STRING  = 1.0
++  LIBRARY_CLASS   = FmpDeviceLib|DXE_DRIVER UEFI_DRIVER
++
++[Sources]
++  FmpDeviceSlotLib.c
++
++[LibraryClasses]
++  BaseLib
++  BaseMemoryLib
++  DebugLib
++  HobLib
++  IoLib
++  MemoryAllocationLib
++  SmmStoreLib
++
++[Packages]
++  UefiPayloadPkg/UefiPayloadPkg.dec
++  FmpDevicePkg/FmpDevicePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  MdePkg/MdePkg.dec
++
++[Guids]
++  gEfiFirmwareInfoHobGuid
++  gEfiFlashLayoutInfoHobGuid

@@ -1,8 +1,8 @@
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index b7568bb4d9..2a0a72822f 100644
+index b7568bb4d9..bb6a7ca89f 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -60,6 +60,24 @@
+@@ -60,6 +60,26 @@
    DEFINE CAPSULE_SUPPORT              = FALSE
    DEFINE CAPSULE_MAIN_FW_GUID         =
  
@@ -20,14 +20,16 @@ index b7568bb4d9..2a0a72822f 100644
 +  #
 +  DEFINE SLOT_CAPSULE_SUPPORT         = FALSE
 +
-+!if $(CAPSULE_SUPPORT) == TRUE && $(SLOT_CAPSULE_SUPPORT) == TRUE
-+  !error CAPSULE_SUPPORT and SLOT_CAPSULE_SUPPORT are mutually exclusive.
++!if $(SLOT_CAPSULE_SUPPORT) == TRUE
++  !if $(CAPSULE_SUPPORT) == TRUE
++    !error CAPSULE_SUPPORT and SLOT_CAPSULE_SUPPORT are mutually exclusive.
++  !endif
 +!endif
 +
    #
    # Crypto Support
    #
-@@ -372,7 +390,7 @@
+@@ -372,7 +392,7 @@
    UefiUsbLib|MdePkg/Library/UefiUsbLib/UefiUsbLib.inf
    UefiScsiLib|MdePkg/Library/UefiScsiLib/UefiScsiLib.inf
    OemHookStatusCodeLib|MdeModulePkg/Library/OemHookStatusCodeLibNull/OemHookStatusCodeLibNull.inf
@@ -36,7 +38,16 @@ index b7568bb4d9..2a0a72822f 100644
    CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.inf
    BmpSupportLib|MdeModulePkg/Library/BaseBmpSupportLib/BaseBmpSupportLib.inf
      !if $(BOOTSPLASH_IMAGE)
-@@ -753,7 +771,11 @@
+@@ -679,7 +699,7 @@
+ !if $(PERFORMANCE_MEASUREMENT_ENABLE)
+   PerformanceLib|MdeModulePkg/Library/DxePerformanceLib/DxePerformanceLib.inf
+ !endif
+-!if $(CAPSULE_SUPPORT) == TRUE
++!if $(CAPSULE_SUPPORT) == TRUE || $(SLOT_CAPSULE_SUPPORT) == TRUE
+   CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeRuntimeCapsuleLib.inf
+ !endif
+ 
+@@ -753,7 +773,11 @@
    gEfiMdeModulePkgTokenSpaceGuid.PcdHiiOsRuntimeSupport|FALSE
    gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE
    ## Whether capsules are allowed to persist across reset.
@@ -48,7 +59,7 @@ index b7568bb4d9..2a0a72822f 100644
  
  
    #
-@@ -821,7 +843,11 @@
+@@ -821,7 +845,11 @@
    gEfiMdePkgTokenSpaceGuid.PcdMaximumUnicodeStringLength|1800000
  
    ## Whether FMP capsules are enabled.
@@ -60,7 +71,7 @@ index b7568bb4d9..2a0a72822f 100644
  
  !if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
    ## User Authentication PCD
-@@ -1256,6 +1282,20 @@
+@@ -1256,6 +1284,20 @@
    MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  !endif
  
@@ -82,15 +93,17 @@ index b7568bb4d9..2a0a72822f 100644
    MdeModulePkg/Universal/Metronome/Metronome.inf
    MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index 4cdae5aac3..c7f5114e37 100644
+index 4cdae5aac3..5104318de5 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -538,6 +538,10 @@ INF ShellPkg/Application/Shell/Shell.inf
+@@ -538,6 +538,12 @@ INF ShellPkg/Application/Shell/Shell.inf
  INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  !endif
  
 +!if $(SLOT_CAPSULE_SUPPORT) == TRUE
-+INF FmpDevicePkg/FmpDxe/FmpDxe.inf
++# The dsc gives this component a FILE_GUID of its own, so the reference
++# here has to name it too or nothing is placed in the volume.
++INF FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
 +!endif
 +
  !if $(UNIVERSAL_PAYLOAD) == TRUE
