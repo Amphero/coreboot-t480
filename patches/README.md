@@ -404,6 +404,41 @@ Maintenance note: this patch touches the same `obj_list` as 0001, so it
 is generated against the tree with 0001 (and 0020) already applied.
 When rebasing, keep that order.
 
+## base/0043-lockdown-protect-descriptor-and-gbe.patch
+
+**Files:** `src/security/lockdown/Kconfig`,
+`src/security/lockdown/lockdown.c`
+
+Adds `BOOTMEDIA_LOCK_DESCRIPTOR_GBE` (default off, depends on
+`BOOTMEDIA_LOCK_CONTROLLER`) and, when set, programs a second Flash
+Protected Range over `SI_DESC` + `SI_GBE` from
+`boot_device_security_lockdown()` - same function, same boot state and
+so the same FLOCKDN/DLOCK as the `WP_RO` range. Write protection only
+(`CTRLR_WP`), deliberately not the choice's `lock_type`: with
+`BOOTMEDIA_LOCK_WHOLE_NO_ACCESS` that would be `CTRLR_RWP` and take the
+descriptor out of a full-chip backup too.
+
+Closes the hole issue #5 left: `BIOS_CONTROL` (BIOSWE/EISS) gates the
+BIOS region and the first range covers `WP_RO`, so nothing protected
+offset 0. The descriptor is what grants the region permissions in the
+first place, and the GbE NVM holds the MAC. Both were writable from the
+OS whenever the SPI controller was visible.
+
+Protected ranges apply to the accesses of the master that programs
+them, not globally (datasheet 332690-004EN 32.7.1.4.2), so the ME and
+the GbE controller still reach their own regions. Ranges may cross
+region boundaries, and `SI_DESC` (0x0, 4 KB) and `SI_GBE` (0x1000, 8 KB)
+are adjacent, so one register covers 0x0-0x2fff. The code checks that
+adjacency and bails out with a log line instead of guessing.
+
+Changing the MAC with `nvmutil`, or the descriptor with `ifdtool`, then
+needs the external programmer.
+
+On success the log carries `BM-LOCKDOWN: Enabled protection for
+SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
+failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
+means all five registers were taken and the range did not happen.
+
 ## tpm-reset/tpm2-clear-on-boot.patch
 
 Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
