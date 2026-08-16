@@ -4,19 +4,31 @@ Everything in this directory diverges from upstream and lives only in this
 repo. This file documents what each patch does, why it exists, and how to
 maintain it when upstream moves.
 
-There are two groups with different lifetimes:
+There are three groups with different lifetimes:
 
-| Directory | Applied when | Ends up in |
-|-----------|--------------|------------|
-| `base/` | while building the **base image** (`Dockerfile.offline`, stage 2) | **every** ROM built from this repo |
-| `tpm-reset/` | only in the per-variant step of `build-firmware.py --tpm-reset` | **only** the `..._tpmreset.rom` |
+| Directory | Applied to | Applied when | Ends up in |
+|-----------|------------|--------------|------------|
+| `base/` | coreboot | while building the **base image** (`Dockerfile.offline`, stage 2) | **every** ROM built from this repo |
+| `edk2/` | the MrChromebox EDK2 payload | same stage, right after `base/` | **every** ROM built from this repo |
+| `tpm-reset/` | coreboot | only in the per-variant step of `build-firmware.py --tpm-reset` | **only** the `..._tpmreset.rom` |
 
-`base/` patches are applied to the coreboot tree in lexical order, each with
-a mandatory `git apply --check` first. If upstream changes one of the patched
+`base/` and `edk2/` patches are applied in lexical order, each with a
+mandatory `git apply --check` first. If upstream changes one of the patched
 files, the build **aborts with a clear error** instead of silently producing
 a ROM without the change - that is deliberate (this repo once used two
 `sed -i` calls for the same job, and `sed` exits 0 even when its pattern no
-longer matches). After changing anything here, rebuild with `--rebuild-base`.
+longer matches). After changing anything here, rebuild with `--rebuild-base`;
+`config_hash()` covers both directories, so an edited patch is noticed.
+
+The two are separate because they track different upstreams on different
+release cycles. `edk2/` applies to the tree at
+`payloads/external/edk2/workspace/mrchromebox`, which is the clone named in
+`config/versions.lock`, not coreboot's. Patches against EDK2 submodules do
+not work this way - `git apply` there would have to run inside the submodule,
+and nothing does that.
+
+Either directory may be absent - git does not track empty ones - and
+the loop skips it.
 
 ## base/0001-cfr-expose-power-on-after-fail.patch
 

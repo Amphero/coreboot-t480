@@ -195,8 +195,9 @@ def lock_get(src, key):
 def config_hash(src, mac):
     """Fingerprint of everything that gets baked into the base image: the MAC,
     versions.lock, defconfig, board.conf, apply-devicetree.sh, splash.bmp and
-    every patches/base/*.patch. Stored as an image label so a later run can
-    tell whether the existing image still matches the working tree."""
+    every patches/base/*.patch and patches/edk2/*.patch. Stored as an image
+    label so a later run can tell whether the existing image still matches the
+    working tree."""
     h = hashlib.sha256()
     h.update(mac.encode() + b"\0")
     for name in ("versions.lock", "defconfig", "board.conf",
@@ -204,8 +205,9 @@ def config_hash(src, mac):
         f = src / name
         if f.exists():
             h.update(name.encode() + b"\0" + f.read_bytes() + b"\0")
-    for p in sorted((src / "patches" / "base").glob("*.patch")):
-        h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
+    for sub in ("base", "edk2"):
+        for p in sorted((src / "patches" / sub).glob("*.patch")):
+            h.update(sub.encode() + b"/" + p.name.encode() + b"\0" + p.read_bytes() + b"\0")
     # Signing keys: only the public halves and the keyblock go into the hash -
     # they determine what the firmware verifies against, and hashing the
     # private keys would put them in an image label.
