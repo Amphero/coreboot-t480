@@ -148,9 +148,12 @@ Consequences, measured and structural:
   registers were taken and a lock silently did not happen - check the log
   after any coreboot or FSP update.
 
-The second range is written but not yet verified on hardware. Confirm
-both FPR lines in `/sys/firmware/log` and re-run the `/dev/mtd0` GbE
-write test before treating it as done.
+Measured on hardware, firmware version 4. Both registers read back from
+SPIBAR as `FPR0 0x00aa0000-0x00ffffff` and `FPR1 0x00000000-0x00002fff`,
+each `WPE=1 RPE=0`, three registers still free. Writing one identical
+byte through `/dev/mtd0` with BIOS Lock off succeeds in `RW_UNUSED` and
+fails with `EIO` in both `SI_GBE` and `SI_DESC`, contents unchanged. The
+control write is what rules out the write path itself as the cause.
 
 ## Generating keys
 

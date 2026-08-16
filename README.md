@@ -359,7 +359,7 @@ the current state:
 
 ```bash
 grep -a "BM-LOCKDOWN\|FPR " /sys/firmware/log
-sudo flashrom -p internal --flash-name
+sudo setpci -s 00:1f.5 dc.b                     # aa = BIOS Lock on, 8b = off
 ```
 
 The log shows two `FPR` lines, one for `0x00aa0000-0x00ffffff` and one
@@ -367,11 +367,11 @@ for `0x00000000-0x00002fff`, plus `Enabled bootmedia protection` and
 `Enabled protection for SI_DESC + SI_GBE`. `No SPI FPR free!` means a
 lock did not happen - check after a coreboot or FSP update.
 
-flashrom prints the rest: `BIOS Control at 0xdc` (`aa` = BIOS Lock on,
-`8b` = off), the `FREG` lines with the descriptor and ME permissions, and
-the `PR` lines for the two ranges. With the controller visible,
-`setpci -s 00:1f.5 dc.b` reads BIOS Control directly; the protected
-ranges live in SPIBAR, not in config space.
+`flashrom --flash-name` does not report the chipset registers here.
+With the controller visible it opens `/dev/mtd0` and takes the MTD path,
+which prints no `BIOS Control`, `FREG` or `PR` lines at all. BIOS Control
+is PCI config space and `setpci` reads it; the protected ranges live in
+SPIBAR at offset 0x84 and need an MMIO read.
 
 > [!NOTE]
 > The kernel binds the controller and exposes the chip as `/dev/mtd0`.
@@ -380,6 +380,11 @@ ranges live in SPIBAR, not in config space.
 > the master device and carries none of the driver's per-partition write
 > mask, so it reaches the descriptor and GbE; the second protected range
 > is what stops the write.
+
+Measured on hardware with BIOS Lock off, writing one identical byte
+through `/dev/mtd0`: `RW_UNUSED` succeeds, `SI_GBE` and `SI_DESC` both
+fail with `EIO` and stay unchanged. Same device, same method, so the
+refusal comes from the range and not from the write path.
 
 If flashrom says the BIOS region is read-only and BIOS Lock is already
 off, flash externally.
