@@ -101,14 +101,12 @@ aborts without one rather than falling back to the public vboot devkeys.
 
 `config/versions.lock` names the four upstream sources (coreboot, EDK2,
 libreboot, lbmk) down to the commit, and `./fetch.sh` fetches exactly those.
-It is tracked, so a checkout of a git tag pins the versions together with the
-defconfig, the patch series and the build scripts - which is what actually
-reproduces a release.
+It is tracked, so a git tag pins the versions together with the defconfig,
+the patch series and the build scripts.
 
-To move it, `./fetch.sh --latest` resolves the newest upstream versions and
-writes them into the file. That shows up in `git diff`; build, test and commit
-it like any other change. `--refresh` is separate and only forces a re-download
-of sources already on disk. Changing a single ref in the lock re-fetches that
+`./fetch.sh --latest` resolves the newest upstream versions and writes them
+into that file. `--refresh` is separate and only forces a re-download of
+sources already on disk. Changing a single ref in the lock re-fetches that
 component alone on the next run.
 
 > [!NOTE]
@@ -140,9 +138,9 @@ podman run --rm --network=none -v "$PWD/roms":/out:z --user root \
     coreboot-t480 bash -c 'cp /opt/coreboot/build/coreboot.rom /out/coreboot.rom'
 ```
 
-This gives you the base image (TPM on, Microsoft keys auto-enrolled). The
-default variant (TPM + Setup Mode + RNG) is what `build-firmware.py` adds on
-top, so for the final ROM use the script.
+That produces the base image (TPM on, Microsoft keys auto-enrolled). The
+default variant - TPM, Setup Mode, RNG - is the variant pass on top of it,
+which only `build-firmware.py` does.
 
 </details>
 
@@ -691,9 +689,8 @@ no memory retraining, and the rollback counter has not moved, so the old
 version still passes verification.
 
 The old slot stops being a way back once the counter follows the new
-version - that is what the trial run is for. After it, `WP_RO` is the
-fallback, and it always boots because the recovery path is not
-version-checked.
+version. After that, `WP_RO` is the fallback; it always boots because the
+recovery path is not version-checked.
 
 SMMSTORE, the MRC cache and the vboot state sit outside the slots, so
 settings and Secure Boot keys survive either way.
@@ -805,14 +802,10 @@ So byte 7 = `02` reads as: this boot reported success, slot A is running,
 slot A is next, and the previous boot is unknown on slot A. `2e` would be
 success on B, B next, previous boot successful on A.
 
-Writing is the part that wants a program. Every change needs that CRC
-recomputed - polynomial `x^8 + x^2 + x + 1`, vboot's `vb2_crc8` - and a
-block whose CRC does not match is discarded by the firmware on the next
-boot. `fix-checksum` has no shell equivalent at all: it is the
-`NVRAM_SETCKS` ioctl on `/dev/nvram`.
-
-That is the whole of `vbnv.py`: read 16 bytes, flip bits in byte 1 or 7,
-recompute byte 15, write them back.
+Writing needs the CRC recomputed - polynomial `x^8 + x^2 + x + 1`, vboot's
+`vb2_crc8` - and a block whose CRC does not match is discarded by the
+firmware on the next boot. `fix-checksum` is the `NVRAM_SETCKS` ioctl on
+`/dev/nvram` and has no shell equivalent.
 
 </details>
 
@@ -914,9 +907,6 @@ Then flash the two slots as in [Updating](#updating). `futility` is not
 on the host - it comes from the build image, which also carries the keys.
 The kernel subkey is the one the build used (`CONFIG_VBOOT_KERNEL_KEY`,
 the vboot devkey by default); it plays no part in firmware verification.
-
-This lifts the counter for that one image - rollback protection off, for
-it alone.
 
 **Or clear the TPM.** The `--tpm-reset` ROM recreates the vboot spaces
 with the counter at 0 (`vb2api_secdata_firmware_create()` zeroes the
