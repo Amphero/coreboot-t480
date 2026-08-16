@@ -15,7 +15,7 @@ older image should stop booting. The ROM column names the build that is
 | 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. Superseded. |
 | 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Descriptor and ME locked, SPI controller hidden. Superseded. |
 | 3 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-gbbfix.rom` | `e5e38c02` | On the chip, `WP_RO` and both slots. GBB rollback check enabled - the first build where the counter actually refuses anything. |
-| 4 | 2026-08-16 | see `config/versions.lock` | not built yet | | Second protected range over `SI_DESC` + `SI_GBE`, `DT_DEVICE_FAST_SPI` back to `y`. |
+| 4 | 2026-08-16 | 26.06 (5cbf8afc) | `coreboot_t480_26.08.1-12-gbb9abbc.rom` | `ab2a4798` | Built, not flashed. Second protected range over `SI_DESC` + `SI_GBE`, `DT_DEVICE_FAST_SPI` back to `y`. |
 
 Checking what is on the chip: verify the firmware regions, not the whole
 image. `RW_MRC_CACHE`, `SMMSTORE` and `RW_NVRAM` hold runtime state and diverge
@@ -47,7 +47,7 @@ Builds of version 4, in order:
 
 | ROM | SHA256 | What changed |
 |-----|--------|--------------|
-| not built yet | | |
+| `coreboot_t480_26.08.1-12-gbb9abbc.rom` | `ab2a4798` | `CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE=y` (patch 0043) and `DT_DEVICE_FAST_SPI=y`. Both preambles carry version 4. Whether the second range holds is untested. |
 
 ## Rules
 
