@@ -117,7 +117,31 @@ podman run --rm \
 # --latest resolved new versions inside the container; take them over now that
 # the fetch actually succeeded.
 if [ "$LATEST" = "1" ]; then
-  cp -f "$SRC/versions.lock" "$CONFIG/versions.lock"
+  # Values only. The sources copy carries its own header ("edit config/, not
+  # this file"), which would be nonsense in the file it points at.
+  if [ -f "$CONFIG/versions.lock" ]; then
+    sed -n '/^[A-Z]/q;p' "$CONFIG/versions.lock" > "$CONFIG/versions.lock.new"
+  else
+    cat > "$CONFIG/versions.lock.new" <<'EOF'
+# versions.lock  -  the upstream sources this firmware is built from.
+#
+# INPUT, not output. ./fetch.sh reads this file and fetches exactly these refs.
+# Nothing rewrites it behind your back; the one thing that does is
+# `./fetch.sh --latest`, which resolves the newest upstream versions and writes
+# them here, so the change lands in `git diff` and gets reviewed, built and
+# committed like any other change.
+#
+# A git tag pins strictly more than this file does: the same four refs plus
+# config/defconfig, the patch series, the Dockerfiles and the scripts. To
+# reproduce a release, check out its tag - not just these versions.
+#
+# LIBREBOOT_TARBALL is derived from LIBREBOOT_VERSION by the fetch; it is
+# recorded here so the file states the full set on its own.
+
+EOF
+  fi
+  grep '^[A-Z]' "$SRC/versions.lock" >> "$CONFIG/versions.lock.new"
+  mv -f "$CONFIG/versions.lock.new" "$CONFIG/versions.lock"
   echo
   echo "fetch.sh: config/versions.lock updated - review and commit it:"
   echo "    git diff config/versions.lock"
