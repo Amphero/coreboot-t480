@@ -178,8 +178,8 @@ and need `--rebuild-base` (about 20 minutes; the toolchain layer is
 cached).
 
 The defaults produce the machine this repo is built for: verified boot
-with your own keys, both write protections on, Secure Boot in Setup Mode,
-TPM enabled.
+with your own keys, all three write protections on, Secure Boot in Setup
+Mode, TPM enabled.
 
 | If you want | change | note |
 |-------------|--------|------|
@@ -187,9 +187,10 @@ TPM enabled.
 | verified boot with your own keys | `sh scripts/gen-vboot-keys.sh` | the build refuses to sign with the public devkeys |
 | flash writes blocked outside SMM | `CONFIG_BOOTMEDIA_SMM_BWP` + `..._RUNTIME_OPTION` | adds the **BIOS Lock** toggle to the setup menu |
 | `WP_RO` sealed against the OS | `CONFIG_BOOTMEDIA_LOCK_CONTROLLER` + `CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO` | RO changes need the programmer afterwards |
+| descriptor and GbE sealed too | `CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE` | second range, patch 0043 - the MAC then needs the programmer |
 | rollback protection to bite | raise `CONFIG_VBOOT_KEYBLOCK_VERSION`, record it | see [docs/firmware-versions.md](docs/firmware-versions.md) |
 | newer upstream sources | `./fetch.sh --latest`, or edit `config/versions.lock` | only the components whose ref moved are re-fetched |
-| the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, but also fwupd's SPI checks |
+| the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, fwupd's SPI checks and `setpci` |
 | a different boot logo | replace `config/splash.bmp` | 24-bit uncompressed BMP, max 1920x1080 |
 | a different MAC | `--mac` or `MAC=` in `config/board.conf` | `board.conf` is tracked - a MAC there shows up in diffs |
 
@@ -223,7 +224,7 @@ live in `board.conf`):
 ```
 DT_DEVICE_SMBUS=y        # SMBus - touchpad in RMI4/InterTouch mode (PCI 1f.4)
 DT_DEVICE_HECI1=n        # HECI1 (PCI 16.0)
-DT_DEVICE_FAST_SPI=n     # Fast SPI (PCI 1f.5)
+DT_DEVICE_FAST_SPI=y     # Fast SPI (PCI 1f.5)
 ```
 
 A custom boot logo goes into `config/splash.bmp` (24-bit uncompressed BMP).
@@ -317,8 +318,8 @@ block itself survives: coreboot restores it from its copy in `RW_NVRAM`.
 
 ### Internal flashing
 
-Internal flashing works too (boot with `iomem=relaxed`), but a failed write
-bricks the machine, so keep the programmer at hand:
+Internal flashing works too, but a failed write bricks the machine, so
+keep the programmer at hand:
 
 ```bash
 sudo flashrom -p internal -r backup.bin
@@ -337,42 +338,48 @@ flashrom finds the coreboot table and usually needs no override.
 
 ### What the write protections allow
 
-Two independent mechanisms sit between a running system and the chip.
-Both are on by default in this repo.
+Three mechanisms sit between a running system and the chip, all on by
+default in this repo.
 
 | | blocks | switch |
 |---|--------|--------|
 | **SMM BIOS write protect** (`BOOTMEDIA_SMM_BWP`) | every write from the OS - the whole BIOS region | **BIOS Lock** in the setup menu, System form |
 | **`WP_RO` controller lock** (`BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) | writes to `WP_RO` only - FMAP, GBB with the root key, RO copy | none; re-armed on every boot |
+| **descriptor + GbE lock** (`BOOTMEDIA_LOCK_DESCRIPTOR_GBE`) | writes to `SI_DESC` and `SI_GBE` - region permissions, MAC | none; re-armed on every boot |
 
-The second one has no off switch by design. It is a protected range in
-the SPI controller, sealed with `FLOCKDN` before the payload runs, and it
-ignores BIOS Lock, root and SMM alike. `WP_RO` changes need the CH341A.
+The last two have no off switch by design. Both are protected ranges in
+the SPI controller, sealed with `FLOCKDN` before the payload runs, and
+they ignore BIOS Lock, root and SMM alike. Reads are untouched, so a
+full-chip backup still works. `WP_RO`, the descriptor and the MAC need
+the CH341A.
 
-Everything outside `WP_RO` - both slots, SMMSTORE, the MRC cache - stays
-writable internally once BIOS Lock is off, which is the normal update
-path. Check the current state:
+Everything else - both slots, SMMSTORE, the MRC cache - stays writable
+internally once BIOS Lock is off, which is the normal update path. Check
+the current state:
 
 ```bash
-grep -a "BM-LOCKDOWN\|FPR 0" /sys/firmware/log
-sudo flashrom -p internal --flash-name          # needs iomem=relaxed
+grep -a "BM-LOCKDOWN\|FPR " /sys/firmware/log
+sudo flashrom -p internal --flash-name
 ```
 
-The log shows `FPR 0 is enabled for range 0x00aa0000-0x00ffffff` and
-`Enabled bootmedia protection` on every boot. `No SPI FPR free!` means
-the lock did not happen - check after a coreboot or FSP update.
+The log shows two `FPR` lines, one for `0x00aa0000-0x00ffffff` and one
+for `0x00000000-0x00002fff`, plus `Enabled bootmedia protection` and
+`Enabled protection for SI_DESC + SI_GBE`. `No SPI FPR free!` means a
+lock did not happen - check after a coreboot or FSP update.
 
 flashrom prints the rest: `BIOS Control at 0xdc` (`aa` = BIOS Lock on,
 `8b` = off), the `FREG` lines with the descriptor and ME permissions, and
-`PR0` for the `WP_RO` range. `setpci` cannot read that register, because
-`DT_DEVICE_FAST_SPI=n` keeps 00:1f.5 out of the PCI enumeration.
+the `PR` lines for the two ranges. With the controller visible,
+`setpci -s 00:1f.5 dc.b` reads BIOS Control directly; the protected
+ranges live in SPIBAR, not in config space.
 
 > [!NOTE]
-> With `DT_DEVICE_FAST_SPI=y` the kernel binds the controller and exposes
-> the chip as `/dev/mtd0`. flashrom then prints `Erase/write done` even
-> when the hardware dropped every write - only the `VERIFIED.` line
-> proves anything. That path also needs no `iomem=relaxed`, which is why
-> the default is `n`.
+> The kernel binds the controller and exposes the chip as `/dev/mtd0`.
+> flashrom then prints `Erase/write done` even when the hardware dropped
+> every write - only the `VERIFIED.` line proves anything. `/dev/mtd0` is
+> the master device and carries none of the driver's per-partition write
+> mask, so it reaches the descriptor and GbE; the second protected range
+> is what stops the write.
 
 If flashrom says the BIOS region is read-only and BIOS Lock is already
 off, flash externally.
@@ -663,8 +670,8 @@ The machine boots from the slots, so a normal update never touches
 `WP_RO`. Write the slot that is *not* running, give it a trial boot, and
 keep the other one as the way back.
 
-Boot with `iomem=relaxed`, switch **BIOS Lock** off in the setup menu and
-reboot ([Internal flashing](#internal-flashing)). Then, with `<other>`
+Switch **BIOS Lock** off in the setup menu and reboot
+([Internal flashing](#internal-flashing)). Then, with `<other>`
 being whichever slot `show` does not report as running:
 
 ```bash
@@ -939,8 +946,7 @@ Internal flashing only works with coreboot already on the chip - it needs
 the FMAP that only a coreboot image has, and the vendor BIOS locks the
 flash anyway. Running coreboot, only the slots are written, so all
 settings survive and the sealed `WP_RO` is never touched - the reset hook
-runs from the booted slot, the RO copy stays the normal firmware (boot
-with `iomem=relaxed`):
+runs from the booted slot, the RO copy stays the normal firmware:
 
 ```bash
 R="-i RW_SECTION_A -i RW_SECTION_B"

@@ -12,7 +12,7 @@ so, on hardware.
 vboot, so existing installs survive the migration and old backups stay
 compatible. `WP_RO` sits at the top of the chip as one contiguous range,
 which is what makes the controller-level write protection possible
-(see "The WP_RO lock" below).
+(see "The two protected ranges" below).
 
 SMMSTORE is found at runtime by coreboot's SMM driver through an FMAP
 lookup (`drivers/smmstore/store.c`), not by a hardcoded offset - keeping
@@ -102,7 +102,7 @@ Details on all three, and the measured roll-forward, live in
 [firmware-versions.md](firmware-versions.md) and the README's "Rollback
 protection" section.
 
-## The WP_RO lock
+## The two protected ranges
 
 `BOOTMEDIA_LOCK_CONTROLLER` + `BOOTMEDIA_LOCK_WPRO_VBOOT_RO`: in
 ramstage, `boot_device_security_lockdown()` writes one Flash Protected
@@ -113,22 +113,44 @@ is covered exactly; the FMAP offsets are flash-absolute because
 chipset lockdown then sets FLOCKDN and DLOCK, sealing the register until
 the next reset - and the next boot re-arms it before the payload runs.
 
+`BOOTMEDIA_LOCK_DESCRIPTOR_GBE` (patch 0043) adds a second range over
+`SI_DESC` + `SI_GBE` (0x0-0x2fff) from the same function, so both are
+sealed by the same FLOCKDN/DLOCK. Write protection only, so both regions
+stay in a full-chip backup. It exists because nothing else covered them:
+BIOS_CONTROL gates the BIOS region, the first range starts at 0xaa0000,
+and `ifdtool` on this platform leaves GbE host-writable by design. The
+descriptor is what grants the region permissions in the first place, so
+a writable descriptor makes every other permission revocable.
+
+Protected ranges restrict the accesses of the master that programs them,
+not the part (datasheet 332690-004EN 32.7.1.4.2), so neither the ME nor
+the GbE controller loses access to its own region. The same section is
+what allows one register to span both: ranges may cross region
+boundaries.
+
 Consequences, measured and structural:
 
-- Every host write into the range is dropped by the controller - OS, SMM
-  and the `bios_lock` toggle make no difference. The two mechanisms are
-  independent: EISS gates the regions outside, the FPR seals `WP_RO`.
-- The MRC cache is written at `BS_DEV_ENUMERATE/ON_EXIT`, the FPR set at
-  `BS_DEV_RESOURCES/ON_ENTRY`, FLOCKDN at `BS_DEV_RESOURCES/ON_EXIT` -
-  no ordering conflict, and everything writable lies outside the range
+- Every host write into either range is dropped by the controller - OS,
+  SMM and the `bios_lock` toggle make no difference. The mechanisms are
+  independent: EISS gates the BIOS region, the ranges seal `WP_RO` and
+  the descriptor.
+- The MRC cache is written at `BS_DEV_ENUMERATE/ON_EXIT`, the FPRs set
+  at `BS_DEV_RESOURCES/ON_ENTRY`, FLOCKDN at `BS_DEV_RESOURCES/ON_EXIT` -
+  no ordering conflict, and everything writable lies outside both ranges
   anyway. `BOOTMEDIA_LOCK_IN_VERSTAGE` is therefore not needed here.
 - `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` (the rollback-protection
   escape hatch) sits in the GBB inside `WP_RO`: external-only from now
-  on. Same for replacing the keyset.
+  on. Same for replacing the keyset, for the descriptor, and for the MAC
+  in the GbE NVM (`nvmutil`).
 - A successful lock prints `BM-LOCKDOWN: Enabled bootmedia protection`
-  plus an FPR line with the range; `No SPI FPR free!` would mean FSP
-  occupied all five registers and the lock silently did not happen -
-  check the log after any coreboot or FSP update.
+  and `BM-LOCKDOWN: Enabled protection for SI_DESC + SI_GBE`, each with
+  an FPR line carrying the range. `No SPI FPR free!` would mean all five
+  registers were taken and a lock silently did not happen - check the log
+  after any coreboot or FSP update.
+
+The second range is written but not yet verified on hardware. Confirm
+both FPR lines in `/sys/firmware/log` and re-run the `/dev/mtd0` GbE
+write test before treating it as done.
 
 ## Generating keys
 
