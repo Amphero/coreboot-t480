@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""
+make-capsule.py - build a UEFI update capsule from a ROM built by this repo.
+
+  python3 scripts/make-capsule.py roms/coreboot_t480_<version>.rom
+
+WHAT goes in: both RW slots, A first then B, and nothing else. Not the whole
+ROM. Two reasons, and the second is the one that decides it.
+
+  A slot image is not interchangeable between the slots. FSP-M is
+  execute-in-place on this SoC and bound to its flash address, and romstage
+  carries references to it, so fallback/romstage and fspm.bin differ between
+  RW_SECTION_A and RW_SECTION_B while the other ten CBFS files are identical.
+  The builder cannot know which slot will be inactive on the machine that
+  applies the capsule, so both have to travel.
+
+  The rest of the chip has no business in a capsule. WP_RO is sealed by a
+  protected range and cannot be written from the payload at all, and shipping
+  SI_ME would mean handing on the Intel blob with it.
+
+WHAT the firmware does with it: FmpDeviceSlotLib picks the half matching the
+inactive slot, writes it, and arms a trial boot. See
+patches/edk2/0003-fmp-device-slot-lib.patch.
+
+SIGNING: with no arguments this uses EDK2's own test certificates, which is
+what a firmware built with the stock FMP_DEVICE_PKCS7_PCD_INC trusts - the one
+that makes FmpDxe print "Warning test key is used" at every boot. Anyone can
+sign a capsule with them; they are published in the EDK2 tree. Fine for
+checking that the mechanism works, useless as a boundary. Pass --signer-cert,
+--other-cert and --trusted-cert to use your own, and set
+CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT so the firmware trusts that root
+instead.
+
+The GUID and the versions are read from config/defconfig, so they cannot drift
+away from the firmware that has to accept the result.
+"""
+
+import argparse
+import re
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT = Path(__file__).resolve().parent.parent
+DEFCONFIG = PROJECT / "config" / "defconfig"
+IMAGE = "coreboot-t480"
+
+# Inside the build image.
+EDK2 = "/opt/coreboot/payloads/external/edk2/workspace/mrchromebox"
+TESTCERTS = f"{EDK2}/BaseTools/Source/Python/Pkcs7Sign"
+
+FMAP_SIGNATURE = b"__FMAP__"
+FMAP_NAMELEN = 32
+
+
+def defconfig_value(key):
+    """Read one CONFIG_ value out of config/defconfig."""
+    text = DEFCONFIG.read_text()
+    m = re.search(rf"^{key}=(.*)$", text, re.M)
+    if not m:
+        sys.exit(f"ERROR: {key} is not set in config/defconfig.")
+    return m.group(1).strip().strip('"')
+
+
+def parse_fmap_at(rom, pos):
+    """Parse a flash map at pos, or return None if it is not one.
+
+    The signature also occurs in coreboot's own log strings, which are in the
+    image - eight matches in a normal ROM, one of them the map. So a candidate
+    has to prove itself: a version this code understands, a plausible area
+    count, and an area named FMAP that points back at where the candidate was
+    found. Nothing else in the image satisfies the last one.
+    """
+    head = 8 + 1 + 1 + 8 + 4 + FMAP_NAMELEN + 2
+    if pos + head > len(rom):
+        return None
+
+    ver_major, ver_minor = rom[pos + 8], rom[pos + 9]
+    if ver_major != 1:
+        return None
+
+    nareas = struct.unpack_from("<H", rom, pos + head - 2)[0]
+    if not 1 <= nareas <= 64 or pos + head + nareas * 42 > len(rom):
+        return None
+
+    areas = {}
+    for i in range(nareas):
+        off, size, name, _flags = struct.unpack_from(
+            f"<II{FMAP_NAMELEN}sH", rom, pos + head + i * 42)
+        try:
+            areas[name.rstrip(b"\0").decode("ascii")] = (off, size)
+        except UnicodeDecodeError:
+            return None
+
+    if areas.get("FMAP", (None,))[0] != pos:
+        return None
+    return areas
+
+
+def find_fmap(rom):
+    """Locate the flash map and return its areas as {name: (offset, size)}.
+
+    Searched for rather than read from a fixed offset: the layout is allowed to
+    move between builds, and a capsule built against the wrong offsets would be
+    accepted by the firmware and write the wrong bytes.
+    """
+    found, pos = [], 0
+    while True:
+        pos = rom.find(FMAP_SIGNATURE, pos)
+        if pos < 0:
+            break
+        areas = parse_fmap_at(rom, pos)
+        if areas is not None:
+            found.append((pos, areas))
+        pos += 1
+
+    if not found:
+        sys.exit("ERROR: no flash map in this image - is it a coreboot ROM?")
+    if len(found) > 1:
+        sys.exit("ERROR: several valid flash maps at "
+                 + ", ".join(hex(p) for p, _ in found) + " - refusing to guess.")
+    return found[0][1]
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Build an update capsule containing both RW slots of a ROM")
+    ap.add_argument("rom", help="ROM built by scripts/build-firmware.py")
+    ap.add_argument("-o", "--output", help="output file (default: <rom>.cap)")
+    ap.add_argument("--signer-cert", help="signing certificate with its private key")
+    ap.add_argument("--other-cert", help="intermediate certificate")
+    ap.add_argument("--trusted-cert", help="root certificate the firmware trusts")
+    args = ap.parse_args()
+
+    rom_path = Path(args.rom).resolve()
+    if not rom_path.is_file():
+        sys.exit(f"ERROR: {rom_path} does not exist.")
+    out = Path(args.output).resolve() if args.output else rom_path.with_suffix(".cap")
+
+    rom = rom_path.read_bytes()
+    areas = find_fmap(rom)
+
+    missing = [n for n in ("RW_SECTION_A", "RW_SECTION_B") if n not in areas]
+    if missing:
+        sys.exit(f"ERROR: {', '.join(missing)} missing from the flash map - "
+                 f"this ROM was not built with verified boot.")
+
+    (off_a, size_a), (off_b, size_b) = areas["RW_SECTION_A"], areas["RW_SECTION_B"]
+    if size_a != size_b:
+        sys.exit(f"ERROR: the slots differ in size ({size_a:#x} vs {size_b:#x}); "
+                 f"the firmware side splits the image in half and would write "
+                 f"the wrong bytes.")
+
+    payload = rom[off_a:off_a + size_a] + rom[off_b:off_b + size_b]
+    payload_path = out.with_suffix(".payload")
+    payload_path.write_bytes(payload)
+
+    guid = defconfig_value("CONFIG_DRIVERS_EFI_MAIN_FW_GUID")
+    version = int(defconfig_value("CONFIG_DRIVERS_EFI_MAIN_FW_VERSION"), 0)
+    lsv = int(defconfig_value("CONFIG_DRIVERS_EFI_MAIN_FW_LSV"), 0) or version
+
+    own = (args.signer_cert, args.other_cert, args.trusted_cert)
+    if any(own) and not all(own):
+        sys.exit("ERROR: --signer-cert, --other-cert and --trusted-cert go together.")
+
+    if all(own):
+        certs = [Path(c).resolve() for c in own]
+        mounts, signer, other, trusted = [], *(f"/certs/{c.name}" for c in certs)
+        for c in certs:
+            mounts += ["-v", f"{c}:/certs/{c.name}:ro,z"]
+    else:
+        print("WARNING: signing with EDK2's published test certificates. Anyone\n"
+              "         can produce a capsule this firmware will accept. Pass\n"
+              "         --signer-cert/--other-cert/--trusted-cert for your own.")
+        mounts = []
+        # The .pem files carry the private keys; the public certificates the
+        # two -public-cert options want are the .pub.pem ones. TestSub.pem is
+        # not even PEM, which openssl reports as an undecodable certificate.
+        signer, other, trusted = (f"{TESTCERTS}/TestCert.pem",
+                                  f"{TESTCERTS}/TestSub.pub.pem",
+                                  f"{TESTCERTS}/TestRoot.pub.pem")
+
+    cmd = [
+        "podman", "run", "--rm", "--network=none", "--user", "root",
+        "-v", f"{payload_path.parent}:/out:z", *mounts, IMAGE, "bash", "-c",
+        f'cd {EDK2} && export WORKSPACE=$PWD EDK_TOOLS_PATH=$PWD/BaseTools '
+        f'PYTHONPATH=$PWD/BaseTools/Source/Python && '
+        f'python3 BaseTools/Source/Python/Capsule/GenerateCapsule.py -e '
+        f'-o /out/{out.name} --guid {guid} --capflag PersistAcrossReset '
+        f'--fw-version {version} --lsv {lsv} '
+        f'--signer-private-cert {signer} --other-public-cert {other} '
+        f'--trusted-public-cert {trusted} /out/{payload_path.name}'
+    ]
+    print("   $ " + " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    payload_path.unlink()
+
+    print(f"\n=== {out.name} ===")
+    print(f"  slots  : A at {off_a:#x}, B at {off_b:#x}, {size_a:#x} bytes each")
+    print(f"  payload: {len(payload)} bytes")
+    print(f"  guid   : {guid}")
+    print(f"  version: {version:#010x}  lsv {lsv:#010x}")
+    print(f"  path   : {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

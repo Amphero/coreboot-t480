@@ -1,9 +1,9 @@
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
 new file mode 100644
-index 0000000000..7ce8b71b1e
+index 0000000000..25dc3f6c82
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
-@@ -0,0 +1,959 @@
+@@ -0,0 +1,1002 @@
 +/** @file
 +  Firmware device services that update the inactive verified-boot slot.
 +
@@ -21,6 +21,20 @@ index 0000000000..7ce8b71b1e
 +  and so names the running slot; the other one is the target. Reading vboot's
 +  own state was the alternative and was rejected - vb2_shared_data is internal
 +  and not an interface.
++
++  The image carries BOTH slots, A first then B, and only the half matching the
++  target is written. A slot image is not interchangeable: FSP-M is
++  execute-in-place on this SoC (FSP_M_XIP, selected unconditionally by
++  src/soc/intel/skylake/Kconfig, and unavoidable because FSP-M is what brings
++  memory up - there is no RAM to copy it into), so it is bound to its flash
++  address, and romstage carries references to it. Measured on a built image:
++  of twelve CBFS files, fallback/romstage and fspm.bin differ between the two
++  slots and the rest are byte-identical.
++
++  Writing the wrong half would pass verification and then fail to boot. vboot
++  checks that VBLOCK and FW_MAIN agree with each other, which they would, and
++  it has nothing to say about the address FSP-M was linked for. Carrying both
++  halves is what keeps that failure impossible rather than merely unlikely.
 +
 +  Writing only works during a boot where coreboot found a pending capsule.
 +  Full-flash access through the SMI handler is latched once per boot from the
@@ -103,6 +117,12 @@ index 0000000000..7ce8b71b1e
 +STATIC UINT32   mSlotOffset   = 0;
 +STATIC UINT32   mSlotSize     = 0;
 +STATIC BOOLEAN  mSlotIsB      = FALSE;
++//
++// Where the target's half starts in the image: 0 for A, one slot in for B.
++// Both slots are the same size in every layout this can run on - ResolveSlot
++// refuses the ones where they are not.
++//
++STATIC UINTN    mImageOffset  = 0;
 +
 +/**
 +  Return the firmware information coreboot passed up, or NULL.
@@ -246,18 +266,35 @@ index 0000000000..7ce8b71b1e
 +    return EFI_NOT_FOUND;
 +  }
 +
++  //
++  // The image is laid out as two equal halves, so a layout with slots of
++  // different sizes has no sane reading of it.
++  //
++  if (SlotA->Size != SlotB->Size) {
++    DEBUG ((
++      DEBUG_ERROR,
++      "%a: slots differ in size (%x vs %x)\n",
++      __func__,
++      SlotA->Size,
++      SlotB->Size
++      ));
++    return EFI_NOT_FOUND;
++  }
++
 +  mSlotOffset   = Target->Offset;
 +  mSlotSize     = Target->Size;
 +  mSlotIsB      = (BOOLEAN)(Target == SlotB);
++  mImageOffset  = mSlotIsB ? SlotA->Size : 0;
 +  mSlotResolved = TRUE;
 +
 +  DEBUG ((
 +    DEBUG_INFO,
-+    "%a: will write %a at %x size %x\n",
++    "%a: will write %a at %x size %x from image offset %x\n",
 +    __func__,
-+    (Target == SlotA) ? "RW_SECTION_A" : "RW_SECTION_B",
++    mSlotIsB ? "RW_SECTION_B" : "RW_SECTION_A",
 +    mSlotOffset,
-+    mSlotSize
++    mSlotSize,
++    (UINT32)mImageOffset
 +    ));
 +
 +  return EFI_SUCCESS;
@@ -427,7 +464,7 @@ index 0000000000..7ce8b71b1e
 +}
 +
 +/**
-+  Returns the size of the firmware image, i.e. of one slot.
++  Returns the size of the firmware image, i.e. of both slots together.
 +
 +  @param[out] Size  The size in bytes.
 +
@@ -452,7 +489,11 @@ index 0000000000..7ce8b71b1e
 +    return Status;
 +  }
 +
-+  *Size = mSlotSize;
++  //
++  // Both halves, because the image has to serve whichever slot turns out to
++  // be inactive on the machine it is applied to. The builder cannot know that.
++  //
++  *Size = (UINTN)mSlotSize * 2;
 +  return EFI_SUCCESS;
 +}
 +
@@ -689,13 +730,14 @@ index 0000000000..7ce8b71b1e
 +  }
 +
 +  //
-+  // A slot is written whole. Anything else would leave it part new, part old,
-+  // and vboot would reject the result on the next boot without saying why.
++  // Both slots, A then B, each written whole. Anything else would leave the
++  // target part new and part old, and vboot would reject the result on the
++  // next boot without saying why.
 +  //
-+  if (ImageSize != mSlotSize) {
++  if (ImageSize != (UINTN)mSlotSize * 2) {
 +    DEBUG ((
 +      DEBUG_ERROR,
-+      "%a: image is %x bytes, a slot is %x\n",
++      "%a: image is %x bytes, expected two slots of %x\n",
 +      __func__,
 +      ImageSize,
 +      mSlotSize
@@ -813,14 +855,15 @@ index 0000000000..7ce8b71b1e
 +  //
 +  FirstBlock = mSlotOffset / BlockSize;
 +  BlockCount = mSlotSize / BlockSize;
-+  Next       = (CONST UINT8 *)Image;
++  Next       = (CONST UINT8 *)Image + mImageOffset;
 +
 +  DEBUG ((
 +    DEBUG_INFO,
-+    "%a: writing %u blocks from block %u\n",
++    "%a: writing %u blocks from block %u, image offset %x\n",
 +    __func__,
 +    (UINT32)BlockCount,
-+    (UINT32)FirstBlock
++    (UINT32)FirstBlock,
++    (UINT32)mImageOffset
 +    ));
 +
 +  for (Block = 0; Block < BlockCount; Block++, Next += BlockSize) {
