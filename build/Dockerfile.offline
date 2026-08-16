@@ -120,6 +120,18 @@ RUN set -e; cd /opt/coreboot; \
       git apply "$p"; \
     done
 
+# Payload patches from patches/edk2/, same rules against the MrChromebox EDK2
+# tree copied in above. Separate from patches/base/ because it is a different
+# upstream on its own release cycle - a patch that stops applying should name
+# the tree it belongs to.
+RUN set -e; cd /opt/coreboot/payloads/external/edk2/workspace/mrchromebox; \
+    for p in /opt/patches/edk2/*.patch; do \
+      [ -e "$p" ] || continue; \
+      echo "[patch] edk2/$(basename "$p")"; \
+      git apply --check "$p" || { echo "ERROR: edk2/$(basename "$p") does not apply - fix patches/edk2/"; exit 1; }; \
+      git apply "$p"; \
+    done
+
 # Config-driven: enable/disable the optional devicetree devices (smbus/heci1/
 # fast_spi) per the "DT_DEVICE NAME=y/n" markers in board.conf, before `make`.
 RUN sh /opt/apply-devicetree.sh /opt/coreboot
