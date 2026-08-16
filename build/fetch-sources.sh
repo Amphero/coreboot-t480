@@ -2,21 +2,29 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # fetch-sources.sh  -  PHASE 1 (FETCH).  Runs INSIDE the coreboot-t480-deps
 # container WITH network. Downloads every source the offline build (PHASE 2)
-# needs into /sources/<BUILD_MODE>/ so PHASE 2 can run with --network=none.
+# needs into /sources/ so PHASE 2 can run with --network=none.
+#
+# The version set comes from /config/versions.lock (mounted read-only) and is
+# used verbatim. --latest instead resolves the newest upstream versions and
+# writes them to /sources/versions.lock, which ./fetch.sh copies back into
+# config/ once the fetch succeeded.
 #
 # Driven by env (set by ./fetch.sh):
-#   BUILD_MODE   pinned | latest
-#   REFRESH      1 = re-resolve 'latest' versions even if versions.lock exists
-#   Overrides (optional, win over defaults/auto-detect in BOTH modes):
+#   LATEST       1 = resolve newest upstream instead of reading the lock
+#   REFRESH      1 = re-fetch every component, ignoring its .stamp
+#   Overrides (LATEST=1 only; with the lock they would contradict it):
 #     COREBOOT_REF  EDK2_BRANCH  LIBREBOOT_VERSION  LBMK_REF
-#   LIBREBOOT_TARBALL_PROVIDED  1 = tarball already placed in <src>/libreboot/
+#   LIBREBOOT_TARBALL_PROVIDED  1 = tarball already placed in /sources/libreboot/
 #
 # Everything is idempotent: a component with its .stamp present is skipped.
+# A ref that differs from the previous run drops that component's stamp, so
+# changing one version does not re-download the other three.
 set -euo pipefail
 
-MODE="${BUILD_MODE:?BUILD_MODE not set}"
+LATEST="${LATEST:-0}"
 REFRESH="${REFRESH:-0}"
-SRC="/sources/$MODE"
+SRC="/sources"
+LOCK_IN="/config/versions.lock"      # input, read-only
 NPROC="$(nproc)"
 # Throwaway MAC for the PHASE-1 lbmk populate run ONLY (this inject result is
 # discarded). The REAL MAC lives in config/defconfig and is injected in PHASE 2.
@@ -29,8 +37,8 @@ git config --global user.email "builder@localhost" 2>/dev/null || true
 git config --global --add safe.directory '*'        2>/dev/null || true
 git config --global advice.detachedHead false       2>/dev/null || true
 
-log(){ printf '\n\033[1;36m[fetch:%s] %s\033[0m\n' "$MODE" "$*"; }
-die(){ printf '\n\033[1;31m[fetch:%s] ERROR: %s\033[0m\n' "$MODE" "$*" >&2; exit 1; }
+log(){ printf '\n\033[1;36m[fetch] %s\033[0m\n' "$*"; }
+die(){ printf '\n\033[1;31m[fetch] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- coreboot upstream
 CB_URL="https://review.coreboot.org/coreboot.git"
@@ -53,22 +61,12 @@ CB_SUBMODULES=(3rdparty/vboot 3rdparty/libgfxinit 3rdparty/libhwbase \
                3rdparty/cmocka 3rdparty/blobs 3rdparty/intel-microcode 3rdparty/fsp)
 
 # =====================================================================
-# 1) Resolve versions  (constants for pinned; ls-remote/mirror for latest)
+# 1) Version set: read the lock, or resolve the newest upstream (--latest)
 # =====================================================================
-LOCK="$SRC/versions.lock"
+LOCK="$SRC/versions.lock"            # effective set, consumed by PHASE 2
 mkdir -p "$SRC"
 
 sortver(){ sort -V; }
-
-resolve_pinned(){
-  COREBOOT_REF="${COREBOOT_REF:-2a2ab9e0cca320b98fb47ad41a2a4baf7a31b7d2}"
-  EDK2_BRANCH="${EDK2_BRANCH:-uefipayload_2603}"
-  # uefipayload_* branch heads MOVE - pin the exact commit, otherwise a fresh
-  # 'pinned' fetch can silently pick up a newer payload than the tested one.
-  EDK2_COMMIT="${EDK2_COMMIT:-1d840d4e6ed0e9a13fee47936c330f4f0cbf6510}"
-  LIBREBOOT_VERSION="${LIBREBOOT_VERSION:-26.01rev1}"
-  LBMK_REF="${LBMK_REF:-26.01rev1}"
-}
 
 resolve_latest(){
   # coreboot: newest release tag YY.MM[.p]  (NOT master snapshots)
@@ -121,21 +119,33 @@ resolve_latest(){
   fi
 }
 
-if [ "$MODE" = "latest" ] && [ -f "$LOCK" ] && [ "$REFRESH" != "1" ]; then
-  log "existing versions.lock is frozen (--refresh to re-resolve):"
-  # shellcheck disable=SC1090
-  . "$LOCK"
-elif [ "$MODE" = "pinned" ]; then
-  resolve_pinned
-else
+if [ "$LATEST" = "1" ]; then
+  log "resolving newest upstream versions - config/versions.lock will be rewritten"
   resolve_latest
+else
+  [ -f "$LOCK_IN" ] || die "config/versions.lock is missing - it is the input for the fetch.
+   ./fetch.sh --latest resolves the newest upstream versions and creates it."
+  # An env override here would silently contradict the file that is supposed to
+  # be the single source of truth. Say so instead of picking a winner.
+  for v in COREBOOT_REF EDK2_BRANCH LIBREBOOT_VERSION LBMK_REF; do
+    [ -z "$(eval "printf '%s' \"\${$v:-}\"")" ] \
+      || die "$v is set in the environment, but overrides only apply to --latest.
+   Edit config/versions.lock instead."
+  done
+  # shellcheck disable=SC1090
+  . "$LOCK_IN"
+  for v in COREBOOT_REF COREBOOT_COMMIT EDK2_BRANCH EDK2_COMMIT \
+           LIBREBOOT_VERSION LBMK_REF LBMK_COMMIT; do
+    [ -n "$(eval "printf '%s' \"\${$v:-}\"")" ] || die "config/versions.lock: $v is missing"
+  done
+  log "using config/versions.lock verbatim"
 fi
 
 # Derive tarball name + resolve exact commits (so versions.lock is complete).
-# Every resolution is guarded: a value already set (pinned constant, frozen
-# lock, env override) is NEVER re-resolved from the network - previously the
-# frozen path loaded the lock and then overwrote EDK2_COMMIT with the current
-# branch head, so the lock could name a commit the tree does not contain.
+# Every resolution is guarded: a value already set (from the lock or an env
+# override) is NEVER re-resolved from the network - an earlier version loaded
+# the lock and then overwrote EDK2_COMMIT with the current branch head, so the
+# lock could name a commit the tree does not contain.
 LIBREBOOT_TARBALL="libreboot-${LIBREBOOT_VERSION}_t480_vfsp_16mb.tar.xz"
 lsref(){ git ls-remote "$1" "$2" 2>/dev/null | awk 'NR==1{print $1}'; }
 [ -n "${EDK2_COMMIT:-}" ] || EDK2_COMMIT="$(lsref "$EDK2_URL" "refs/heads/$EDK2_BRANCH")"
@@ -143,7 +153,7 @@ if [ -z "${LBMK_COMMIT:-}" ]; then
   LBMK_COMMIT="$(git ls-remote "$LBMK_URL" "refs/tags/$LBMK_REF^{}" 2>/dev/null | awk 'NR==1{print $1}')"
   [ -n "$LBMK_COMMIT" ] || LBMK_COMMIT="$(lsref "$LBMK_URL" "refs/tags/$LBMK_REF")"
 fi
-# coreboot: pinned is already a commit; a tag needs dereferencing
+# coreboot: a commit is already exact; a tag needs dereferencing
 if [ -z "${COREBOOT_COMMIT:-}" ]; then
   if printf '%s' "$COREBOOT_REF" | grep -qE '^[0-9a-f]{40}$'; then
     COREBOOT_COMMIT="$COREBOOT_REF"
@@ -154,8 +164,9 @@ if [ -z "${COREBOOT_COMMIT:-}" ]; then
 fi
 
 cat > "$LOCK" <<EOF
-# versions.lock  -  BUILD_MODE=$MODE  (generated by fetch-sources.sh)
-BUILD_MODE=$MODE
+# versions.lock  -  the set this sources/ tree was fetched with.
+# Copy of config/versions.lock (or, after --latest, what got resolved); PHASE 2
+# hashes it into the image label. Edit config/versions.lock, not this file.
 COREBOOT_REF=$COREBOOT_REF
 COREBOOT_COMMIT=$COREBOOT_COMMIT
 EDK2_BRANCH=$EDK2_BRANCH
@@ -165,7 +176,7 @@ LIBREBOOT_TARBALL=$LIBREBOOT_TARBALL
 LBMK_REF=$LBMK_REF
 LBMK_COMMIT=$LBMK_COMMIT
 EOF
-log "resolved versions:"; sed 's/^/    /' "$LOCK"
+log "versions in use:"; sed 's/^/    /" "$LOCK"
 
 # =====================================================================
 # 2) coreboot  (source + selected submodules + crossgcc toolchain tarballs)
@@ -233,8 +244,8 @@ else
   rm -rf "$SRC/edk2"; mkdir -p "$SRC/edk2"
   git clone -q --branch "$EDK2_BRANCH" --single-branch --recurse-submodules -j"$NPROC" \
     "$EDK2_URL" "$ED" || die "edk2 clone ($EDK2_BRANCH) failed"
-  # Detach on the RESOLVED commit, not the branch head - for pinned that is a
-  # constant, so the tree is reproducible even after the branch moved on.
+  # Detach on the RESOLVED commit, not the branch head - the lock names an
+  # exact commit, so the tree is reproducible even after the branch moved on.
   if [ -n "${EDK2_COMMIT:-}" ]; then
     git -C "$ED" checkout -q --detach "$EDK2_COMMIT" \
       || die "edk2: pinned commit $EDK2_COMMIT not on branch $EDK2_BRANCH (history rewritten?)"
@@ -252,7 +263,9 @@ fi
 EDK2_HEAD="$(git -C "$ED" rev-parse HEAD 2>/dev/null)" \
   || die "edk2: cannot read HEAD of $ED"
 if [ "$EDK2_HEAD" != "$EDK2_COMMIT" ]; then
-  log "edk2: lock said '$EDK2_COMMIT', tree has '$EDK2_HEAD' - recording the tree's commit"
+  log "WARNING: edk2 checkout is $EDK2_HEAD, config/versions.lock says $EDK2_COMMIT."
+  log "         Recording what the tree contains. If this was not intended, remove"
+  log "         sources/edk2/ and fetch again - the build follows the tree, not the lock."
   EDK2_COMMIT="$EDK2_HEAD"
   sed -i "s/^EDK2_COMMIT=.*/EDK2_COMMIT=$EDK2_COMMIT/" "$LOCK"
   grep -q "^EDK2_COMMIT=$EDK2_COMMIT\$" "$LOCK" || die "failed to update EDK2_COMMIT in $LOCK"
@@ -351,4 +364,4 @@ log "generating sha256sums.txt ..."
 
 log "PHASE 1 done. Contents of $SRC:"
 du -sh "$SRC"/* 2>/dev/null | sed 's/^/    /' || true
-printf '\n\033[1;32m[fetch:%s] sources/%s ready for the offline build.\033[0m\n' "$MODE" "$MODE"
+printf '\n\033[1;32m[fetch] sources/ ready for the offline build.\033[0m\n'

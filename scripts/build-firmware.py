@@ -4,17 +4,17 @@
 build-firmware.py  -  build the T480 coreboot+EDK2 firmware (PHASE 2, OFFLINE).
 
 Two-phase flow:
-  PHASE 1  ./fetch.sh [pinned|latest]        (once, with network -> sources/<mode>/)
-  PHASE 2  python3 scripts/build-firmware.py --mode <pinned|latest>   (NO network)
+  PHASE 1  ./fetch.sh                        (once, with network -> sources/)
+  PHASE 2  python3 scripts/build-firmware.py                        (NO network)
 
-This script builds exclusively from sources/<mode>/ and runs both the image
-build and the variant passes with **--network=none** (verifiably offline).
-Finished ROMs + the versions.lock that was used end up in roms/.
+This script builds exclusively from sources/ and runs both the image build and
+the variant passes with **--network=none** (verifiably offline). Which upstream
+versions that tree holds is decided by config/versions.lock at fetch time.
+Finished ROMs end up in roms/.
 Flashing: externally via CH341A - see README.md.
 
 Examples:
-  python3 scripts/build-firmware.py                         # pinned: TPM + Setup Mode + RNG (final firmware)
-  python3 scripts/build-firmware.py --mode latest           # from sources/latest/
+  python3 scripts/build-firmware.py                         # TPM + Setup Mode + RNG (final firmware)
   python3 scripts/build-firmware.py --tpm-reset             # additionally a reset ROM (TPM2_Clear) - see README.md
   python3 scripts/build-firmware.py --no-tpm               # disable the TPM (OS sees no TPM)
   python3 scripts/build-firmware.py --auto-enroll           # MS keys automatically (no Setup Mode)
@@ -36,7 +36,7 @@ KEYS       = PROJECT / "keys"          # vboot signing keys, never committed (.g
 ROMS       = PROJECT / "roms"
 SOURCES    = PROJECT / "sources"
 PATCHDIR   = PROJECT / "patches" / "tpm-reset"   # clear patch for the optional --tpm-reset
-IMAGE_PREFIX = "coreboot-t480"       # offline image PER MODE: coreboot-t480-pinned / -latest
+IMAGE       = "coreboot-t480"          # the offline build image
 DEPS_IMAGE = "coreboot-t480-deps"
 
 FDF ="/opt/coreboot/payloads/external/edk2/workspace/mrchromebox/UefiPayloadPkg/UefiPayloadPkg.fdf"
@@ -63,25 +63,36 @@ def board_conf():
     return vals
 
 
+def describe():
+    """Name the ROM after the commit it was built from, so the file says which
+    release produced it. Falls back to the date outside a git checkout."""
+    try:
+        r = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
+                           cwd=PROJECT, capture_output=True, text=True, check=True)
+        return r.stdout.strip() or datetime.date.today().strftime("%Y%m%d")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return datetime.date.today().strftime("%Y%m%d")
+
+
 def image_exists(name):
     return subprocess.run(["podman", "image", "exists", name]).returncode == 0
 
 
 # ---------------------------------------------------------------- PHASE 1 checks
-def require_sources(mode):
-    """sources/<mode>/ from PHASE 1 must be present - no silent fallback."""
-    src = SOURCES / mode
+def require_sources():
+    """sources/ from PHASE 1 must be present - no silent fallback."""
+    src = SOURCES
     lock = src / "versions.lock"
     if not lock.exists():
-        sys.exit(f"ERROR: sources/{mode}/ is missing (no versions.lock).\n"
-                 f"   Run PHASE 1 first:  ./fetch.sh {mode}")
+        sys.exit("ERROR: sources/ is missing (no versions.lock).\n"
+                 "   Run PHASE 1 first:  ./fetch.sh")
     for need in ("coreboot", "edk2/mrchromebox", "lbmk", "defconfig"):
         if not (src / need).exists():
-            sys.exit(f"ERROR: sources/{mode}/{need} is missing - PHASE 1 fetch incomplete.\n"
-                     f"   Re-fetch:  ./fetch.sh {mode} --refresh")
+            sys.exit(f"ERROR: sources/{need} is missing - PHASE 1 fetch incomplete.\n"
+                     f"   Re-fetch:  ./fetch.sh --refresh")
     if not image_exists(DEPS_IMAGE):
         sys.exit(f"ERROR: build-environment image '{DEPS_IMAGE}' is missing.\n"
-                 f"   PHASE 1 builds it:  ./fetch.sh {mode}")
+                 f"   PHASE 1 builds it:  ./fetch.sh")
     return src
 
 
@@ -89,11 +100,11 @@ def verify_checksums(src):
     """Verify PHASE 1's sha256sums.txt (hard integrity check before the build)."""
     sums = src / "sha256sums.txt"
     if not sums.exists():
-        sys.exit(f"ERROR: {sums} is missing - PHASE 1 incomplete. ./fetch.sh <mode> --refresh")
+        sys.exit(f"ERROR: {sums} is missing - PHASE 1 incomplete. ./fetch.sh --refresh")
     print(f"[integrity] sha256sum -c {sums.relative_to(PROJECT)}")
     r = subprocess.run(["sha256sum", "-c", "sha256sums.txt"], cwd=src)
     if r.returncode != 0:
-        sys.exit("ERROR: SHA256 check failed - sources corrupt. ./fetch.sh <mode> --refresh")
+        sys.exit("ERROR: SHA256 check failed - sources corrupt. ./fetch.sh --refresh")
     print("   SHA256: OK")
 
 
@@ -136,8 +147,8 @@ def require_recorded_version():
 
 
 def sync_build_config(src):
-    """Mirror the current config/defconfig (+splash.bmp) and patches/ into sources/<mode>/.
-    That way local defconfig/patch tweaks reach the offline build (context = sources/<mode>/)
+    """Mirror the current config/defconfig (+splash.bmp) and patches/ into sources/.
+    That way local defconfig/patch tweaks reach the offline build (context = sources/)
     without re-running PHASE 1. Takes effect only with --rebuild-base."""
     shutil.copy2(CONFIG / "defconfig", src / "defconfig")
     shutil.copy2(CONFIG / "board.conf", src / "board.conf")      # MAC marker + DT_DEVICE toggles
@@ -161,24 +172,20 @@ def sync_build_config(src):
         shutil.copytree(KEYS, kdst)
     else:
         kdst.mkdir()                                             # empty dir: COPY in the Dockerfile still works
-    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/ + keys/{' + splash.bmp' if sp.exists() else ''}  ->  sources/{src.name}/")
+    print(f"[config] defconfig + board.conf + apply-devicetree.sh + patches/ + keys/{' + splash.bmp' if sp.exists() else ''}  ->  sources/")
 
 
 def log_versions(src):
-    """Log the versions in use and copy them to roms/ as versions_<mode>.lock
-    (separate per mode so pinned/latest don't overwrite each other)."""
+    """Log the versions this sources/ tree was fetched with. The record lives in
+    config/versions.lock, tracked in git - nothing is copied to roms/."""
     lock = src / "versions.lock"
-    print("\n=== versions in use (versions.lock) ===")
+    print("\n=== versions in use (sources/versions.lock) ===")
     print("\n".join("   " + l for l in lock.read_text().splitlines() if l and not l.startswith("#")))
-    ROMS.mkdir(parents=True, exist_ok=True)
-    dest = ROMS / f"versions_{src.name}.lock"
-    shutil.copy2(lock, dest)
-    print(f"   -> copied to {dest.relative_to(PROJECT)}")
 
 
 # ---------------------------------------------------------------- PHASE 2 build
 def lock_get(src, key):
-    """Read a value from sources/<mode>/versions.lock (empty if absent)."""
+    """Read a value from sources/versions.lock (empty if absent)."""
     for line in (src / "versions.lock").read_text().splitlines():
         if line.startswith(f"{key}=") and not line.startswith("#"):
             return line.split("=", 1)[1].strip()
@@ -209,7 +216,7 @@ def config_hash(src, mac):
 
 
 def build_base(src, image, mac, force):
-    """Build the offline image: context = sources/<mode>/, --network=none."""
+    """Build the offline image: context = sources/, --network=none."""
     chash = config_hash(src, mac)
     if image_exists(image) and not force:
         r = subprocess.run(["podman", "image", "inspect", "-f",
@@ -363,8 +370,6 @@ def verify(rom):
 def main():
     ap = argparse.ArgumentParser(description="Build the T480 coreboot+EDK2 firmware (phase 2, offline)",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("--mode", default="pinned", choices=["pinned", "latest"],
-                    help="which sources/<mode>/ to use (default pinned = HW-tested)")
     ap.add_argument("--mac", help="override the MAC (default: marker '# MAC=' in config/defconfig)")
     ap.add_argument("--no-tpm", action="store_true",
                     help="disable the TPM (OS sees no TPM). Default: TPM is ON")
@@ -378,7 +383,7 @@ def main():
     ap.add_argument("--plain", action="store_true", help="just the raw image ROM (SB, TPM, auto-enroll)")
     ap.add_argument("--rebuild-base", action="store_true", help="rebuild the offline image from scratch")
     ap.add_argument("--version", help="version string for the ROM name "
-                    "(default: pinned -> 'pinned' (frozen); latest -> date YYYYMMDD, e.g. 20260709)")
+                    "(default: git describe, e.g. 26.08.1 or 26.08.1-3-gae353ca)")
     ap.add_argument("--output", help="override the output file name entirely (default: coreboot_t480_<version>[...].rom)")
     args = ap.parse_args()
 
@@ -401,27 +406,22 @@ def main():
         sys.exit("ERROR: --tpm-reset is not combinable with --plain (plain = raw base ROM without a variant).")
     reset_patch = None
     if args.tpm_reset:
-        reset_patch = PATCHDIR / f"tpm2-clear-on-boot_{args.mode}.patch"
+        reset_patch = PATCHDIR / "tpm2-clear-on-boot.patch"
         if not reset_patch.exists():
-            reset_patch = PATCHDIR / "tpm2-clear-on-boot.patch"
-        if not reset_patch.exists():
-            sys.exit(f"ERROR: reset patch missing in {PATCHDIR}/ (tpm2-clear-on-boot[_{args.mode}].patch)")
+            sys.exit(f"ERROR: reset patch missing: {reset_patch}")
 
-    # PHASE 1 must have run - no silent fallback to online/another mode.
-    src = require_sources(args.mode)
+    # PHASE 1 must have run - no silent fallback to an online build.
+    src = require_sources()
     verify_checksums(src)
     require_vboot_keys()
     require_recorded_version()
     sync_build_config(src)
     log_versions(src)
 
-    image = f"{IMAGE_PREFIX}-{args.mode}"          # coreboot-t480-pinned / coreboot-t480-latest
+    image = IMAGE
     build_base(src, image, mac, args.rebuild_base)
 
-    # Name "version": pinned is frozen (never gets newer) -> fixed name 'pinned';
-    # latest keeps evolving -> date (YYYYMMDD). Both overridable via --version.
-    ver = args.version or ("pinned" if args.mode == "pinned"
-                           else datetime.date.today().strftime("%Y%m%d"))
+    ver = args.version or describe()
     if args.plain:
         out = args.output or f"coreboot_t480_{ver}_plain.rom"
         extract_plain(image, out)
@@ -438,7 +438,7 @@ def main():
                    + ("_msenroll" if not setup_mode else "")  # MS keys auto instead of Setup Mode
                    + ("_no-rng"   if not enable_rng else ""))  # RNG left out
             out = f"coreboot_t480_{ver}{dev}.rom"
-        print(f"[variant] mode={args.mode}  version={ver}  no_tpm={no_tpm}  setup_mode={setup_mode}  enable_rng={enable_rng}  ->  {out}")
+        print(f"[variant] version={ver}  no_tpm={no_tpm}  setup_mode={setup_mode}  enable_rng={enable_rng}  ->  {out}")
         container_build(image, no_tpm, setup_mode, enable_rng, out)
 
     verify(ROMS / out)
@@ -452,7 +452,7 @@ def main():
         container_build(image, no_tpm, setup_mode, enable_rng, reset_out, reset_patch=reset_patch)
         verify(ROMS / reset_out)
 
-    print("\nDone (built offline from sources/%s). Flash externally via CH341A - see README.md." % args.mode)
+    print("\nDone (built offline from sources/). Flash externally via CH341A - see README.md.")
     print("   Then set up Secure Boot via sbctl - CMOS battery connected + correct clock!")
     if reset_out:
         print(f"\nNOTE: TPM-RESET (details: README.md): flash {reset_out} first + boot ONCE")
