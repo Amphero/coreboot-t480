@@ -126,24 +126,11 @@ All documented in [GUIDE.md](GUIDE.md); the design notes and hardware
 measurements behind them are in [docs/](docs/) and
 [patches/README.md](patches/README.md).
 
-## Repo layout
-
-| | |
-|---|---|
-| `fetch.sh` | PHASE 1: fetch the pinned sources, build the container image |
-| `scripts/build-firmware.py` | PHASE 2: offline build, ROM + capsule + cab |
-| `scripts/make-capsule.py` | build and sign an update capsule from a ROM |
-| `scripts/gen-vboot-keys.sh` | generate the vboot keyset into `keys/` |
-| `scripts/gen-capsule-certs.sh` | generate the capsule signing chain into `keys/capsule/` |
-| `scripts/vbnv.py` | read and steer the vboot state (slots, trial boots, boot-ok) |
-| `scripts/transfer-settings.py` | carry SMMSTORE from a backup into a fresh ROM |
-| `scripts/spi-ranges.py` | dump the SPI protected ranges from SPIBAR |
-| `config/` | defconfig, board.conf, versions.lock, splash |
-| `patches/` | coreboot and EDK2 patches, each documented |
-| `docs/` | design notes: vboot, capsules, firmware versions |
-
 ## License
 
-[GPL-3.0](LICENSE), inherited from the upstream project. The sources fetched
-during the build (coreboot, EDK2, libreboot) have their own licenses and are
-not part of this repo.
+[GPL-3.0](LICENSE) for the build system, scripts and documentation, inherited
+from the upstream project. The patch files carry the license of the tree they
+modify instead: GPL-2.0-only for `patches/base/` (coreboot), BSD-2-Clause-Patent
+for `patches/edk2/` (EDK2) - the SPDX headers inside the patches say so per
+file. The sources fetched during the build have their own licenses and are not
+part of this repo.
