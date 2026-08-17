@@ -115,11 +115,17 @@ def require_vboot_keys():
     defconfig = (CONFIG / "defconfig").read_text()
     if not re.search(r"^CONFIG_VBOOT=y", defconfig, re.M):
         return
-    if (KEYS / "root_key.vbpubk").exists():
-        return
-    sys.exit("ERROR: CONFIG_VBOOT=y but keys/ has no keyset - the build would sign with\n"
-             "   the public vboot devkeys, which anyone can use.\n"
-             "   Generate your own:  sh scripts/gen-vboot-keys.sh")
+    if not (KEYS / "root_key.vbpubk").exists():
+        sys.exit("ERROR: CONFIG_VBOOT=y but keys/ has no keyset - the build would sign with\n"
+                 "   the public vboot devkeys, which anyone can use.\n"
+                 "   Generate your own:  sh scripts/gen-vboot-keys.sh")
+    # Same reasoning for the capsule trust anchor: the defconfig points into
+    # keys/capsule/, and the edk2 Makefile hard-fails on a missing file - but
+    # only deep inside the build, half an hour in.
+    if ("/opt/keys/capsule/" in defconfig
+            and not (KEYS / "capsule" / "root.pub.pem").exists()):
+        sys.exit("ERROR: the defconfig names a capsule trust anchor but keys/capsule/ has\n"
+                 "   no certificate set.  Generate it:  sh scripts/gen-capsule-certs.sh")
 
 
 def require_recorded_version():
@@ -214,6 +220,10 @@ def config_hash(src, mac):
     for k in sorted((src / "keys").glob("*")):
         if k.suffix in (".vbpubk", ".keyblock"):
             h.update(k.name.encode() + b"\0" + k.read_bytes() + b"\0")
+    # The capsule trust anchor is baked into FmpDxe; a changed root must
+    # invalidate the image. Public certificates only, same as above.
+    for k in sorted((src / "keys" / "capsule").glob("*.pub.pem")):
+        h.update(b"capsule/" + k.name.encode() + b"\0" + k.read_bytes() + b"\0")
     return h.hexdigest()
 
 
