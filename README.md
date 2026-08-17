@@ -37,7 +37,7 @@ W25Q128, 16 MB, at position U49.
 `fwupdmgr security` grades a machine against the
 [Host Security ID](https://fwupd.github.io/hsi.html) tests. Measured on this
 firmware (fwupd 2.1.7, 2026-08-17): every HSI-1 test passes; at HSI-2 the
-platform tests pass and four tests are open, tracked as issues.
+platform tests pass and three tests are open, tracked as issues.
 
 | HSI-1 | Status | Mechanism |
 |---|---|---|
@@ -53,9 +53,9 @@ platform tests pass and four tests are open, tracked as issues.
 |---|---|---|
 | IOMMU | ✓ enabled | VT-d |
 | Platform debugging locked | ✓ | |
-| coreboot verified boot flag | ✘ open | vboot is active but fwupd's detection does not see it |
-| Locked MTD | ✘ open | `/dev/mtd0` (Fast SPI) reports writable; writes are refused by the protected ranges, the flag disagrees |
-| TPM PCR0 reconstruction | ✘ open | measurements go to PCR 2 (coreboot), the PCR 0 event log does not reconstruct |
+| coreboot verified boot flag | ✘ open ([#6](https://github.com/Amphero/custom-coreboot-t480/issues/6)) | vboot is active but fwupd's detection does not see it |
+| Locked MTD | ✘ open ([#7](https://github.com/Amphero/custom-coreboot-t480/issues/7)) | `/dev/mtd0` (Fast SPI) reports writable; writes are refused by the protected ranges, the flag disagrees |
+| TPM PCR0 reconstruction | ✘ open ([#8](https://github.com/Amphero/custom-coreboot-t480/issues/8)) | measurements go to PCR 2 (coreboot), the PCR 0 event log does not reconstruct |
 
 The three open items are firmware-side and will ship as capsule updates.
 
