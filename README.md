@@ -79,6 +79,10 @@ sh scripts/gen-capsule-certs.sh      # capsule signing chain, once
 MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py   # PHASE 2: offline
 ```
 
+`AA:BB:CC:DD:EE:FF` is a placeholder and the build refuses it. It wants the
+MAC of your onboard NIC, which ends up in the GbE region:
+`ip link show enp0s31f6 | grep ether`.
+
 Every build produces three artifacts in `roms/`: the ROM, an update capsule
 (`.cap`) and a fwupd cabinet (`.cab`). The build runs entirely in podman,
 offline, from sources pinned in `config/versions.lock`. Both keysets are

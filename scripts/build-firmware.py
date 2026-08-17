@@ -403,6 +403,10 @@ def main():
     # entry ships commented out on purpose - the file is tracked in git and a
     # MAC is machine identity.
     mac = (args.mac or os.environ.get("MAC") or board_conf().get("MAC") or "").lower()
+    if mac in ("aa:bb:cc:dd:ee:ff", "00:11:22:33:44:55"):
+        sys.exit("ERROR: '%s' is the placeholder from the documentation, not a MAC - it would\n"
+                 "   go into the GbE region verbatim. Read your NIC's own:\n"
+                 "   ip link show enp0s31f6 | grep ether" % mac)
     if not re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
         sys.exit("ERROR: no valid MAC ('%s'). Pass it per build (preferred, nothing lands in a "
                  "tracked file):\n"
