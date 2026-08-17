@@ -1,9 +1,9 @@
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
 new file mode 100644
-index 0000000000..25dc3f6c82
+index 0000000..f1961ab
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
-@@ -0,0 +1,1002 @@
+@@ -0,0 +1,1025 @@
 +/** @file
 +  Firmware device services that update the inactive verified-boot slot.
 +
@@ -1006,12 +1006,35 @@ index 0000000000..25dc3f6c82
 +{
 +  return EFI_SUCCESS;
 +}
++
++/**
++  Constructor.  SmmStoreLib keeps its state per linked driver and does nothing
++  until its initializer has run, so the copy linked into FmpDxe has to be
++  initialized here - nobody else will.  The result is ignored on purpose:
++  failing the constructor would keep FmpDxe from loading at all, and every
++  SmmStoreLib call reports a missing store on its own.
++
++  @param[in] ImageHandle  The image handle of the process.
++  @param[in] SystemTable  The EFI System Table pointer.
++
++  @retval EFI_SUCCESS  Always.
++**/
++EFI_STATUS
++EFIAPI
++FmpDeviceSlotLibConstructor (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  SmmStoreLibInitialize ();
++  return EFI_SUCCESS;
++}
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
 new file mode 100644
-index 0000000000..0aa63f5ed7
+index 0000000..40d04df
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,38 @@
 +## @file
 +#  Firmware device services that update the inactive verified-boot slot.
 +#
@@ -1027,6 +1050,7 @@ index 0000000000..0aa63f5ed7
 +  MODULE_TYPE     = DXE_DRIVER
 +  VERSION_STRING  = 1.0
 +  LIBRARY_CLASS   = FmpDeviceLib|DXE_DRIVER UEFI_DRIVER
++  CONSTRUCTOR     = FmpDeviceSlotLibConstructor
 +
 +[Sources]
 +  FmpDeviceSlotLib.c
