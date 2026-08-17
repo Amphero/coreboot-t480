@@ -6,9 +6,17 @@ have to be re-derived.
 
 ## Where it stands
 
-The chain from `fwupdmgr`/`efi_capsule_loader` down to `FmpDxe` works. The
-`EFI_ABORTED` on apply is diagnosed and fixed in the patches; the fix has not
-been on hardware yet.
+The mechanism works end to end, measured 2026-08-17 on the 26.08.2 build:
+capsule staged through `efi_capsule_loader`, warm reboot, firmware wrote the
+inactive slot (read back byte-identical to the capsule half), armed the trial
+boot, reset on its own, the trial boot came up and reported success, and the
+ESRT entry reads `last_attempt_status` 0. SMMSTORE was never touched - Secure
+Boot keys and settings survived the whole cycle.
+
+It took three findings to get there, in order: the SmmStoreLib constructor
+(patch 0003), the ESRT diagnosis path (patches 0003/0004), and the progress
+callback (patch 0001). Each is written up below; the second one is what made
+the third one cheap to find.
 
 Measured 2026-08-16, firmware from `roms/coreboot_t480_dualslot.rom` in slot B,
 capsule built from the same ROM:
@@ -33,6 +41,26 @@ block-size branch and marked the image invalid, and `SetTheImage` turned
 "not valid for update" into `EFI_ABORTED` (`FmpDxe.c:1288`). That accounts for
 everything measured: overall status `EFI_ABORTED`, nothing written, and no
 usable detail. Patch 0003 now has the same constructor.
+
+## The second abort: a progress bar, measured 2026-08-17
+
+With the constructor fix flashed, applying a capsule failed again - ESRT
+`last_attempt_status` 0x1001, `LAST_ATTEMPT_STATUS_DRIVER_ERROR_PROGRESS_CALLBACK_ERROR`,
+nothing written, no trial boot armed. The chain: with `BOOTSPLASH_IMAGE` the
+dsc picks `DisplayUpdateProgressLibGraphics`; the capsule is applied from the
+first `ProcessCapsules()` call, which `PlatformBootManagerBeforeConsole()`
+makes before the console and the GOP exist; the graphics library's first
+progress call therefore fails; `DxeCapsuleLib` answers a failed first call by
+handing `Fmp->SetImage()` a NULL progress callback
+(`DxeCapsuleLib.c:1008-1011`); and stock FmpDxe rejects a NULL callback
+outright (`FmpDxe.c:1302`). Upstream's own dsc comment warns that the graphics
+library "aborts firmware update if GOP is missing".
+
+Patch 0001 now forces `DisplayUpdateProgressLibText` whenever
+`SLOT_CAPSULE_SUPPORT` is on, bootsplash or not - the text library prints into
+the void and succeeds. Two upstream components disagreeing about whether a
+missing progress bar is fatal; the 0x1001 in the ESRT is also the first proof
+the new diagnosis path pays for itself.
 
 ## Why no detail reached the OS, both halves fixed
 
@@ -122,20 +150,20 @@ into a single slot image.
 
 ## Next
 
-1. Flash the rebuilt ROM, apply a capsule built from it, and check three
-   things: the inactive slot carries the new content, VBNV has the trial boot
-   armed, and `/sys/firmware/efi/esrt` shows the FMP-built entry. On failure
-   the entry's `last_attempt_status` now names the failed check.
-2. The capsule is signed with EDK2's published test certificates, which is what
+1. The capsule is signed with EDK2's published test certificates, which is what
    the stock `FMP_DEVICE_PKCS7_PCD_INC` trusts and what makes `FmpDxe` print
    "Warning test key is used". Replace it with an own key before this is used
    for anything - `CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` and the
-   `--signer-cert` options of `scripts/make-capsule.py`. Costs a build and a
-   flash, so it is worth doing once the mechanism works.
+   `--signer-cert` options of `scripts/make-capsule.py`. The mechanism is
+   proven now, so this is the gate to actually using it.
+2. Re-enable BIOS Lock; it was turned off for the flashrom round-trips.
+   Applying capsules does not need it off - the write path runs inside SMM.
 
 ## Machine state as this was written
 
-Both slots hold test builds, not the release image. Slot A has the earlier
-single-half library build, slot B the two-half one; both boot. BIOS Lock is off
-for development, so flashing needs no setup menu visit. The rollback counter and
-both preambles are at version 4.
+Both slots hold the 26.08.2 build with all three fixes - slot B written by
+flashrom, slot A by the capsule itself; slot A is running. BIOS Lock is off
+and wants re-enabling. The rollback counter and both preambles are at version
+4. The kernel side needs `modprobe capsule-loader` - the module is not
+auto-loaded, and a bare redirect into `/dev/efi_capsule_loader` when it is
+absent silently creates a regular file there.
