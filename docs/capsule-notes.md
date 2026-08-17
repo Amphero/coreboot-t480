@@ -6,8 +6,9 @@ have to be re-derived.
 
 ## Where it stands
 
-The chain from `fwupdmgr`/`efi_capsule_loader` down to `FmpDxe` works. Applying
-a capsule fails with `EFI_ABORTED` and writes nothing.
+The chain from `fwupdmgr`/`efi_capsule_loader` down to `FmpDxe` works. The
+`EFI_ABORTED` on apply is diagnosed and fixed in the patches; the fix has not
+been on hardware yet.
 
 Measured 2026-08-16, firmware from `roms/coreboot_t480_dualslot.rom` in slot B,
 capsule built from the same ROM:
@@ -20,22 +21,33 @@ capsule built from the same ROM:
   `CapsuleStatus = 0x8000000000000015`, i.e. `EFI_ABORTED`, payload index 1
 - slot A is byte-identical to what was in it before, so nothing was written
 
-Which of the aborts in `FmpDxe.c CheckTheImage()` fired is not known. There are
-five, one of them in our own `FmpDeviceCheckImageWithStatus`. The capsule result
-variable carries the overall status only.
+## The abort, found by reading
 
-## Why the diagnosis is missing, and the bug behind it
+`SmmStoreLib` keeps its state per linked driver: `mSmmStoreInfo` is a module
+global and stays NULL until `SmmStoreLibInitialize()` runs in that driver.
+`FmpDeviceSlotLib` never called it - the reference `FmpDeviceSmmLib` does it
+from its constructor (`FmpDeviceSmmLib.c:1141`), which is exactly the kind of
+per-copy setup a library user forgets. So every store call in FmpDxe's copy
+returned `EFI_NO_MEDIA`, `FmpDeviceCheckImageWithStatus` hit its
+block-size branch and marked the image invalid, and `SetTheImage` turned
+"not valid for update" into `EFI_ABORTED` (`FmpDxe.c:1288`). That accounts for
+everything measured: overall status `EFI_ABORTED`, nothing written, and no
+usable detail. Patch 0003 now has the same constructor.
+
+## Why no detail reached the OS, both halves fixed
 
 `FmpDxe` only passes a device library's `LastAttemptStatus` through if it falls
 in the range reserved for device libraries, `0x1800` upwards
 (`FmpDevicePkg/Include/LastAttemptStatus.h:73`). Outside that it replaces the
-value with a flat `LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL`.
+value with a flat `LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL`. The library used
+the standard codes, all below the range; it now has one code per failure site,
+`0x1800` up (patch 0003).
 
-`FmpDeviceSlotLib` returns the standard codes (`ERROR_INVALID_FORMAT`,
-`ERROR_UNSUCCESSFUL`), which are all below that range. So the one field that
-would say which check failed is discarded before it reaches the ESRT. Fixing
-this is the first thing to do next - it makes the failure diagnosable without a
-debug build.
+The other half: the ESRT the OS reads was the static one from `BlSupportDxe`,
+which never carries a `LastAttemptStatus` at all. Patch 0004 adds
+`EsrtFmpDxe`, which rebuilds the table from the FMP instances on ReadyToBoot
+and installs nothing when it finds none - so firmware built without capsule
+support keeps the static table.
 
 ## Debug output does not fit
 
@@ -110,21 +122,16 @@ into a single slot image.
 
 ## Next
 
-1. Give `FmpDeviceSlotLib` its own status codes from `0x1800` up, so the ESRT
-   says which check failed.
-2. Build once with `CONFIG_EDK2_DEBUG=y` and `-D USE_CBMEM_FOR_CONSOLE=TRUE`,
-   flash it, apply the capsule again and read `/sys/firmware/log`.
-3. The capsule is signed with EDK2's published test certificates, which is what
+1. Flash the rebuilt ROM, apply a capsule built from it, and check three
+   things: the inactive slot carries the new content, VBNV has the trial boot
+   armed, and `/sys/firmware/efi/esrt` shows the FMP-built entry. On failure
+   the entry's `last_attempt_status` now names the failed check.
+2. The capsule is signed with EDK2's published test certificates, which is what
    the stock `FMP_DEVICE_PKCS7_PCD_INC` trusts and what makes `FmpDxe` print
    "Warning test key is used". Replace it with an own key before this is used
    for anything - `CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` and the
    `--signer-cert` options of `scripts/make-capsule.py`. Costs a build and a
    flash, so it is worth doing once the mechanism works.
-4. Not decided: whether to add `EsrtFmpDxe`. Without it the ESRT stays the
-   static single entry `BlSupportDxe` installs, which never sets
-   `LastAttemptStatus`. Not a conflict question - both install on ReadyToBoot,
-   the later one wins, and `EsrtFmpDxe` skips installing when it finds no FMP
-   instance.
 
 ## Machine state as this was written
 
