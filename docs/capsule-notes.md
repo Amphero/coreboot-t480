@@ -166,16 +166,29 @@ certificates is rejected with 0x1012
 (`LAST_ATTEMPT_STATUS_DRIVER_ERROR_IMAGE_AUTH_FAILURE`), writes nothing -
 the inactive slot read back byte-identical - and arms no trial boot.
 
+## fwupd, verified 2026-08-17
+
+The whole fwupd path works: `fwupdmgr install <cab>` staged the capsule via
+`BootNext` and its sbctl-signed `fwupdx64.efi.signed`, the firmware applied
+it, and `get-history` records the success. BIOS Lock stayed on - the write
+path runs inside SMM.
+
+Host-side requirements, all one-time (documented in GUIDE.md): fwupd.conf
+needs `OnlyTrusted=false` (local cabs carry no LVFS signature; authenticity
+is the firmware's PKCS7 check, which was measured rejecting foreign
+signatures), `IgnorePower=true` (the second battery at 5% trips the check
+even on AC; the `--ignore-power` flag no longer exists in fwupd 2.x) and
+`[uefi_capsule] DisableShimForSecureBoot=true` (own Secure Boot keys, no
+shim), plus `sbctl sign -o .../fwupdx64.efi.signed .../fwupdx64.efi`.
+
+The cab payload must be named `firmware.bin` inside the archive - fwupd's
+loader looks for exactly that id.
+
 ## Next
 
-1. Re-enable BIOS Lock; it was turned off for the flashrom round-trips.
-   Applying capsules does not need it off - the write path runs inside SMM.
-2. fwupd cab packaging: the code is in place (make-capsule.py packs
-   firmware.cap plus MetaInfo via gcab, build-firmware.py runs it for every
-   ROM), but gcab only enters the build image with the next
-   `./fetch.sh --rebuild-deps`, which also rebuilds crossgcc. Untested until
-   then. Remember that fwupd wants the version bumped - same version needs
-   --allow-reinstall.
+The three open HSI-2 tests, each deliverable as a capsule update: fwupd's
+coreboot-vboot detection, the MTD lock flag, PCR0 event-log
+reconstruction. Tracked as issues.
 
 ## Machine state as this was written
 
