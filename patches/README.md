@@ -4,19 +4,31 @@ Everything in this directory diverges from upstream and lives only in this
 repo. This file documents what each patch does, why it exists, and how to
 maintain it when upstream moves.
 
-There are two groups with different lifetimes:
+There are three groups with different lifetimes:
 
-| Directory | Applied when | Ends up in |
-|-----------|--------------|------------|
-| `base/` | while building the **base image** (`Dockerfile.offline`, stage 2) | **every** ROM built from this repo |
-| `tpm-reset/` | only in the per-variant step of `build-firmware.py --tpm-reset` | **only** the `..._tpmreset.rom` |
+| Directory | Applied to | Applied when | Ends up in |
+|-----------|------------|--------------|------------|
+| `base/` | coreboot | while building the **base image** (`Dockerfile.offline`, stage 2) | **every** ROM built from this repo |
+| `edk2/` | the MrChromebox EDK2 payload | same stage, right after `base/` | **every** ROM built from this repo |
+| `tpm-reset/` | coreboot | only in the per-variant step of `build-firmware.py --tpm-reset` | **only** the `..._tpmreset.rom` |
 
-`base/` patches are applied to the coreboot tree in lexical order, each with
-a mandatory `git apply --check` first. If upstream changes one of the patched
+`base/` and `edk2/` patches are applied in lexical order, each with a
+mandatory `git apply --check` first. If upstream changes one of the patched
 files, the build **aborts with a clear error** instead of silently producing
 a ROM without the change - that is deliberate (this repo once used two
 `sed -i` calls for the same job, and `sed` exits 0 even when its pattern no
-longer matches). After changing anything here, rebuild with `--rebuild-base`.
+longer matches). After changing anything here, rebuild with `--rebuild-base`;
+`config_hash()` covers both directories, so an edited patch is noticed.
+
+The two are separate because they track different upstreams on different
+release cycles. `edk2/` applies to the tree at
+`payloads/external/edk2/workspace/mrchromebox`, which is the clone named in
+`config/versions.lock`, not coreboot's. Patches against EDK2 submodules do
+not work this way - `git apply` there would have to run inside the submodule,
+and nothing does that.
+
+Either directory may be absent - git does not track empty ones - and
+the loop skips it.
 
 ## base/0001-cfr-expose-power-on-after-fail.patch
 
@@ -438,6 +450,89 @@ On success the log carries `BM-LOCKDOWN: Enabled protection for
 SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
 failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
 means all five registers were taken and the range did not happen.
+
+## edk2/0001-fmpdxe-slot-capsule-scaffolding.patch
+
+**Files:** `UefiPayloadPkg/UefiPayloadPkg.dsc`,
+`UefiPayloadPkg/UefiPayloadPkg.fdf`
+
+Adds `SLOT_CAPSULE_SUPPORT` (default FALSE) next to upstream's
+`CAPSULE_SUPPORT`, and with it a second arrangement of `FmpDxe`.
+
+Upstream builds `FmpDxe` only to be embedded into a capsule, where it
+runs `FmpDeviceSmmLib` and updates the whole flash chip - which its own
+header says needs every flash protection lifted. That is the opposite of
+this build. `SLOT_CAPSULE_SUPPORT` puts `FmpDxe` into the firmware
+instead (fdf) and points its `FmpDeviceLib` at `FmpDeviceSlotLib`, which
+writes only the inactive vboot slot. Nothing has to be unlocked for
+that: the protected ranges are programmed at `BS_DEV_RESOURCES`, long
+before capsules are parsed at `BS_DEV_INIT`, and they leave the BIOS
+region writable while sealing `WP_RO`, `SI_DESC` and `SI_GBE`.
+
+The two defines are mutually exclusive and the dsc raises `!error` if
+both are set - they disagree about where `FmpDxe` lives and what it may
+touch.
+
+Also widens the `CAPSULE_SUPPORT` library block (`CapsuleLib`,
+`FmpAuthenticationLib`, the `FmpDependency*` set, `FmpPayloadHeaderLib`)
+and forces `PcdCapsuleFmpSupport` and `PcdSupportUpdateCapsuleReset`
+true, because `FmpDxe` needs all of it either way.
+
+**Inert on its own, and not yet switchable.** With the define at FALSE
+the build is byte-identical to before. Setting it TRUE fails until
+`FmpDeviceSlotLib` exists - the dsc names an `.inf` that no patch
+provides yet.
+
+Open decision, deliberately not taken here: whether to add `EsrtFmpDxe`
+alongside. It is not a conflict question - `BlSupportDxe` installs its
+static entry at its entry point, both ESRT drivers install theirs on
+ReadyToBoot, and `InstallConfigurationTable` replaces an entry of the
+same GUID, so the later one simply wins. `EsrtFmpDxe` also bails out
+without installing when it finds no FMP instance, so it cannot blank a
+working table.
+
+The reason to add it is `LastAttemptStatus`. `BlSupportDxe` never sets
+that field, so it stays 0 and fwupd can never tell whether an update
+worked. `EsrtFmpDxe` fills it from the FMP instance.
+
+## edk2/0002-expose-flash-layout-to-the-payload.patch
+
+**Files:** `UefiPayloadPkg/Include/Coreboot.h`,
+`UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h` (new),
+`UefiPayloadPkg/Include/Library/BlParseLib.h`,
+`UefiPayloadPkg/Library/CbParseLib/CbParseLib.c`,
+`UefiPayloadPkg/Library/SblParseLib/SblParseLib.c`,
+`UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c` + `.inf`,
+`UefiPayloadPkg/UefiPayloadPkg.dec`
+
+A DXE driver cannot reach `BlParseLib` - that one runs in the payload
+entry phase. So the coreboot table is read there and handed on as a HOB,
+the same way `gEfiFirmwareInfoHobGuid` already works, and
+`FmpDeviceSlotLib` will pick it up with `GetFirstGuidHob`.
+
+`FLASH_LAYOUT_INFO` carries two things a writer needs:
+
+- `FmapAddress`, coreboot's in-memory copy of the flash map. It keeps one
+  in CBMEM unconditionally (`fmap_setup_cbmem_cache`, a `CBMEM_READY_HOOK`)
+  and points at it with `CB_TAG_FMAP`. Nothing has to search the flash or
+  hardcode an offset, and the map describes the firmware that is running.
+  `FmapOffset` and `BootMediaSize` come along for the case where the copy
+  is missing.
+- `CbfsOffset`, the CBFS coreboot actually booted from. Under verified
+  boot that is `FW_MAIN_A` or `FW_MAIN_B`, so it identifies the running
+  slot. The alternative was `CB_TAG_VBOOT_WORKBUF`, which means parsing
+  `vb2_shared_data` - vboot's internal state, not a stable interface.
+
+`SblParseLib` gets a stub returning `RETURN_NOT_FOUND`. Every function of
+the class is implemented by both bootloader backends; without it the Slim
+Bootloader build would fail to link.
+
+Applies unconditionally - unlike 0001 there is no define. That also means
+a plain build exercises it.
+
+Maintenance note: the new header is CRLF like every other file in that
+tree, so `git apply` reports whitespace warnings for it. Expected, not a
+defect.
 
 ## tpm-reset/tpm2-clear-on-boot.patch
 

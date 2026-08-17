@@ -1,0 +1,32 @@
+diff --git a/src/drivers/efi/Kconfig b/src/drivers/efi/Kconfig
+index cfe9bb2..80b9053 100644
+--- a/src/drivers/efi/Kconfig
++++ b/src/drivers/efi/Kconfig
+@@ -122,7 +122,7 @@ config DRIVERS_EFI_CAPSULE_REGIONS
+ 	  image prior to building the capsule.
+ 
+ menu "Capsule signing certificates"
+-	depends on DRIVERS_EFI_GENERATE_CAPSULE
++	depends on DRIVERS_EFI_UPDATE_CAPSULES
+ 
+ config DRIVERS_EFI_CAPSULE_SIGNER_PRIVATE_CERT
+ 	string "PEM file used to sign generated capsules"
+@@ -152,10 +152,15 @@ config DRIVERS_EFI_CAPSULE_OTHER_PUBLIC_CERT
+ config DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT
+ 	string "Trusted root certificate for capsule signing (PEM)"
+ 	default "BaseTools/Source/Python/Pkcs7Sign/TestRoot.pub.pem"
+-	depends on DRIVERS_EFI_GENERATE_CAPSULE
++	depends on DRIVERS_EFI_UPDATE_CAPSULES
+ 	help
+-	  Path to the trusted root certificate (PEM) used when generating a PKCS#7
+-	  signature for the capsule.
++	  Path to the trusted root certificate (PEM) the firmware's FmpDxe
++	  accepts capsule signatures from. Needed whenever capsules can be
++	  applied, not only when the build generates one - capsules may be
++	  produced outside the tree and the payload still has to know which
++	  root to trust.
++
++	  Also used when generating a PKCS#7 signature for an in-tree capsule.
+ 
+ 	  If the path is relative, it is interpreted relative to the configured
+ 	  EDK2 repository (payloads/external/edk2 workspace).
