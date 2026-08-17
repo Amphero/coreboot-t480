@@ -1,0 +1,31 @@
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index bb6a7ca..dca7e1c 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -1296,6 +1296,14 @@
+     <LibraryClasses>
+       FmpDeviceLib|UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
+   }
++  # The ESRT rebuilt from the FMP instances on ReadyToBoot, LastAttemptStatus
++  # included - the static table BlSupportDxe installs never carries one, so
++  # without this a failed update is invisible to the OS.  Installs nothing
++  # when no FMP instance exists.  The entry reports as device rather than
++  # system firmware: marking it would take our GUID in
++  # PcdSystemFmpCapsuleImageTypeIdGuid, and the dsc parser does not expand
++  # $(CAPSULE_MAIN_FW_GUID) inside a PCD value.
++  MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmpDxe.inf
+ !endif
+ 
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index 5104318..86f4b37 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -542,6 +542,7 @@ INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
+ # The dsc gives this component a FILE_GUID of its own, so the reference
+ # here has to name it too or nothing is placed in the volume.
+ INF FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
++INF MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmpDxe.inf
+ !endif
+ 
+ !if $(UNIVERSAL_PAYLOAD) == TRUE
