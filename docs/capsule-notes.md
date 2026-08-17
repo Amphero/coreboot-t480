@@ -148,22 +148,41 @@ into a single slot image.
 - Changing anything under `sources/coreboot` invalidates the crossgcc layer and
   costs half an hour. Changing only `sources/edk2` does not.
 
+## Signing, own chain since 26.08.2
+
+The test certificates are out. `scripts/gen-capsule-certs.sh` generates a
+three-level chain (root, intermediate, signer; RSA 4096, SHA256, 30 years)
+into `keys/capsule/`, untracked like the rest of `keys/`. The defconfig
+embeds `root.pub.pem` as FmpDxe's trust anchor
+(`CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT`; patch 0045 unhooks that
+option from in-tree capsule generation, without it olddefconfig silently
+drops the line and the build keeps trusting the test root).
+`scripts/make-capsule.py` signs with the same set by default.
+
+Measured 2026-08-17 on the 26.08.2-15 build: the embedded PCD is
+byte-identical to `keys/capsule/root.pub.pem`; a capsule signed with the own
+chain applies (`last_attempt_status` 0); one signed with EDK2's test
+certificates is rejected with 0x1012
+(`LAST_ATTEMPT_STATUS_DRIVER_ERROR_IMAGE_AUTH_FAILURE`), writes nothing -
+the inactive slot read back byte-identical - and arms no trial boot.
+
 ## Next
 
-1. The capsule is signed with EDK2's published test certificates, which is what
-   the stock `FMP_DEVICE_PKCS7_PCD_INC` trusts and what makes `FmpDxe` print
-   "Warning test key is used". Replace it with an own key before this is used
-   for anything - `CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` and the
-   `--signer-cert` options of `scripts/make-capsule.py`. The mechanism is
-   proven now, so this is the gate to actually using it.
-2. Re-enable BIOS Lock; it was turned off for the flashrom round-trips.
+1. Re-enable BIOS Lock; it was turned off for the flashrom round-trips.
    Applying capsules does not need it off - the write path runs inside SMM.
+2. fwupd cab packaging: the code is in place (make-capsule.py packs
+   firmware.cap plus MetaInfo via gcab, build-firmware.py runs it for every
+   ROM), but gcab only enters the build image with the next
+   `./fetch.sh --rebuild-deps`, which also rebuilds crossgcc. Untested until
+   then. Remember that fwupd wants the version bumped - same version needs
+   --allow-reinstall.
 
 ## Machine state as this was written
 
-Both slots hold the 26.08.2 build with all three fixes - slot B written by
-flashrom, slot A by the capsule itself; slot A is running. BIOS Lock is off
-and wants re-enabling. The rollback counter and both preambles are at version
-4. The kernel side needs `modprobe capsule-loader` - the module is not
-auto-loaded, and a bare redirect into `/dev/efi_capsule_loader` when it is
-absent silently creates a regular file there.
+Both slots hold the 26.08.2-15 build with the own trust anchor - slot B
+written by flashrom, slot A by the accepted capsule; slot A is running. BIOS
+Lock is off and wants re-enabling. The rollback counter and both preambles
+are at version 4. The kernel side needs `modprobe capsule-loader` - the
+module is not auto-loaded, and a bare redirect into
+`/dev/efi_capsule_loader` when it is absent silently creates a regular file
+there.
