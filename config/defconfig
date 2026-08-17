@@ -140,4 +140,9 @@ CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT="/opt/keys/capsule/root.pub.pem"
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D VARIABLE_SUPPORT=SMMSTORE"
 # measure all stages/blobs into TPM PCR 2 before running them (log: cbmem -L)
 CONFIG_TPM_MEASURED_BOOT=y
+# The payload re-logs coreboot's measurements into Tcg2Dxe's event log
+# (patch 0005), so the one log the kernel reads carries the whole chain and
+# the PCRs reconstruct. Linux prefers the ACPI-referenced log over the EFI
+# one, so the ACPI reference has to go (patch 0047); cbmem -L still works.
+CONFIG_TPM2_ACPI_NO_LOG_AREA=y
 # (machine identity + optional devicetree devices live in config/board.conf)
