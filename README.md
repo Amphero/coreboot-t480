@@ -57,8 +57,6 @@ platform tests pass and three tests are open, tracked as issues.
 | Locked MTD | ✘ open ([#7](https://github.com/Amphero/custom-coreboot-t480/issues/7)) | `/dev/mtd0` (Fast SPI) reports writable; writes are refused by the protected ranges, the flag disagrees |
 | TPM PCR0 reconstruction | ✘ open ([#8](https://github.com/Amphero/custom-coreboot-t480/issues/8)) | measurements go to PCR 2 (coreboot), the PCR 0 event log does not reconstruct |
 
-The three open items are firmware-side and will ship as capsule updates.
-
 **Boot Guard is deliberately absent** and stays that way. It is removed with
 `deguard` (the only way to run coreboot on this platform at all), so the
 hardware root of trust is gone. Its role is taken by vboot: verstage in the
