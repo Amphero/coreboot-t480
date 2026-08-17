@@ -183,14 +183,16 @@ def build_cab(cap, out, guid, version, rom_name):
 
     stage = Path(tempfile.mkdtemp(prefix=".cabstage-", dir=out.parent))
     try:
-        shutil.copy2(cap, stage / "firmware.cap")
+        # fwupd looks for the payload under the default id firmware.bin;
+        # any other name fails with "no image id firmware.bin found".
+        shutil.copy2(cap, stage / "firmware.bin")
         (stage / "firmware.metainfo.xml").write_text(METAINFO.format(
             guid=guid, version=version, timestamp=int(time.time()), rom=rom_name))
         subprocess.run(
             ["podman", "run", "--rm", "--network=none", "--user", "root",
              "-v", f"{stage}:/stage:z", "-w", "/stage", IMAGE,
              "gcab", "-cn", f"/stage/{out.name}",
-             "firmware.cap", "firmware.metainfo.xml"],
+             "firmware.bin", "firmware.metainfo.xml"],
             check=True)
         shutil.move(stage / out.name, out)
     finally:
