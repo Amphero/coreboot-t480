@@ -1,0 +1,61 @@
+diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
+index 49428201..5aa97004 100644
+--- a/payloads/external/Makefile.mk
++++ b/payloads/external/Makefile.mk
+@@ -187,6 +187,7 @@ EDK2_CAPSULE_ARGS = \
+ 	CONFIG_LOCALVERSION=$(CONFIG_LOCALVERSION) \
+ 	CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(CONFIG_DRIVERS_EFI_MAIN_FW_VERSION) \
+ 	CONFIG_DRIVERS_EFI_MAIN_FW_LSV=$(CONFIG_DRIVERS_EFI_MAIN_FW_LSV) \
++	CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE=$(CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE) \
+ 	CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS=$(CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS) \
+ 	CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE=$(CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE) \
+ 	CONFIG_DRIVERS_EFI_CAPSULE_INITIATE_RESET=$(CONFIG_DRIVERS_EFI_CAPSULE_INITIATE_RESET) \
+@@ -238,6 +239,7 @@ $(obj)/UEFIPAYLOAD.fd: $(DOTCONFIG) $(IPXE_EFI)
+ 		CONFIG_EDK2_USE_LAPIC_TIMER=$(CONFIG_EDK2_USE_LAPIC_TIMER) \
+ 		CONFIG_SOC_AMD_COMMON_BLOCK_PSP_GEN2=$(CONFIG_SOC_AMD_COMMON_BLOCK_PSP_GEN2) \
+ 		CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=$(CONFIG_DRIVERS_EFI_UPDATE_CAPSULES) \
++		CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE=$(CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE) \
+ 		CONFIG_DRIVERS_EFI_MAIN_FW_GUID=$(CONFIG_DRIVERS_EFI_MAIN_FW_GUID) \
+ 		CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS=$(CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS) \
+ 		CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE=$(CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE) \
+diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
+index 5b1f85ad..aaf52181 100644
+--- a/payloads/external/edk2/Makefile
++++ b/payloads/external/edk2/Makefile
+@@ -136,7 +136,11 @@ endif
+ # CAPSULE_SUPPORT		= FALSE
+ # CAPSULE_MAIN_FW_GUID	=
+ ifeq ($(CONFIG_DRIVERS_EFI_UPDATE_CAPSULES),y)
++ifeq ($(CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE),y)
++BUILD_STR += -D SLOT_CAPSULE_SUPPORT=TRUE
++else
+ BUILD_STR += -D CAPSULE_SUPPORT=TRUE
++endif
+ BUILD_STR += -D CAPSULE_MAIN_FW_GUID=$(CONFIG_DRIVERS_EFI_MAIN_FW_GUID)
+ endif
+ ifeq ($(CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS),y)
+diff --git a/src/drivers/efi/Kconfig b/src/drivers/efi/Kconfig
+index 87302909..cfe9bb21 100644
+--- a/src/drivers/efi/Kconfig
++++ b/src/drivers/efi/Kconfig
+@@ -58,6 +58,20 @@ config DRIVERS_EFI_UPDATE_CAPSULES
+ 	  to discover firmware updates and expose them for tianocore thorough
+ 	  CBMEM for execution.  tianocore is responsible for erasing the variables.
+ 
++config DRIVERS_EFI_CAPSULE_SLOT_UPDATE
++	bool "Apply capsules to the inactive vboot slot"
++	depends on PAYLOAD_EDK2 && DRIVERS_EFI_UPDATE_CAPSULES && VBOOT_SLOTS_RW_AB
++	help
++	  Build the payload so that it keeps FmpDxe in the firmware and updates
++	  only the inactive RW slot, instead of embedding FmpDxe into the capsule
++	  where it rewrites the whole chip.
++
++	  The upstream arrangement needs every flash protection lifted while it
++	  runs. This one does not: the slots sit in the BIOS region, which the
++	  protected ranges leave writable.
++
++	  Needs a payload that provides SLOT_CAPSULE_SUPPORT.
++
+ config DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS
+ 	bool "Allow embedded drivers in update capsules"
+ 	depends on PAYLOAD_EDK2 && DRIVERS_EFI_UPDATE_CAPSULES

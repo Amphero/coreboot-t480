@@ -115,11 +115,17 @@ def require_vboot_keys():
     defconfig = (CONFIG / "defconfig").read_text()
     if not re.search(r"^CONFIG_VBOOT=y", defconfig, re.M):
         return
-    if (KEYS / "root_key.vbpubk").exists():
-        return
-    sys.exit("ERROR: CONFIG_VBOOT=y but keys/ has no keyset - the build would sign with\n"
-             "   the public vboot devkeys, which anyone can use.\n"
-             "   Generate your own:  sh scripts/gen-vboot-keys.sh")
+    if not (KEYS / "root_key.vbpubk").exists():
+        sys.exit("ERROR: CONFIG_VBOOT=y but keys/ has no keyset - the build would sign with\n"
+                 "   the public vboot devkeys, which anyone can use.\n"
+                 "   Generate your own:  sh scripts/gen-vboot-keys.sh")
+    # Same reasoning for the capsule trust anchor: the defconfig points into
+    # keys/capsule/, and the edk2 Makefile hard-fails on a missing file - but
+    # only deep inside the build, half an hour in.
+    if ("/opt/keys/capsule/" in defconfig
+            and not (KEYS / "capsule" / "root.pub.pem").exists()):
+        sys.exit("ERROR: the defconfig names a capsule trust anchor but keys/capsule/ has\n"
+                 "   no certificate set.  Generate it:  sh scripts/gen-capsule-certs.sh")
 
 
 def require_recorded_version():
@@ -195,8 +201,9 @@ def lock_get(src, key):
 def config_hash(src, mac):
     """Fingerprint of everything that gets baked into the base image: the MAC,
     versions.lock, defconfig, board.conf, apply-devicetree.sh, splash.bmp and
-    every patches/base/*.patch. Stored as an image label so a later run can
-    tell whether the existing image still matches the working tree."""
+    every patches/base/*.patch and patches/edk2/*.patch. Stored as an image
+    label so a later run can tell whether the existing image still matches the
+    working tree."""
     h = hashlib.sha256()
     h.update(mac.encode() + b"\0")
     for name in ("versions.lock", "defconfig", "board.conf",
@@ -204,14 +211,19 @@ def config_hash(src, mac):
         f = src / name
         if f.exists():
             h.update(name.encode() + b"\0" + f.read_bytes() + b"\0")
-    for p in sorted((src / "patches" / "base").glob("*.patch")):
-        h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
+    for sub in ("base", "edk2"):
+        for p in sorted((src / "patches" / sub).glob("*.patch")):
+            h.update(sub.encode() + b"/" + p.name.encode() + b"\0" + p.read_bytes() + b"\0")
     # Signing keys: only the public halves and the keyblock go into the hash -
     # they determine what the firmware verifies against, and hashing the
     # private keys would put them in an image label.
     for k in sorted((src / "keys").glob("*")):
         if k.suffix in (".vbpubk", ".keyblock"):
             h.update(k.name.encode() + b"\0" + k.read_bytes() + b"\0")
+    # The capsule trust anchor is baked into FmpDxe; a changed root must
+    # invalidate the image. Public certificates only, same as above.
+    for k in sorted((src / "keys" / "capsule").glob("*.pub.pem")):
+        h.update(b"capsule/" + k.name.encode() + b"\0" + k.read_bytes() + b"\0")
     return h.hexdigest()
 
 
@@ -442,6 +454,13 @@ def main():
         container_build(image, no_tpm, setup_mode, enable_rng, out)
 
     verify(ROMS / out)
+
+    # The update artifacts belong to every ROM: the capsule the firmware
+    # applies and the cab fwupd consumes. Not for --plain (raw base image) and
+    # not for the reset ROM below - neither is something to update to.
+    if not args.plain:
+        print("\n[capsule] building update capsule + fwupd cab")
+        run([sys.executable, str(PROJECT / "scripts" / "make-capsule.py"), str(ROMS / out)])
 
     # Optional: additionally a reset ROM (same config + clear patch) from the SAME image.
     reset_out = None

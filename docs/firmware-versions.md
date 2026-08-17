@@ -15,7 +15,8 @@ older image should stop booting. The ROM column names the build that is
 | 1 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807.rom` | `d6cc79e8` | vboot port, SMM BWP, WP_RO lock. Superseded. |
 | 2 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-ifdlock-nospi.rom` | `8c5b191e` | Descriptor and ME locked, SPI controller hidden. Superseded. |
 | 3 | 2026-08-07 | 26.06 (5cbf8afc) | `coreboot_t480_20260807-gbbfix.rom` | `e5e38c02` | On the chip, `WP_RO` and both slots. GBB rollback check enabled - the first build where the counter actually refuses anything. |
-| 4 | 2026-08-16 | 26.06 (5cbf8afc) | `coreboot_t480_26.08.1-12-gbb9abbc.rom` | `ab2a4798` | On the chip, both slots. Second protected range over `SI_DESC` + `SI_GBE`, `DT_DEVICE_FAST_SPI` back to `y`. |
+| 4 | 2026-08-16 | 26.06 (5cbf8afc) | `coreboot_t480_26.08.1-12-gbb9abbc.rom` | `ab2a4798` | On the chip, both slots. Second protected range over `SI_DESC` + `SI_GBE`, `DT_DEVICE_FAST_SPI` back to `y`. Superseded. |
+| 5 | 2026-08-17 | 26.06 (5cbf8afc) | `coreboot_t480_26.08.2-21-gaf13ab1-dirty.rom` | `1aab8061` | Capsule updates with an own trust anchor. A version-4 image accepts capsules signed with EDK2's published test certificates - that is what this locks out. |
 
 Checking what is on the chip: verify the firmware regions, not the whole
 image. `RW_MRC_CACHE`, `SMMSTORE` and `RW_NVRAM` hold runtime state and diverge
