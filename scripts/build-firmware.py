@@ -455,6 +455,13 @@ def main():
 
     verify(ROMS / out)
 
+    # The update artifacts belong to every ROM: the capsule the firmware
+    # applies and the cab fwupd consumes. Not for --plain (raw base image) and
+    # not for the reset ROM below - neither is something to update to.
+    if not args.plain:
+        print("\n[capsule] building update capsule + fwupd cab")
+        run([sys.executable, str(PROJECT / "scripts" / "make-capsule.py"), str(ROMS / out)])
+
     # Optional: additionally a reset ROM (same config + clear patch) from the SAME image.
     reset_out = None
     if reset_patch and not args.plain:
