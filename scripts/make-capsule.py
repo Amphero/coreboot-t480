@@ -38,9 +38,12 @@ away from the firmware that has to accept the result.
 
 import argparse
 import re
+import shutil
 import struct
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -122,6 +125,77 @@ def find_fmap(rom):
         sys.exit("ERROR: several valid flash maps at "
                  + ", ".join(hex(p) for p, _ in found) + " - refusing to guess.")
     return found[0][1]
+
+
+METAINFO = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="firmware">
+  <id>com.github.amphero.coreboot-t480.firmware</id>
+  <name>coreboot T480</name>
+  <summary>coreboot with EDK2 payload for the ThinkPad T480</summary>
+  <description>
+    <p>
+      Slot-only firmware update. The capsule carries both verified-boot
+      slots; the firmware writes the inactive one and arms a trial boot,
+      so a bad update falls back to the running slot on its own.
+    </p>
+  </description>
+  <provides>
+    <firmware type="flashed">{guid}</firmware>
+  </provides>
+  <url type="homepage">https://github.com/Amphero/custom-coreboot-t480</url>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <categories>
+    <category>X-System</category>
+  </categories>
+  <releases>
+    <release version="{version}" timestamp="{timestamp}">
+      <description>
+        <p>Built from {rom}.</p>
+      </description>
+    </release>
+  </releases>
+  <custom>
+    <value key="LVFS::UpdateProtocol">org.uefi.capsule</value>
+    <value key="LVFS::VersionFormat">number</value>
+  </custom>
+</component>
+"""
+
+
+def build_cab(cap, out, guid, version, rom_name):
+    """Pack the capsule into the cabinet archive fwupd consumes.
+
+    fwupdmgr does not take bare capsules: it wants a cab holding the payload
+    plus a MetaInfo naming the ESRT GUID and the release version. The version
+    is the decimal form of the FMP version, because that is how fwupd renders
+    the ESRT entry ("number"). gcab lives in the build image, not on the host
+    (Dockerfile.deps).
+    """
+    probe = subprocess.run(
+        ["podman", "run", "--rm", "--network=none", IMAGE, "sh", "-c", "command -v gcab"],
+        capture_output=True)
+    if probe.returncode != 0:
+        print("WARNING: no gcab in the build image - no .cab for fwupd was written.\n"
+              "         Rebuild the image once:  ./fetch.sh --rebuild-deps")
+        return None
+
+    stage = Path(tempfile.mkdtemp(prefix=".cabstage-", dir=out.parent))
+    try:
+        shutil.copy2(cap, stage / "firmware.cap")
+        (stage / "firmware.metainfo.xml").write_text(METAINFO.format(
+            guid=guid, version=version, timestamp=int(time.time()), rom=rom_name))
+        subprocess.run(
+            ["podman", "run", "--rm", "--network=none", "--user", "root",
+             "-v", f"{stage}:/stage:z", "-w", "/stage", IMAGE,
+             "gcab", "-cn", f"/stage/{out.name}",
+             "firmware.cap", "firmware.metainfo.xml"],
+            check=True)
+        shutil.move(stage / out.name, out)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return out
 
 
 def main():
@@ -207,12 +281,16 @@ def main():
     subprocess.run(cmd, check=True)
     payload_path.unlink()
 
+    cab = build_cab(out, out.with_suffix(".cab"), guid, version, rom_path.name)
+
     print(f"\n=== {out.name} ===")
     print(f"  slots  : A at {off_a:#x}, B at {off_b:#x}, {size_a:#x} bytes each")
     print(f"  payload: {len(payload)} bytes")
     print(f"  guid   : {guid}")
     print(f"  version: {version:#010x}  lsv {lsv:#010x}")
     print(f"  path   : {out}")
+    if cab:
+        print(f"  fwupd  : {cab}")
     return 0
 
 
