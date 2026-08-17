@@ -23,14 +23,14 @@ WHAT the firmware does with it: FmpDeviceSlotLib picks the half matching the
 inactive slot, writes it, and arms a trial boot. See
 patches/edk2/0003-fmp-device-slot-lib.patch.
 
-SIGNING: with no arguments this uses EDK2's own test certificates, which is
-what a firmware built with the stock FMP_DEVICE_PKCS7_PCD_INC trusts - the one
-that makes FmpDxe print "Warning test key is used" at every boot. Anyone can
-sign a capsule with them; they are published in the EDK2 tree. Fine for
-checking that the mechanism works, useless as a boundary. Pass --signer-cert,
---other-cert and --trusted-cert to use your own, and set
-CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT so the firmware trusts that root
-instead.
+SIGNING: with no arguments this uses the certificate set from keys/capsule/
+(scripts/gen-capsule-certs.sh), the same root the firmware embeds through
+CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT in config/defconfig. The
+--signer-cert/--other-cert/--trusted-cert options override it. Only when
+neither exists does this fall back to EDK2's published test certificates -
+the ones that make FmpDxe print "Warning test key is used" and that anyone
+can sign with. Fine for checking that the mechanism works, useless as a
+boundary.
 
 The GUID and the versions are read from config/defconfig, so they cannot drift
 away from the firmware that has to accept the result.
@@ -164,6 +164,16 @@ def main():
     own = (args.signer_cert, args.other_cert, args.trusted_cert)
     if any(own) and not all(own):
         sys.exit("ERROR: --signer-cert, --other-cert and --trusted-cert go together.")
+
+    # Without explicit options, use the set scripts/gen-capsule-certs.sh put
+    # into keys/capsule/ - the same root the firmware embeds via the
+    # defconfig, so what this signs is what that build accepts.
+    capdir = PROJECT / "keys" / "capsule"
+    if not any(own):
+        certs = (capdir / "signer.pem", capdir / "sub.pub.pem", capdir / "root.pub.pem")
+        if all(c.is_file() for c in certs):
+            own = tuple(str(c) for c in certs)
+            print(f"signing with keys/capsule/ ({certs[2].name} is the firmware's trust anchor)")
 
     if all(own):
         certs = [Path(c).resolve() for c in own]
