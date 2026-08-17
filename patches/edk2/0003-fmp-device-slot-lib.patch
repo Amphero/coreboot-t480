@@ -1,9 +1,9 @@
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
 new file mode 100644
-index 0000000..f1961ab
+index 0000000..a6d4d73
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
-@@ -0,0 +1,1025 @@
+@@ -0,0 +1,1050 @@
 +/** @file
 +  Firmware device services that update the inactive verified-boot slot.
 +
@@ -54,6 +54,7 @@ index 0000000..f1961ab
 +**/
 +
 +#include <PiDxe.h>
++#include <LastAttemptStatus.h>
 +#include <Guid/FirmwareInfoGuid.h>
 +#include <Guid/SystemResourceTable.h>
 +#include <Guid/FlashLayoutInfoGuid.h>
@@ -68,6 +69,23 @@ index 0000000..f1961ab
 +
 +#define FMAP_SIGNATURE  "__FMAP__"
 +#define FMAP_NAMELEN    32
++
++//
++// Detail for the ESRT.  FmpDxe passes a device library's LastAttemptStatus
++// through only when it falls in the range reserved for device libraries,
++// LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE and up; the
++// standard codes all lie below it and are flattened to ERROR_UNSUCCESSFUL
++// before they reach the OS.  One code per way this library can fail.
++//
++#define LAST_ATTEMPT_STATUS_SLOT_NO_LAYOUT        (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x0)
++#define LAST_ATTEMPT_STATUS_SLOT_IMAGE_SIZE       (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x1)
++#define LAST_ATTEMPT_STATUS_SLOT_NO_SMMSTORE      (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x2)
++#define LAST_ATTEMPT_STATUS_SLOT_NOT_ALIGNED      (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x3)
++#define LAST_ATTEMPT_STATUS_SLOT_OUT_OF_MEMORY    (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x4)
++#define LAST_ATTEMPT_STATUS_SLOT_ERASE_FAILED     (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x5)
++#define LAST_ATTEMPT_STATUS_SLOT_WRITE_FAILED     (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x6)
++#define LAST_ATTEMPT_STATUS_SLOT_NO_FLASH_ACCESS  (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x7)
++#define LAST_ATTEMPT_STATUS_SLOT_VBNV_FAILED      (LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE + 0x8)
 +
 +//
 +// The vboot non-volatile block in CMOS. coreboot reads it from
@@ -725,7 +743,7 @@ index 0000000..f1961ab
 +  Status = ResolveSlot ();
 +  if (EFI_ERROR (Status)) {
 +    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
-+    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_NO_LAYOUT;
 +    return EFI_SUCCESS;
 +  }
 +
@@ -743,17 +761,22 @@ index 0000000..f1961ab
 +      mSlotSize
 +      ));
 +    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
-+    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_INVALID_FORMAT;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_IMAGE_SIZE;
 +    return EFI_SUCCESS;
 +  }
 +
 +  Status = SmmStoreLibGetBlockSize (&BlockSize);
-+  if (EFI_ERROR (Status) || (BlockSize == 0) ||
-+      (mSlotOffset % BlockSize != 0) || (mSlotSize % BlockSize != 0))
-+  {
++  if (EFI_ERROR (Status) || (BlockSize == 0)) {
++    DEBUG ((DEBUG_ERROR, "%a: smmstore is not available: %r\n", __func__, Status));
++    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_NO_SMMSTORE;
++    return EFI_SUCCESS;
++  }
++
++  if ((mSlotOffset % BlockSize != 0) || (mSlotSize % BlockSize != 0)) {
 +    DEBUG ((DEBUG_ERROR, "%a: slot is not block aligned\n", __func__));
 +    *ImageUpdatable    = IMAGE_UPDATABLE_INVALID;
-+    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_NOT_ALIGNED;
 +    return EFI_SUCCESS;
 +  }
 +
@@ -839,13 +862,13 @@ index 0000000..f1961ab
 +
 +  Status = SmmStoreLibGetBlockSize (&BlockSize);
 +  if (EFI_ERROR (Status)) {
-+    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_NO_SMMSTORE;
 +    return Status;
 +  }
 +
 +  ReadBuffer = AllocatePool (BlockSize);
 +  if (ReadBuffer == NULL) {
-+    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_INSUFFICIENT_RESOURCES;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_OUT_OF_MEMORY;
 +    return EFI_OUT_OF_RESOURCES;
 +  }
 +
@@ -893,6 +916,7 @@ index 0000000..f1961ab
 +        (UINT32)(FirstBlock + Block),
 +        Status
 +        ));
++      *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_ERASE_FAILED;
 +      goto Failed;
 +    }
 +
@@ -906,6 +930,7 @@ index 0000000..f1961ab
 +        (UINT32)(FirstBlock + Block),
 +        Status
 +        ));
++      *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_WRITE_FAILED;
 +      goto Failed;
 +    }
 +  }
@@ -926,7 +951,7 @@ index 0000000..f1961ab
 +  //
 +  Status = ArmTrialBoot ();
 +  if (EFI_ERROR (Status)) {
-+    *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_VBNV_FAILED;
 +    return Status;
 +  }
 +
@@ -947,9 +972,9 @@ index 0000000..f1961ab
 +      "%a: no full flash access - is a capsule pending this boot?\n",
 +      __func__
 +      ));
++    *LastAttemptStatus = LAST_ATTEMPT_STATUS_SLOT_NO_FLASH_ACCESS;
 +  }
 +
-+  *LastAttemptStatus = LAST_ATTEMPT_STATUS_ERROR_UNSUCCESSFUL;
 +  return EFI_DEVICE_ERROR;
 +}
 +
