@@ -1,0 +1,291 @@
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index aa6ca41..77b44fb 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -221,6 +221,18 @@ struct cb_boot_media_params {
+ #define CB_TAG_VBOOT_WORKBUF  0x0034
+ #define CB_TAG_FMAP           0x0037
+ 
++// One record per cbmem entry; the table carries many of these.
++#define CB_TAG_CBMEM_ENTRY  0x0031
++struct cb_cbmem_entry {
++  UINT32    tag;
++  UINT32    size;
++  UINT64    address;
++  UINT32    entry_size;
++  UINT32    id;
++};
++
++#define CB_CBMEM_ID_TPM2_TCG_LOG  0x54504d32  // 'TPM2'
++
+ #define CB_TAG_FRAMEBUFFER  0x0012
+ struct cb_framebuffer {
+   UINT32    tag;
+diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
+index 24c6c66..c0bf8b0 100644
+--- a/UefiPayloadPkg/Include/Library/BlParseLib.h
++++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
+@@ -186,6 +186,23 @@ ParseFlashLayoutInfo (
+   OUT FLASH_LAYOUT_INFO  *LayoutInfo
+   );
+ 
++/**
++  Parse the bootloader's TPM event log location
++
++  @param  Address  Where the log lives in memory.
++  @param  Size     Size of the log area in bytes.
++
++  @retval RETURN_INVALID_PARAMETER  A parameter is NULL.
++  @retval RETURN_SUCCESS            Successfully parsed the location.
++  @retval RETURN_NOT_FOUND          The bootloader kept no TPM log.
++**/
++RETURN_STATUS
++EFIAPI
++ParseTpmLogInfo (
++  OUT UINT64  *Address,
++  OUT UINT32  *Size
++  );
++
+ /**
+   Parse update capsules passed in by bootloader
+ 
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index b62ec6b..4858360 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -882,6 +882,52 @@ ParseFlashLayoutInfo (
+   return RETURN_SUCCESS;
+ }
+ 
++RETURN_STATUS
++EFIAPI
++ParseTpmLogInfo (
++  OUT UINT64  *Address,
++  OUT UINT32  *Size
++  )
++{
++  struct cb_header       *Header;
++  struct cb_record       *Record;
++  struct cb_cbmem_entry  *Entry;
++  UINT8                  *TmpPtr;
++  UINTN                  Idx;
++
++  if ((Address == NULL) || (Size == NULL)) {
++    return RETURN_INVALID_PARAMETER;
++  }
++
++  Header = (struct cb_header *)GetParameterBase ();
++  if (Header == NULL) {
++    return RETURN_NOT_FOUND;
++  }
++
++  //
++  // FindCbTag () returns the first record of a tag, but the table carries one
++  // CB_TAG_CBMEM_ENTRY record per cbmem entry - walk them all.
++  //
++  TmpPtr = (UINT8 *)Header + Header->header_bytes;
++  for (Idx = 0; Idx < Header->table_entries; Idx++) {
++    Record = (struct cb_record *)TmpPtr;
++    if ((Record->tag == CB_TAG_CBMEM_ENTRY) &&
++        (Record->size >= sizeof (struct cb_cbmem_entry)))
++    {
++      Entry = (struct cb_cbmem_entry *)Record;
++      if (Entry->id == CB_CBMEM_ID_TPM2_TCG_LOG) {
++        *Address = Entry->address;
++        *Size    = Entry->entry_size;
++        return RETURN_SUCCESS;
++      }
++    }
++
++    TmpPtr += Record->size;
++  }
++
++  return RETURN_NOT_FOUND;
++}
++
+ RETURN_STATUS
+ EFIAPI
+ ParseFirmwareInfo (
+diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+index b260f76..54439f3 100644
+--- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
++++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+@@ -347,6 +347,24 @@ ParseFlashLayoutInfo (
+   return RETURN_NOT_FOUND;
+ }
+ 
++/**
++  Parse the bootloader's TPM event log location
++
++  @param  Address  Where the log lives in memory.
++  @param  Size     Size of the log area in bytes.
++
++  @retval RETURN_NOT_FOUND  Not supported for this bootloader.
++**/
++RETURN_STATUS
++EFIAPI
++ParseTpmLogInfo (
++  OUT UINT64  *Address,
++  OUT UINT32  *Size
++  )
++{
++  return RETURN_NOT_FOUND;
++}
++
+ /**
+   Parse update capsules passed in by bootloader
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index b4a4cbf..4e62f89 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -327,6 +327,117 @@ MemInfoCallback (
+   return RETURN_SUCCESS;
+ }
+ 
++//
++// coreboot's TPM2 log (src/security/tpm/tpm2_log_serialized.h). The entries
++// are TCG_PCR_EVENT2 structures with a single digest, reusable verbatim; the
++// vendor block carries the magic and the counts that make them safe to trust.
++//
++#pragma pack(1)
++typedef struct {
++  UINT32    PcrIndex;
++  UINT32    EventType;
++  UINT8     Digest[20];
++  UINT32    EventSize;
++  UINT8     Signature[16];
++  UINT32    PlatformClass;
++  UINT8     SpecVersionMinor;
++  UINT8     SpecVersionMajor;
++  UINT8     SpecErrata;
++  UINT8     UintnSize;
++  UINT32    NumberOfAlgorithms;
++  UINT16    DigestAlgId;
++  UINT16    DigestSize;
++  UINT8     VendorInfoSize;
++  UINT8     Reserved;
++  UINT8     VersionMajor;
++  UINT8     VersionMinor;
++  UINT32    Magic;
++  UINT16    MaxEntries;
++  UINT16    NumEntries;
++  UINT32    EntrySize;
++} CB_TPM2_LOG_HEADER;
++
++typedef struct {
++  UINT32    PcrIndex;
++  UINT32    EventType;
++  UINT32    DigestCount;
++  UINT16    DigestType;
++  UINT8     Digest[32];
++  UINT32    DataLength;
++  UINT8     Data[50];
++} CB_TPM2_LOG_ENTRY;
++#pragma pack()
++
++#define CB_TPM2_LOG_VI_MAGIC  0x32544243  // "CBT2"
++#define CB_TPM2_LOG_VI_MAJOR  1
++
++/**
++  Re-log the bootloader's TPM measurements as event hobs.
++
++  coreboot extends PCRs long before this payload runs, and Tcg2Dxe starts a
++  fresh event log that knows nothing about them - the exported log then fails
++  to reconstruct the PCRs. Tcg2Dxe already replays gTcgEvent2EntryHobGuid
++  hobs into its log before its own measurements, which is exactly the right
++  position, so all this has to do is translate the entries. The PCRs are not
++  touched - they already hold these digests.
++**/
++STATIC
++VOID
++BuildTpmEventLogHobs (
++  VOID
++  )
++{
++  RETURN_STATUS       Status;
++  UINT64              Address;
++  UINT32              Size;
++  CB_TPM2_LOG_HEADER  *Log;
++  CB_TPM2_LOG_ENTRY   *Entry;
++  VOID                *NewEntry;
++  UINTN               Index;
++
++  Status = ParseTpmLogInfo (&Address, &Size);
++  if (RETURN_ERROR (Status) || (Address == 0)) {
++    return;
++  }
++
++  if (Size < sizeof (CB_TPM2_LOG_HEADER)) {
++    return;
++  }
++
++  Log = (CB_TPM2_LOG_HEADER *)(UINTN)Address;
++
++  //
++  // The magic pins the layout; the counts and sizes bound the copy. A log in
++  // the bootloader's own non-TCG format has a different magic and is skipped.
++  //
++  if ((Log->Magic != CB_TPM2_LOG_VI_MAGIC) ||
++      (Log->VersionMajor != CB_TPM2_LOG_VI_MAJOR) ||
++      (Log->EntrySize != sizeof (CB_TPM2_LOG_ENTRY)) ||
++      (Log->NumEntries > Log->MaxEntries))
++  {
++    DEBUG ((DEBUG_INFO, "Bootloader TPM log not usable, magic %x\n", Log->Magic));
++    return;
++  }
++
++  if (sizeof (CB_TPM2_LOG_HEADER) + (UINT64)Log->NumEntries * sizeof (CB_TPM2_LOG_ENTRY) > Size) {
++    DEBUG ((DEBUG_ERROR, "Bootloader TPM log overruns its cbmem entry\n"));
++    return;
++  }
++
++  Entry = (CB_TPM2_LOG_ENTRY *)(Log + 1);
++  for (Index = 0; Index < Log->NumEntries; Index++, Entry++) {
++    NewEntry = BuildGuidHob (&gTcgEvent2EntryHobGuid, sizeof (*Entry));
++    ASSERT (NewEntry != NULL);
++    if (NewEntry == NULL) {
++      return;
++    }
++
++    CopyMem (NewEntry, Entry, sizeof (*Entry));
++  }
++
++  DEBUG ((DEBUG_INFO, "Re-logged %d bootloader TPM measurements\n", (UINT32)Log->NumEntries));
++}
++
+ /**
+   It will build HOBs based on information from bootloaders.
+ 
+@@ -436,6 +547,11 @@ BuildHobFromBl (
+       ));
+   }
+ 
++  //
++  // Hand the bootloader's TPM measurements to Tcg2Dxe
++  //
++  BuildTpmEventLogHobs ();
++
+   //
+   // Create guid hob for Tcg Physical Presence Interface
+   //
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+index 1e04c37..85dd18e 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+@@ -45,6 +45,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+   UefiCpuPkg/UefiCpuPkg.dec
+   UefiPayloadPkg/UefiPayloadPkg.dec
++  SecurityPkg/SecurityPkg.dec
+ 
+ [LibraryClasses]
+   BaseMemoryLib
+@@ -72,6 +73,7 @@
+   gUniversalPayloadSerialPortInfoGuid
+   gEfiFirmwareInfoHobGuid
+   gEfiFlashLayoutInfoHobGuid
++  gTcgEvent2EntryHobGuid
+   gEfiSmmStoreInfoHobGuid
+   gEfiTcgPhysicalPresenceInfoHobGuid
+ 

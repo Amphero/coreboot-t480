@@ -1,0 +1,89 @@
+diff --git a/src/security/tpm/tspi/crtm.c b/src/security/tpm/tspi/crtm.c
+index 899b73f..a40cd06 100644
+--- a/src/security/tpm/tspi/crtm.c
++++ b/src/security/tpm/tspi/crtm.c
+@@ -125,21 +125,32 @@ static bool is_runtime_data(const char *name)
+ 	return !strcmp(allowlist, name);
+ }
+ 
++tpm_result_t tspi_ensure_crtm(void)
++{
++	tpm_result_t rc;
++
++	if (tpm_log_available())
++		return TPM_SUCCESS;
++
++	rc = tspi_init_crtm();
++	if (rc) {
++		printk(BIOS_WARNING, "Initializing CRTM failed!\n");
++		return rc;
++	}
++	printk(BIOS_DEBUG, "CRTM initialized.\n");
++
++	return TPM_SUCCESS;
++}
++
+ tpm_result_t tspi_cbfs_measurement(const char *name, uint32_t type, const struct vb2_hash *hash)
+ {
+ 	uint32_t pcr_index;
+ 	tpm_result_t rc = TPM_SUCCESS;
+ 	char tpm_log_metadata[TPM_CB_LOG_PCR_HASH_NAME];
+ 
+-	if (!tpm_log_available()) {
+-		rc = tspi_init_crtm();
+-		if (rc) {
+-			printk(BIOS_WARNING,
+-			       "Initializing CRTM failed!\n");
+-			return rc;
+-		}
+-		printk(BIOS_DEBUG, "CRTM initialized.\n");
+-	}
++	rc = tspi_ensure_crtm();
++	if (rc)
++		return rc;
+ 
+ 	switch (type) {
+ 	case CBFS_TYPE_MRC_CACHE:
+diff --git a/src/security/tpm/tspi/crtm.h b/src/security/tpm/tspi/crtm.h
+index 69043e2..e3fae9c 100644
+--- a/src/security/tpm/tspi/crtm.h
++++ b/src/security/tpm/tspi/crtm.h
+@@ -41,6 +41,14 @@
+  */
+ tpm_result_t tspi_measure_cache_to_pcr(void);
+ 
++/**
++ * Initialize the CRTM unless that already happened. Code that logs TPM
++ * measurements before the first CBFS measurement of its stage has to call
++ * this first: initialization clears the pre-RAM log, and the first CBFS
++ * measurement triggers it lazily, wiping every entry logged before it.
++ */
++tpm_result_t tspi_ensure_crtm(void);
++
+ /**
+  * Extend a measurement hash taken for a CBFS file into the appropriate PCR.
+  */
+diff --git a/src/security/vboot/vboot_logic.c b/src/security/vboot/vboot_logic.c
+index f98b083..534f812 100644
+--- a/src/security/vboot/vboot_logic.c
++++ b/src/security/vboot/vboot_logic.c
+@@ -187,6 +187,19 @@ static vb2_error_t hash_body(struct vb2_context *ctx,
+ static tpm_result_t extend_pcrs(struct vb2_context *ctx)
+ {
+ 	tpm_result_t rc;
++
++	/*
++	 * The first CBFS measurement initializes the CRTM lazily, and that
++	 * initialization clears the pre-RAM log. With vboot starting in the
++	 * bootblock it happens after this function, throwing away the three
++	 * entries logged here. Initialize the CRTM first instead.
++	 */
++	if (CONFIG(TPM_MEASURED_BOOT)) {
++		rc = tspi_ensure_crtm();
++		if (rc)
++			return rc;
++	}
++
+ 	rc = vboot_extend_pcr(ctx, CONFIG_PCR_BOOT_MODE, BOOT_MODE_PCR);
+ 	if (rc)
+ 		return rc;

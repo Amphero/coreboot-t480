@@ -1,0 +1,51 @@
+diff --git a/src/acpi/acpi.c b/src/acpi/acpi.c
+index 0288fb2..e5e549f 100644
+--- a/src/acpi/acpi.c
++++ b/src/acpi/acpi.c
+@@ -272,15 +272,21 @@ static void acpi_create_tpm2(acpi_header_t *header, void *unused)
+ 			return;
+ 
+ 	acpi_tpm2_t *tpm2 = (acpi_tpm2_t *)header;
+-	u32 tpm2_log_len;
++	u32 tpm2_log_len = 0;
++	void *lasa = NULL;
+ 
+ 	/*
+ 	 * Some payloads like SeaBIOS depend on log area to use TPM2.
+ 	 * Get the memory size and address of TPM2 log area or initialize it.
++	 * Omitted with TPM2_ACPI_NO_LOG_AREA: the OS prefers this reference
++	 * over the EFI event log, and a payload that re-publishes the
++	 * measurements needs the EFI log to win.
+ 	 */
+-	void *lasa = get_tpm2_log(&tpm2_log_len);
+-	if (!lasa)
+-		tpm2_log_len = 0;
++	if (!CONFIG(TPM2_ACPI_NO_LOG_AREA)) {
++		lasa = get_tpm2_log(&tpm2_log_len);
++		if (!lasa)
++			tpm2_log_len = 0;
++	}
+ 
+ 	if (CONFIG(AMD_CRB_FTPM) && crb_tpm_is_active()) {
+ 		control_area = crb_tpm_base_address() + 0x40;
+diff --git a/src/security/tpm/Kconfig b/src/security/tpm/Kconfig
+index a53163d..58b0402 100644
+--- a/src/security/tpm/Kconfig
++++ b/src/security/tpm/Kconfig
+@@ -170,6 +170,16 @@ config PCR_RUNTIME_DATA
+ 	int
+ 	default 3
+ 
++config TPM2_ACPI_NO_LOG_AREA
++	bool "Leave the event log out of the TPM2 ACPI table"
++	depends on TPM2 && TPM_MEASURED_BOOT && HAVE_ACPI_TABLES
++	help
++	  Do not fill LASA/LAML in the TPM2 ACPI table. Linux reads the log
++	  the ACPI table points at in preference to the EFI event log, so a
++	  payload that re-publishes the measurements in its own TCG2 log
++	  needs the ACPI reference gone for the complete log to win. The log
++	  itself stays in CBMEM either way (cbmem -L).
++
+ endmenu # Trusted Platform Module (tpm)
+ 
+ config TPM_SETUP_HIBERNATE_ON_ERR
