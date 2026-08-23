@@ -287,16 +287,20 @@ region an update writes.
 
 One-time host setup. Local cabs carry no LVFS signature, fwupd runs this
 machine on two batteries whose combined level trips its power check, and
-with your own Secure Boot keys there is no shim - three config lines and one
+with your own Secure Boot keys there is no shim - four config lines and one
 signature deal with all of it. Capsule authenticity does not depend on any
 of this: the firmware verifies the PKCS#7 chain against the root in
-`keys/capsule/` and refuses anything else.
+`keys/capsule/` and refuses anything else. `DisabledPlugins=mtd` takes the
+Fast SPI controller out of fwupd's view: the MTD device reports writable
+although the protected ranges refuse every write (#7), and updates go
+through the capsule path, not the mtd plugin.
 
 ```bash
 sudo tee -a /etc/fwupd/fwupd.conf >/dev/null <<'EOF'
 [fwupd]
 OnlyTrusted=false
 IgnorePower=true
+DisabledPlugins=mtd
 
 [uefi_capsule]
 DisableShimForSecureBoot=true
