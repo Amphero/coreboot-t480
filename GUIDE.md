@@ -287,26 +287,37 @@ region an update writes.
 
 One-time host setup. Local cabs carry no LVFS signature, fwupd runs this
 machine on two batteries whose combined level trips its power check, and
-with your own Secure Boot keys there is no shim - four config lines and one
+with your own Secure Boot keys there is no shim - three config lines and one
 signature deal with all of it. Capsule authenticity does not depend on any
 of this: the firmware verifies the PKCS#7 chain against the root in
-`keys/capsule/` and refuses anything else. `DisabledPlugins=mtd` takes the
-Fast SPI controller out of fwupd's view: the MTD device reports writable
-although the protected ranges refuse every write (#7), and updates go
-through the capsule path, not the mtd plugin.
+`keys/capsule/` and refuses anything else.
 
 ```bash
 sudo tee -a /etc/fwupd/fwupd.conf >/dev/null <<'EOF'
 [fwupd]
 OnlyTrusted=false
 IgnorePower=true
-DisabledPlugins=mtd
 
 [uefi_capsule]
 DisableShimForSecureBoot=true
 EOF
 sudo sbctl sign -o /usr/lib/fwupd/efi/fwupdx64.efi.signed /usr/lib/fwupd/efi/fwupdx64.efi
 sudo systemctl restart fwupd
+```
+
+The MTD pair of HSI-2 checks (#7) is host setup too. fwupd asks the flash
+chip for its block-protection bits (`MEMISLOCKED`), and those cannot be set
+here without locking the SMM capsule writer out along with everything else -
+the protection is the PCH protected ranges plus SMM BWP. The honest state is
+no MTD device at all; flashrom's internal path talks PCI directly and does
+not use it. Disabling the mtd *plugin* instead would taint the daemon
+(gnome-control-center flags it).
+
+```bash
+sudo tee /etc/modprobe.d/spi-intel-blacklist.conf >/dev/null <<'EOF'
+blacklist spi_intel_pci
+blacklist spi_intel
+EOF
 ```
 
 The update itself:
