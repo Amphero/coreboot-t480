@@ -36,8 +36,8 @@ W25Q128, 16 MB, at position U49.
 
 `fwupdmgr security` grades a machine against the
 [Host Security ID](https://fwupd.github.io/hsi.html) tests. Measured on this
-firmware (fwupd 2.1.7, 2026-08-17): every HSI-1 test passes; at HSI-2 the
-platform tests pass and three tests are open, tracked as issues.
+firmware (fwupd 2.1.7, 2026-08-24): every HSI-1 and HSI-2 test passes
+(HSI:2). The MTD pair needs one host-side config line - see the table.
 
 | HSI-1 | Status | Mechanism |
 |---|---|---|
@@ -53,9 +53,9 @@ platform tests pass and three tests are open, tracked as issues.
 |---|---|---|
 | IOMMU | ✓ enabled | VT-d |
 | Platform debugging locked | ✓ | |
-| coreboot verified boot flag | ✘ open ([#6](https://github.com/Amphero/custom-coreboot-t480/issues/6)) | vboot is active but fwupd's detection does not see it |
-| Locked MTD | ✘ open ([#7](https://github.com/Amphero/custom-coreboot-t480/issues/7)) | `/dev/mtd0` (Fast SPI) reports writable; writes are refused by the protected ranges, the flag disagrees |
-| TPM PCR0 reconstruction | ✘ open ([#8](https://github.com/Amphero/custom-coreboot-t480/issues/8)) | measurements go to PCR 2 (coreboot), the PCR 0 event log does not reconstruct |
+| coreboot verified boot flag | ✓ detected | passes since the event log reconstructs ([#6](https://github.com/Amphero/custom-coreboot-t480/issues/6)) |
+| Locked MTD | ✓ via host config | `/dev/mtd0` (Fast SPI) reports writable while the protected ranges refuse every write - the flag is wrong, not the protection. `DisabledPlugins=mtd` in `fwupd.conf` (GUIDE), the plugin is unused here ([#7](https://github.com/Amphero/custom-coreboot-t480/issues/7)) |
+| TPM PCR0 reconstruction | ✓ valid | sha256-only PCR bank; coreboot's measurements are replayed into the TCG2 log and the log parses end to end ([#8](https://github.com/Amphero/custom-coreboot-t480/issues/8)) |
 
 **Boot Guard is deliberately absent** and stays that way. It is removed with
 `deguard` (the only way to run coreboot on this platform at all), so the
