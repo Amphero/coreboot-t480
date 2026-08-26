@@ -274,35 +274,6 @@ Two version numbers, two jobs:
   unrecorded values. Full mechanics, pitfalls and the ways back:
   [rollback protection](#rollback-protection).
 
-### Cleaning up
-
-A full build cycle leaves four things on disk; together they run to some
-50 GB. All of it is reproducible - the only artifacts worth keeping are the
-`.rom`/`.cap`/`.cab` of the deployed version and everything under `keys/`
-(which no cleanup below touches).
-
-| What | Where | Size | Comes back via |
-|------|-------|------|----------------|
-| fetched sources | `sources/` | ~11 GB | `./fetch.sh` (network) |
-| build environment | podman image `coreboot-t480-deps` | ~5 GB | `./fetch.sh` |
-| build image | podman image `coreboot-t480` (+ `debian` base) | ~13 GB | `make build` |
-| dangling layers | untagged podman images, mostly from aborted builds | up to tens of GB | - |
-| old ROMs | `roms/coreboot_t480_*` | ~33 MB each | rebuild of that tag |
-
-```bash
-rm roms/coreboot_t480_<old-version>*                 # keep the deployed set
-rm -rf sources/
-podman rmi coreboot-t480 coreboot-t480-deps debian
-podman image prune                                   # dangling layers
-podman rmi -a -f                                     # or: simply drop every image
-```
-
-Keeping `sources/` and the two images skips the re-fetch and most of the
-compile on the next build; dropping everything costs one `./fetch.sh` plus
-a full toolchain build (~1-2 h). Aborted builds (power loss, Ctrl-C) leave
-their half-finished layers behind as untagged images - `podman image prune`
-after an aborted build is always safe.
-
 ## Updating
 
 Four paths. The first is the normal one; the machine boots from the slots,
@@ -1059,16 +1030,36 @@ in RAM: it survives a warm `reboot`, not a poweroff.
 
 ## Cleaning up
 
+A full build cycle leaves four things on disk; together they run to some
+50 GB. All of it is reproducible - the only artifacts worth keeping are the
+`.rom`/`.cap`/`.cab` of the deployed version and everything under `keys/`
+(which no cleanup below touches).
+
+| What | Where | Size | Comes back via |
+|------|-------|------|----------------|
+| fetched sources | `sources/` | ~11 GB | `./fetch.sh` (network) |
+| build environment | podman image `coreboot-t480-deps` | ~5 GB | `./fetch.sh` |
+| build image | podman image `coreboot-t480` (+ `debian` base) | ~13 GB | `make build` |
+| dangling layers | untagged podman images, mostly from aborted builds | up to tens of GB | - |
+| old ROMs | `roms/coreboot_t480_*` | ~33 MB each | rebuild of that tag |
+
 ```bash
-podman image prune -a -f
+rm roms/coreboot_t480_<old-version>*                 # keep the deployed set
 rm -rf sources/
+podman rmi coreboot-t480 coreboot-t480-deps debian
+podman image prune                                   # dangling layers
+podman rmi -a -f                                     # or: simply drop every image
 ```
 
 The versions are in `config/versions.lock`, tracked, so everything can be
-fetched and rebuilt later. `sources/` only saves the download.
+fetched and rebuilt later - `sources/` only saves the download. Keeping the
+two images skips most of the compile on the next build; dropping everything
+costs one `./fetch.sh` plus a full toolchain build (~1-2 h). Aborted builds
+(power loss, Ctrl-C) leave their half-finished layers behind as untagged
+images - `podman image prune` after an aborted build is always safe.
 
-To also keep the built toolchain, save the image itself - that turns a
-30-60 minute rebuild into a `podman load`:
+To keep the built toolchain without the image store, save the image itself -
+that turns the rebuild into a `podman load`:
 
 ```bash
 podman save coreboot-t480 | zstd -T0 > coreboot-t480.tar.zst
