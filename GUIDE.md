@@ -323,9 +323,22 @@ EOF
 The update itself:
 
 ```bash
+sudo systemctl restart fwupd                           # required, see below
 fwupdmgr install roms/coreboot_t480_<version>.cab      # same version: --allow-reinstall
 reboot
 ```
+
+The restart is not superstition. The ESP on this machine is a gpt-auto
+automount on `/efi` that idle-unmounts after 120 s, so at install time it
+is usually not mounted; fwupd then asks UDisks to mount it, the request
+itself touches `/efi`, the automount wins the race and UDisks fails the
+install with `UDisks2.Error.AlreadyMounted`. A daemon started while `/efi`
+is mounted binds to the existing mountpoint and never calls mount - and
+the restart's own ESP probing mounts it, which is why install-right-after-
+restart works every time. The alternative is pinning the automount
+(`TimeoutIdleSec=infinity` drop-in for `efi.automount`) so the ESP stays
+mounted permanently; an unmounted ESP is the safer resting state, so this
+setup keeps the restart instead.
 
 What happens: fwupd stages the capsule and sets `BootNext` to its EFI
 binary; the reboot runs it once, it hands the capsule to `UpdateCapsule()`
