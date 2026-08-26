@@ -141,17 +141,25 @@ actual fan curve:
 | Level | HFSP | on at | off at | measured RPM | audible |
 |-------|------|-------|--------|--------------|---------|
 | 4 | `0x80` | - | - | 0 cold, ~2870 after load | EC automatic, mostly silent |
-| 3 | `0x02` | 58 C | 50 C | 2866 | soft hum |
-| 2 | `0x04` | 68 C | 60 C | 3155 | audible |
-| 1 | `0x05` | 76 C | 68 C | 3573 | clearly audible |
-| 0 | `0x07` | 85 C | 77 C | 3994 | loud, but still regulated |
+| 3 | `0x02` | 54 C | 46 C | 2866 | soft hum |
+| 2 | `0x04` | 64 C | 56 C | 3155 | audible |
+| 1 | `0x05` | 72 C | 64 C | 3573 | clearly audible |
+| 0 | `0x07` | 80 C | 72 C | 3994 | loud, but still regulated |
 
-`\TPSV` (90 C, passive throttling) and `\TCRT` (100 C, critical shutdown)
-are untouched - they are the safety net above the curve, not part of it.
+`\TPSV` (90 C, passive throttling) is untouched. `\TCRT` moves from 100
+to 110: 100 is exactly the CPU's throttle point, so while thermal
+management works the EC sensor cannot exceed it - the trip did nothing
+until a sustained all-core build outran the fan escalation (the zone is
+polled every 10 s, and the top step used to engage at 85 C only), and
+then it answered a temperature the silicon handles by throttling with a
+hardware-protection poweroff (2026-08-26). At 110 it fires only when
+throttling itself has failed, which is what `_CRT` is for. The ON
+thresholds moved down 5-7 K for the same incident: the top step has to
+be at full speed before the passive trip, not racing it.
 
 **Tuning:** edit the values in the `thermal.h` hunk of this patch, rebuild
 with `--rebuild-base`, reflash. Keep each ON above its OFF (hysteresis),
-keep the order monotonic, and keep everything well below `\TCRT`.
+keep the order monotonic, and keep everything well below `\TPSV`.
 
 **Why level 1 is `0x05` and not `0x06`.** All eight HFSP levels were measured
 on a 20L5 - each held 60 s at idle through `thinkpad_acpi fan_control=1`,
@@ -167,7 +175,7 @@ already running since 76 C: a dead step. At the same time levels 2 and 1 were
 834 RPM apart, by far the largest jump and the one that is actually audible.
 `0x05` closes that hole - the four steps now sit at 2866 / 3155 / 3573 / 3994
 RPM, i.e. 289 / 418 / 421 RPM apart, and `_AC0` becomes a real escalation.
-The trade-off is deliberate: between 76 and 85 C the machine now runs quieter
+The trade-off is deliberate: between 72 and 80 C the machine now runs quieter
 and correspondingly warmer.
 
 Verified on a 20L5: the hysteresis steps back down cleanly after the load ends
@@ -191,7 +199,7 @@ Controller" form) without rebuilding. Four profiles:
 | # | Profile | Idea | _AC0.._AC3 ON thresholds |
 |---|---------|------|--------------------------|
 | 0 | Quiet | quieter, runs hotter | 88 / 80 / 72 / 64 C |
-| 1 | Balanced (default) | the verified curve from 0012 | 85 / 76 / 68 / 58 C |
+| 1 | Balanced (default) | the curve from 0012 | 80 / 72 / 64 / 54 C |
 | 2 | Performance | louder, runs cooler | 78 / 68 / 58 / 48 C |
 | 3 | EC only | firmware keeps its hands off the fan | 96 / 95 / 94 / 93 C |
 
@@ -214,11 +222,11 @@ Three details that must survive future edits:
    garbage - an out-of-range `Index()` into the package would hang the
    thermal zone.
 3. **"EC only" does not disable the trips.** All four sit 1 K staggered
-   just below `\TCRT` (100 C): in practice the EC curve rules alone
-   (the mode for `thinkfan`/`zcfan` users), but if the EC curve ever
-   fails there is still an ACPI escalation before the critical shutdown.
-   Setting the trips above `_CRT` or removing them would delete that
-   last net - don't.
+   just below the CPU's throttle point (100 C): in practice the EC curve
+   rules alone (the mode for `thinkfan`/`zcfan` users), but if the EC
+   curve ever fails there is still an ACPI escalation before throttling
+   and the critical trip (`\TCRT`, 110). Setting the trips above `_CRT`
+   or removing them would delete that last net - don't.
 
 ## base/0030-t480-lenovo-bios-version-for-thinkpad_acpi.patch
 
