@@ -101,6 +101,7 @@ original flash; both are impossible later.
 **Updates** - through fwupd, from the running system:
 
 ```bash
+sudo systemctl restart fwupd     # required on this machine, see GUIDE
 fwupdmgr install roms/coreboot_t480_<version>.cab
 reboot
 ```

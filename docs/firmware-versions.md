@@ -77,7 +77,7 @@ which this firmware does not use - nothing ever sets that field.
 
 **Once it has followed, every older image stops booting**, including the ROMs in
 `roms/` and any backup. That is the mechanism working as intended, not a
-failure - see "Rollback protection" in the README for the two ways back.
+failure - see "Rollback protection" in GUIDE.md for the ways back.
 
 **That only holds with `CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` off.**
 coreboot sets it by default, and it makes vboot skip the comparison while the
