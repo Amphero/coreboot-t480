@@ -1,0 +1,148 @@
+diff --git a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
+index bb479c1..49a53ad 100644
+--- a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
++++ b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
+@@ -12,10 +12,9 @@
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiLib.h>
+ #include <Library/TpmPlatformHierarchyLib.h>
+-#include <Protocol/DxeSmmReadyToLock.h>
+ 
+ /**
+-   This callback function will run at the SmmReadyToLock event.
++   This callback function will run at the ReadyToBoot event.
+ 
+    Configuration of the TPM's Platform Hierarchy Authorization Value (platformAuth)
+    and Platform Hierarchy Authorization Policy (platformPolicy) can be defined through this function.
+@@ -25,35 +24,18 @@
+  **/
+ VOID
+ EFIAPI
+-SmmReadyToLockEventCallBack (
++ReadyToBootEventCallBack (
+   IN EFI_EVENT  Event,
+   IN VOID       *Context
+   )
+ {
+-  EFI_STATUS  Status;
+-  VOID        *Interface;
+-
+-  //
+-  // Try to locate it because EfiCreateProtocolNotifyEvent will trigger it once when registration.
+-  // Just return if it is not found.
+-  //
+-  Status = gBS->LocateProtocol (
+-                  &gEfiDxeSmmReadyToLockProtocolGuid,
+-                  NULL,
+-                  &Interface
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "Failed to locate gEfiDxeSmmReadyToLockProtocolGuid.\n"));
+-    return;
+-  }
+-
+   ConfigureTpmPlatformHierarchy ();
+ 
+   gBS->CloseEvent (Event);
+ }
+ 
+ /**
+-   The driver's entry point. Will register a function for callback during SmmReadyToLock event to
++   The driver's entry point. Will register a function for callback during ReadyToBoot event to
+    configure the TPM's platform authorization.
+ 
+    @param[in] ImageHandle  The firmware allocated handle for the EFI image.
+@@ -69,19 +51,27 @@ Tcg2PlatformDxeEntryPoint (
+   IN    EFI_SYSTEM_TABLE  *SystemTable
+   )
+ {
+-  VOID       *Registration;
+-  EFI_EVENT  Event;
++  EFI_STATUS  Status;
++  EFI_EVENT   Event;
+ 
+-  Event = EfiCreateProtocolNotifyEvent (
+-            &gEfiDxeSmmReadyToLockProtocolGuid,
+-            TPL_CALLBACK,
+-            SmmReadyToLockEventCallBack,
+-            NULL,
+-            &Registration
+-            );
++  //
++  // Upstream arms this at SmmReadyToLock, but this payload's BDS installs
++  // that protocol in PlatformBootManagerBeforeConsole - before AfterConsole
++  // has processed the pending TPM physical presence requests, which
++  // authorize with the still-empty platformAuth (a clear request from the
++  // OS would fail against a protected hierarchy). Ready-to-boot is the
++  // last point before control transfer: PPI processing and Tcg2Dxe's
++  // entry-point bank reallocation are done, the OS has not run.
++  //
++  Status = EfiCreateEventReadyToBootEx (
++             TPL_CALLBACK,
++             ReadyToBootEventCallBack,
++             NULL,
++             &Event
++             );
+ 
+-  if (Event == NULL) {
+-    DEBUG ((DEBUG_ERROR, "Failed to create protocol notify event for SmmReadyToLockProtocol.\n"));
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "Failed to create ready-to-boot event.\n"));
+     return EFI_DEVICE_ERROR;
+   }
+ 
+diff --git a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
+index 635302f..9344b3a 100644
+--- a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
++++ b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
+@@ -36,8 +36,5 @@
+ [Sources]
+   Tcg2PlatformDxe.c
+ 
+-[Protocols]
+-  gEfiDxeSmmReadyToLockProtocolGuid             ## SOMETIMES_CONSUMES ## NOTIFY
+-
+ [Depex]
+   gEfiTcg2ProtocolGuid
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index 4e9b9c6..985aff8 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -1107,6 +1107,11 @@
+   ## to this mask when they differ.
+   gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x00000002
+   gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
++  ## Tcg2PlatformDxe: disable the platform hierarchy at ready-to-boot
++  ## instead of randomizing platformAuth - deterministic, and it does not
++  ## depend on the quality of the RNG (RandomizePlatformAuth ignores the
++  ## entropy status and would fall back to stack garbage).
++  gEfiSecurityPkgTokenSpaceGuid.PcdRandomizePlatformHierarchy|FALSE
+ 
+ !include NetworkPkg/NetworkDynamicPcds.dsc.inc
+ 
+@@ -1578,6 +1583,13 @@
+ #    Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf //Modif H.E Avoid Hang Tcg2config
+     Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
+   }
++  # Shuts the TPM platform hierarchy before the OS takes over; see
++  # PcdRandomizePlatformHierarchy above.
++  SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf {
++    <LibraryClasses>
++      Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
++      TpmPlatformHierarchyLib|SecurityPkg/Library/PeiDxeTpmPlatformHierarchyLib/PeiDxeTpmPlatformHierarchyLib.inf
++  }
+   SecurityPkg/Tcg/TcgDxe/TcgDxe.inf {
+     <LibraryClasses>
+       Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibDTpm/Tpm12DeviceLibDTpm.inf
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index 2b96cb9..123133a 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -441,6 +441,7 @@ INF  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
+ INF  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
+ INF  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
+ INF  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
++INF  SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
+ !endif
+ 
+ #
