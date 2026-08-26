@@ -1,22 +1,23 @@
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index b7568bb..ca8cc08 100644
+index f8431d0..805f578 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -60,6 +60,26 @@
-   DEFINE CAPSULE_SUPPORT              = FALSE
+@@ -63,6 +63,27 @@
    DEFINE CAPSULE_MAIN_FW_GUID         =
+   DEFINE CAPSULE_EMBED_FMP_DXE        = FALSE
  
 +  #
 +  # Slot-only capsule updates.
 +  #
-+  # CAPSULE_SUPPORT builds FmpDxe to be embedded into a capsule, where it
-+  # updates the whole flash chip and therefore needs every flash protection
-+  # lifted.  This one keeps FmpDxe in the firmware instead and pairs it with
++  # CAPSULE_SUPPORT builds FmpDxe to update the whole flash chip - embedded
++  # into the capsule or, with CAPSULE_EMBED_FMP_DXE=FALSE, in the firmware
++  # with FmpDeviceSmmLib - and therefore needs every flash protection
++  # lifted.  This one keeps FmpDxe in the firmware and pairs it with
 +  # FmpDeviceSlotLib, which writes only the inactive vboot slot - the one
 +  # region the protected ranges leave writable anyway.
 +  #
-+  # The two are mutually exclusive: they disagree about where FmpDxe lives and
-+  # what it is allowed to touch.
++  # The two are mutually exclusive: they disagree about what FmpDxe is
++  # allowed to touch.
 +  #
 +  DEFINE SLOT_CAPSULE_SUPPORT         = FALSE
 +
@@ -29,35 +30,31 @@ index b7568bb..ca8cc08 100644
    #
    # Crypto Support
    #
-@@ -372,9 +392,18 @@
+@@ -379,12 +400,22 @@
    UefiUsbLib|MdePkg/Library/UefiUsbLib/UefiUsbLib.inf
    UefiScsiLib|MdePkg/Library/UefiScsiLib/UefiScsiLib.inf
    OemHookStatusCodeLib|MdeModulePkg/Library/OemHookStatusCodeLibNull/OemHookStatusCodeLibNull.inf
--  !if $(CAPSULE_SUPPORT) == TRUE
-+  !if $(CAPSULE_SUPPORT) == TRUE || $(SLOT_CAPSULE_SUPPORT) == TRUE
+-!if $(CAPSULE_SUPPORT) == TRUE
++!if $(CAPSULE_SUPPORT) == TRUE || $(SLOT_CAPSULE_SUPPORT) == TRUE
    CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.inf
-   BmpSupportLib|MdeModulePkg/Library/BaseBmpSupportLib/BaseBmpSupportLib.inf
-+    !if $(SLOT_CAPSULE_SUPPORT) == TRUE
-+    # Always text here, even with a bootsplash.  The capsule is applied from
-+    # the first ProcessCapsules() call, which runs before the console and the
-+    # GOP exist, so the graphics library's first progress call fails there -
-+    # and DxeCapsuleLib answers a failed first call by handing FmpDxe a NULL
-+    # progress callback, which it rejects (PROGRESS_CALLBACK_ERROR, 0x1001).
-+    # The text library prints into the void and succeeds.
-+    DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibText/DisplayUpdateProgressLibText.inf
-+    !else
-     !if $(BOOTSPLASH_IMAGE)
-     # Note, however, that DisplayUpdateProgressLibGraphics aborts firmware
-     # update if GOP is missing, so text progress works in more environments.
-@@ -382,6 +411,7 @@
-     !else
-     DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibText/DisplayUpdateProgressLibText.inf
-     !endif
-+    !endif
++  !if $(SLOT_CAPSULE_SUPPORT) == TRUE
++  # Always text here, even with a bootsplash.  A capsule can be applied from
++  # a ProcessCapsules() call that runs before a GOP exists; the graphics
++  # library's first progress call fails there, and DxeCapsuleLib answers a
++  # failed first call by handing FmpDxe a NULL progress callback, which it
++  # rejects (PROGRESS_CALLBACK_ERROR, 0x1001).  The text library prints into
++  # the void and succeeds.
++  DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibText/DisplayUpdateProgressLibText.inf
++  !else
+   # Use the graphics implementation for update progress.
+   # BOOT_ON_FLASH_UPDATE initializes the graphics console before
+   # processing capsules.
+   DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibGraphics/DisplayUpdateProgressLibGraphics.inf
++  !endif
    # If there are no specific checks to do, null-library suffices
    CapsuleUpdatePolicyLib|FmpDevicePkg/Library/CapsuleUpdatePolicyLibNull/CapsuleUpdatePolicyLibNull.inf
    FmpAuthenticationLib|SecurityPkg/Library/FmpAuthenticationLibPkcs7/FmpAuthenticationLibPkcs7.inf
-@@ -679,7 +709,7 @@
+@@ -682,7 +713,7 @@
  !if $(PERFORMANCE_MEASUREMENT_ENABLE)
    PerformanceLib|MdeModulePkg/Library/DxePerformanceLib/DxePerformanceLib.inf
  !endif
@@ -66,7 +63,7 @@ index b7568bb..ca8cc08 100644
    CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeRuntimeCapsuleLib.inf
  !endif
  
-@@ -753,7 +783,11 @@
+@@ -756,7 +787,11 @@
    gEfiMdeModulePkgTokenSpaceGuid.PcdHiiOsRuntimeSupport|FALSE
    gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE
    ## Whether capsules are allowed to persist across reset.
@@ -78,7 +75,7 @@ index b7568bb..ca8cc08 100644
  
  
    #
-@@ -821,7 +855,11 @@
+@@ -824,7 +859,11 @@
    gEfiMdePkgTokenSpaceGuid.PcdMaximumUnicodeStringLength|1800000
  
    ## Whether FMP capsules are enabled.
@@ -87,10 +84,10 @@ index b7568bb..ca8cc08 100644
 +!else
    gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleFmpSupport|$(CAPSULE_SUPPORT)
 +!endif
+   ## Whether embedded drivers in FMP capsules are supported (opt-in).
+   gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSupport|FALSE
  
- !if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
-   ## User Authentication PCD
-@@ -1256,6 +1294,20 @@
+@@ -1260,6 +1299,20 @@
    MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  !endif
  
@@ -112,10 +109,10 @@ index b7568bb..ca8cc08 100644
    MdeModulePkg/Universal/Metronome/Metronome.inf
    MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index 4cdae5a..5104318 100644
+index e96c486..a1b7666 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -538,6 +538,12 @@ INF ShellPkg/Application/Shell/Shell.inf
+@@ -549,6 +549,12 @@ INF  FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
  INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  !endif
  
