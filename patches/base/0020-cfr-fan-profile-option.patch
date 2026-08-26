@@ -1,5 +1,5 @@
 diff --git a/src/ec/lenovo/h8/acpi/thermal.asl b/src/ec/lenovo/h8/acpi/thermal.asl
-index 8b76ad4b..1ab1a265 100644
+index 11687f8..d5bc07d 100644
 --- a/src/ec/lenovo/h8/acpi/thermal.asl
 +++ b/src/ec/lenovo/h8/acpi/thermal.asl
 @@ -96,6 +96,12 @@ External (\PPKG, MethodObj)
@@ -15,7 +15,7 @@ index 8b76ad4b..1ab1a265 100644
  #endif
  
  		/* Start in the resting state: EC automatic, level 4 */
-@@ -106,37 +112,51 @@ External (\PPKG, MethodObj)
+@@ -112,37 +118,51 @@ External (\PPKG, MethodObj)
  		}
  
  		/*
@@ -92,7 +92,7 @@ index 8b76ad4b..1ab1a265 100644
  		Name (_AL1, Package () { FAN1 })
  		Name (_AL2, Package () { FAN2 })
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
-index a522cbff..0b7e1af5 100644
+index a522cbf..0b7e1af 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
 @@ -27,6 +27,26 @@ static const struct sm_object dgpu = SM_DECLARE_ENUM({
@@ -133,7 +133,7 @@ index a522cbff..0b7e1af5 100644
  		&sticky_fn,
  		&f1_to_f12_as_primary,
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
-index db1b18ac..247153ec 100644
+index db1b18a..247153e 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
 @@ -1,5 +1,7 @@
@@ -180,12 +180,12 @@ index db1b18ac..247153ec 100644
  
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-index 4be77dbf..8254ba1a 100644
+index 10c9f2f..81f529d 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-@@ -31,4 +31,23 @@
- #define FAN3_THRESHOLD_ON	58
- #define FAN3_THRESHOLD_OFF	50
+@@ -34,4 +34,24 @@
+ #define FAN3_THRESHOLD_ON	54
+ #define FAN3_THRESHOLD_OFF	46
  
 +/*
 + * Fan profiles for the setup-menu option "fan_profile" (published as
@@ -193,10 +193,11 @@ index 4be77dbf..8254ba1a 100644
 + * _AC0-_AC3 ON/OFF pairs in degrees C for the FTBL package in
 + * ec/lenovo/h8/acpi/thermal.asl.
 + *
-+ * "EC only" parks all four trips 1 K staggered just below \TCRT (100 C):
-+ * the EC curve rules alone, but if it ever fails there is still an ACPI
-+ * escalation before the critical shutdown. Do NOT disable the trips
-+ * instead - that would remove the safety net entirely.
++ * "EC only" parks all four trips 1 K staggered just below the CPU's
++ * throttle point (100 C): the EC curve rules alone, but if it ever
++ * fails there is still an ACPI escalation before throttling and the
++ * critical trip (\TCRT, 110). Do NOT disable the trips instead - that
++ * would remove the safety net entirely.
 + */
 +#define FAN_PROFILE_QUIET	88, 80,  80, 72,  72, 64,  64, 56
 +#define FAN_PROFILE_BALANCED	FAN0_THRESHOLD_ON, FAN0_THRESHOLD_OFF, \
