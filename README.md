@@ -53,9 +53,9 @@ firmware (fwupd 2.1.7, 2026-08-24): every HSI-1 and HSI-2 test passes
 |---|---|---|
 | IOMMU | ✓ enabled | VT-d |
 | Platform debugging locked | ✓ | |
-| coreboot verified boot flag | ✓ detected | passes since the event log reconstructs ([#6](https://github.com/Amphero/custom-coreboot-t480/issues/6)) |
-| Locked MTD | ✓ no MTD device | fwupd wants block-protection bits in the flash chip itself; setting them would lock out the SMM capsule writer along with everything else. The protection is PCH protected ranges + SMM BWP, so the spi-intel driver is blacklisted on the host (GUIDE) and no MTD device exists ([#7](https://github.com/Amphero/custom-coreboot-t480/issues/7)) |
-| TPM PCR0 reconstruction | ✓ valid | sha256-only PCR bank; coreboot's measurements are replayed into the TCG2 log and the log parses end to end ([#8](https://github.com/Amphero/custom-coreboot-t480/issues/8)) |
+| coreboot verified boot flag | ✓ detected | passes since the event log reconstructs ([#6](https://github.com/Amphero/coreboot-t480/issues/6)) |
+| Locked MTD | ✓ no MTD device | fwupd wants block-protection bits in the flash chip itself; setting them would lock out the SMM capsule writer along with everything else. The protection is PCH protected ranges + SMM BWP, so the spi-intel driver is blacklisted on the host (GUIDE) and no MTD device exists ([#7](https://github.com/Amphero/coreboot-t480/issues/7)) |
+| TPM PCR0 reconstruction | ✓ valid | sha256-only PCR bank; coreboot's measurements are replayed into the TCG2 log and the log parses end to end ([#8](https://github.com/Amphero/coreboot-t480/issues/8)) |
 
 **Boot Guard is deliberately absent** and stays that way. It is removed with
 `deguard` (the only way to run coreboot on this platform at all), so the
