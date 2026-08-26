@@ -1030,7 +1030,7 @@ in RAM: it survives a warm `reboot`, not a poweroff.
 
 ## Cleaning up
 
-A full build cycle leaves four things on disk; together they run to some
+A full build cycle leaves five things on disk; together they run to some
 50 GB. All of it is reproducible - the only artifacts worth keeping are the
 `.rom`/`.cap`/`.cab` of the deployed version and everything under `keys/`
 (which no cleanup below touches).
@@ -1048,7 +1048,7 @@ rm roms/coreboot_t480_<old-version>*                 # keep the deployed set
 rm -rf sources/
 podman rmi coreboot-t480 coreboot-t480-deps debian
 podman image prune                                   # dangling layers
-podman rmi -a -f                                     # or: simply drop every image
+podman rmi -a -f                                     # or: drop every image
 ```
 
 The versions are in `config/versions.lock`, tracked, so everything can be
@@ -1056,7 +1056,9 @@ fetched and rebuilt later - `sources/` only saves the download. Keeping the
 two images skips most of the compile on the next build; dropping everything
 costs one `./fetch.sh` plus a full toolchain build (~1-2 h). Aborted builds
 (power loss, Ctrl-C) leave their half-finished layers behind as untagged
-images - `podman image prune` after an aborted build is always safe.
+images. Pruning them breaks nothing, but a rerun of the same build would
+have picked those layers up from cache - prune after the build has
+succeeded, not between attempts.
 
 To keep the built toolchain without the image store, save the image itself -
 that turns the rebuild into a `podman load`:
