@@ -459,10 +459,11 @@ means all five registers were taken and the range did not happen.
 Adds `SLOT_CAPSULE_SUPPORT` (default FALSE) next to upstream's
 `CAPSULE_SUPPORT`, and with it a second arrangement of `FmpDxe`.
 
-Upstream builds `FmpDxe` only to be embedded into a capsule, where it
-runs `FmpDeviceSmmLib` and updates the whole flash chip - which its own
-header says needs every flash protection lifted. That is the opposite of
-this build. `SLOT_CAPSULE_SUPPORT` puts `FmpDxe` into the firmware
+Upstream builds `FmpDxe` embedded into the capsule or, since
+`uefipayload_2608` (`CAPSULE_EMBED_FMP_DXE`), in the firmware - either
+way it runs `FmpDeviceSmmLib` and updates the whole flash chip, which
+its own header says needs every flash protection lifted. That is the
+opposite of this build. `SLOT_CAPSULE_SUPPORT` puts `FmpDxe` into the firmware
 instead (fdf) and points its `FmpDeviceLib` at `FmpDeviceSlotLib`, which
 writes only the inactive vboot slot. Nothing has to be unlocked for
 that: the protected ranges are programmed at `BS_DEV_RESOURCES`, long
