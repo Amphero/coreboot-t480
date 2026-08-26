@@ -850,12 +850,12 @@ gone. Four profiles can be picked in the setup menu under
 | Profile | Character | First fan level at |
 |---------|-----------|--------------------|
 | Quiet | quieter, runs hotter | 64 C |
-| Balanced (default) | the tested middle ground | 58 C |
+| Balanced (default) | the tested middle ground | 54 C |
 | Performance | louder, runs cooler | 48 C |
 | EC only | firmware keeps its hands off the fan | - |
 
 "EC only" is for userspace fan control (thinkfan, zcfan): the firmware trip
-points move just below the critical threshold, so the EC curve - or your
+points move just below the CPU's throttle point, so the EC curve - or your
 tool - rules alone, with one ACPI escalation left as the last net. Curve
 details and tuning: [patches/README.md](patches/README.md).
 

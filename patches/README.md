@@ -345,7 +345,7 @@ Notes:
 - **The WWAN half is untested.** There is no WWAN card in the machine
   this repo is built for. What was verified: the option shows up, the
   build is clean, and bit 6 survives a reboot (readable through
-  `ec_sys`, see "EC debugging" in the top-level README). What was not:
+  `ec_sys`, see "EC debugging" in GUIDE.md). What was not:
   that a real modem actually stays off. The mechanism itself is the one
   0033 relies on and that one is verified on hardware.
 - Same cold-start caveat as 0033: pulling battery *and* charger clears
@@ -549,22 +549,23 @@ Adds a ramstage hook that clears the discrete TPM 2.0 via `TPM2_Clear`
 (platform hierarchy) **on every boot**. Only ever applied to the separate
 `..._tpmreset.rom` built by `--tpm-reset`; the normal ROM never contains
 it, which the build verifies (`nm`/`strings`). Usage and warnings: see
-"TPM reset" in the top-level README.
+"TPM reset" in GUIDE.md.
 
 ## When upstream breaks a patch
 
 The base-image build stops with `ERROR: <patch> does not apply`. To rebase:
 
 ```bash
-./fetch.sh <mode>                            # fresh tree in sources/<mode>/coreboot
-cd sources/<mode>/coreboot
-for p in ../../../patches/base/*.patch; do git apply --check "$p" && git apply "$p" || echo "FAILS: $p"; done
+./fetch.sh                                   # fresh tree in sources/coreboot
+cd sources/coreboot
+for p in ../../patches/base/*.patch; do git apply --check "$p" && git apply "$p" || echo "FAILS: $p"; done
 # fix the failing change by hand, then re-export it:
-git diff -- <files of that patch> > ../../../patches/base/<same-name>.patch
+git diff -- <files of that patch> > ../../patches/base/<same-name>.patch
 ```
 
 Keep the numbering (0001/0002 = setup menu, 0010-0012 = stepped fan,
-0020 = fan profiles, 0030-0035 = OS compatibility) - the patches are
-applied in lexical order and later ones build on the context of earlier
-ones (0012 on 0002's Kconfig, 0020 on 0011/0012, 0030 on 0020's
-ramstage.c, 0033 on 0031/0032's Kconfig hunks, 0034/0035 on 0033's).
+0020 = fan profiles, 0030-0035 = OS compatibility, 0040-0047 = vboot,
+lockdown, capsules, TPM) - the patches are applied in lexical order and
+later ones build on the context of earlier ones (0012 on 0002's Kconfig,
+0020 on 0011/0012, 0030 on 0020's ramstage.c, 0033 on 0031/0032's
+Kconfig hunks, 0034/0035 on 0033's).
