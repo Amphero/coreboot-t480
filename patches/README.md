@@ -387,6 +387,44 @@ The kernel calls `\BLTH`/`\WGSV` nowhere else - only from
 reuse them (checked in the 7.1 tree). That also gives a way to test
 without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
 
+## base/0036-h8-keyboard-backlight-three-states.patch
+
+**Files:** `src/ec/lenovo/h8/h8.h`, `src/ec/lenovo/h8/cfr.h`,
+`src/ec/lenovo/h8/ssdt.c`, `src/ec/lenovo/h8/h8.c`
+
+Turns the Keyboard Backlight setup option from a bool into three states
+and gates `HKBL` on the third.
+
+```
+Disabled        dark at boot, the OS can still switch it on
+Enabled         on at boot
+Not installed   not published to the OS at all
+```
+
+`thinkpad_acpi` asks `MLCG` for the capability. That returns bit `0x200`
+whenever `HKBL` is set, `ssdt.c` writes `HKBL` from
+`has_keyboard_backlight`, and the T480 devicetree sets that to 1 in the
+shared baseboard with no variant override. So the kernel creates
+`tpacpi::kbd_backlight` on every machine and GNOME draws a brightness
+slider for hardware that may not be there. Issue #12.
+
+This started as a second, separate option for presence. Two booleans side
+by side, both reading "Disabled" and meaning different things, is a menu
+nobody can parse - and the obvious reading of "Keyboard Backlight:
+Disabled" is that the thing is gone, which it was not. One option with
+three states says what it means.
+
+`KBL_ABSENT` is ours and never reaches the EC; `h8.c` maps it back to
+`KBL_OFF` before touching `H8_CONFIG1`. `KBL_OFF` and `KBL_ON` keep the
+values the bool had, so settings already in SMMSTORE survive.
+
+The T480 ships with and without a backlit keyboard, so this cannot live
+in the devicetree - it has to be per machine, which is why it is a setup
+option and not a Kconfig.
+
+Takes effect after a reboot: the option lives in SMMSTORE and the SSDT is
+generated at boot.
+
 ## base/0040-t480-vboot-fmd.patch
 
 **Files:** `src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd` (new)
