@@ -504,6 +504,36 @@ SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
 failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
 means all five registers were taken and the range did not happen.
 
+## base/0050-t480-hda-verbs-from-stock-bios.patch
+
+**Files:**
+`src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/hda_verb.c`
+
+Replaces the ALC257 entry with the one the stock Lenovo BIOS uses. The
+table sits uncompressed at `0xda2c80` in a 16 MB dump, in a different
+encoding than coreboot's (`ec 10 57 02` for the header, coefficients as
+`0x500`/`0x4xx` pairs rather than finished dwords). Byte-identical in
+`n24ur39w`, in this board's pre-coreboot dump and in a foreign NM-B501
+image, so it is neither BIOS-version nor board specific.
+
+Upstream's pin configs were already right - all ten match. The codec
+coefficients were not: the stock BIOS issues 49 writes, upstream 14, and
+only three agree. Coef 0x38, the register upstream's own comment labels
+"ClassD 2W", is 0x7900 then 0x7901 in the stock BIOS against upstream's
+0x8981; 0x3c and 0x09 differ too, and the speaker EQ/DRC block on nodes
+0x53 and 0x54 - 32 writes - is absent upstream. Upstream in turn writes
+coef 0x37 (silence threshold), 0x30, 0x0a, 0x1a and node 0x58, which the
+stock BIOS never touches.
+
+The jack count goes 18 -> 38 and the pin macros give way to raw dwords
+because the block is a verbatim copy; keeping half of it in macro form
+would hide which parts are ours.
+
+Written for issue #10, where a whine tracking cpu load is audible in the
+setup menu. It is not a proven fix - the board this repo is built on runs
+the upstream table without any whine - it is the A/B half that makes the
+class-D theory testable.
+
 ## edk2/0001-fmpdxe-slot-capsule-scaffolding.patch
 
 **Files:** `UefiPayloadPkg/UefiPayloadPkg.dsc`,
