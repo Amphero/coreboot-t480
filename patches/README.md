@@ -20,6 +20,13 @@ a ROM without the change - that is deliberate (this repo once used two
 longer matches). After changing anything here, rebuild with `--rebuild-base`;
 `config_hash()` covers both directories, so an edited patch is noticed.
 
+Generate a new patch against the tree with the earlier ones already applied,
+not against pristine coreboot. Several of these touch the same files - 0033
+and 0036 both edit `ec/lenovo/h8/cfr.h` a few lines apart - and a patch cut
+from the untouched tree carries context that no longer exists by the time it
+runs. `git worktree add` on `sources/coreboot`, apply everything up to the
+new patch, edit there, diff.
+
 The two are separate because they track different upstreams on different
 release cycles. `edk2/` applies to the tree at
 `payloads/external/edk2/workspace/mrchromebox`, which is the clone named in
