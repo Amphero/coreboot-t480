@@ -64,10 +64,32 @@ firmware ever does - upstream leaves that to the ChromeOS updater
 image.
 
 The second fallback, the one inside `vb2_select_fw_slot()` itself
-(`2misc.c:394`), is dead code here. It needs
-`last_fw_result == VB2_FW_RESULT_TRYING`, which is only written when
-`VB2_NV_TRY_COUNT` is non-zero, and neither coreboot nor this repo ever
-sets that field. Do not cite it as the reason for the sticky slot.
+(`2misc.c:394`), needs `last_fw_result == VB2_FW_RESULT_TRYING`, which is
+only written when `VB2_NV_TRY_COUNT` is non-zero. That is not the reason
+for the sticky slot above - but it is not dead code either, as this file
+used to claim. Two things set the field: `scripts/vbnv.py arm-update`, and
+the capsule path in the firmware, which arms a trial boot after writing the
+inactive slot.
+
+## The trial boot has to reach userspace
+
+A capsule update writes the inactive slot, points the next boot at it and
+gives it one attempt. That attempt only counts as good if
+`vboot-boot-ok.service` runs, which happens late in a normal boot. Stop in
+the setup menu instead and the attempt is spent without a success report,
+so the boot after that falls back to the old slot and the update looks like
+it silently failed.
+
+Measured 2026-08-29, and it is confusing from the outside: fwupd reports
+`last_attempt_status 0` and the ESRT shows the new version under
+`last_attempt_version`, while `fw_version` still names the old one.
+`vbnv.py show` is what makes it obvious - `previous slot B`,
+`previous result trying`, `trial boots left 0`, `next boot slot A`.
+
+So after installing a capsule, boot all the way through once. Visit the
+setup menu on the boot after that, not on the trial. If it already fell
+back, `vbnv.py try-next <slot>` puts the machine on the new firmware again
+and a full boot commits it.
 
 ## TPM
 
