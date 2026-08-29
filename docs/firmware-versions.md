@@ -50,6 +50,21 @@ Builds of version 4, in order:
 |-----|--------|--------------|
 | `coreboot_t480_26.08.1-12-gbb9abbc.rom` | `ab2a4798` | `CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE=y` (patch 0043) and `DT_DEVICE_FAST_SPI=y`. Both preambles carry version 4. FPR1 and the refused GbE write measured on hardware. |
 
+Builds of version 5, in order:
+
+| ROM | SHA256 | What changed |
+|-----|--------|--------------|
+| `coreboot_t480_26.08.3-7-g20296dc-dirty.rom` | `13e67076` | Capsule updates with an own trust anchor. Superseded. |
+| `coreboot_t480_26.08.4-1-g63fe85e-dirty.rom` | `87578f72` | edk2 `uefipayload_2608`, TPM platform hierarchy shut at ready-to-boot (#9), critical trip off Tjmax, tighter fan curve. On the chip. |
+| `coreboot_t480_26.08.5-2-gfab829d.rom` | `fda5b421` | ALC257 verb table from the stock BIOS (patch 0050, #10). FMP version left at `0x001A000B`, which fwupd refuses as a reinstall - superseded before it was ever installed. |
+| same name, `-dirty` | `e368a289` | Same patch, FMP version `0x001A000C`, LSV pinned to `0x001A000B`. Capsule-installed into slot A on 2026-08-29 and measured: the speakers click at signal onset and offset, tone audibly worse. Reverted with `vbnv.py try-next B`; slot A still holds it. Patch moved to `patches/regression/`, see `docs/hda-notes.md`. |
+| same name, `-dirty` | `48dbcf8d` | Not the audio patch: acoustic noise mitigation UPDs (patch 0060, #10), FMP version `0x001A000D`. Built, not installed. |
+
+Three different builds under two file names - `git describe` resolves the same
+for all of them, and the `-dirty` ones overwrite each other in `roms/`. Only
+`48dbcf8d` still exists on disk. The others rebuild from the branch plus the
+FMP version in `config/defconfig`.
+
 ## Rules
 
 **Raise by one** for a release that should lock out its predecessor - a fixed
