@@ -4,13 +4,20 @@ Everything in this directory diverges from upstream and lives only in this
 repo. This file documents what each patch does, why it exists, and how to
 maintain it when upstream moves.
 
-There are three groups with different lifetimes:
+There are four groups with different lifetimes:
 
 | Directory | Applied to | Applied when | Ends up in |
 |-----------|------------|--------------|------------|
 | `base/` | coreboot | while building the **base image** (`Dockerfile.offline`, stage 2) | **every** ROM built from this repo |
 | `edk2/` | the MrChromebox EDK2 payload | same stage, right after `base/` | **every** ROM built from this repo |
 | `tpm-reset/` | coreboot | only in the per-variant step of `build-firmware.py --tpm-reset` | **only** the `..._tpmreset.rom` |
+| `regression/` | nothing | never | nothing |
+
+`regression/` is a graveyard: patches that were built, measured and found to
+make things worse. Nothing globs it, `config_hash()` does not cover it. They
+stay because the measurement behind them is worth keeping, and because the
+next person to have the same idea should find the answer before spending a
+day on it. Move one back into `base/` only with a new measurement.
 
 `base/` and `edk2/` patches are applied in lexical order, each with a
 mandatory `git apply --check` first. If upstream changes one of the patched
@@ -504,10 +511,16 @@ SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
 failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
 means all five registers were taken and the range did not happen.
 
-## base/0050-t480-hda-verbs-from-stock-bios.patch
+## regression/0050-t480-hda-verbs-from-stock-bios.patch
 
 **Files:**
 `src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/hda_verb.c`
+
+In `regression/`, so it is not built. Measured 2026-08-29 against the
+previous firmware in the other slot, same machine and stimulus: with the
+stock table the speakers click once at signal onset and once at offset,
+and the tone is audibly worse. Upstream's table does neither. Details and
+the ruled-out causes are in `docs/hda-notes.md`.
 
 Replaces the ALC257 entry with the one the stock Lenovo BIOS uses. The
 table sits uncompressed at `0xda2c80` in a 16 MB dump, in a different
