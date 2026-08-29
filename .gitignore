@@ -1,6 +1,8 @@
 # build output & sources
 /sources/
 /roms/*.rom
+/roms/*.cap
+/roms/*.cab
 
 # flash dumps, backups, reference material - carries machine identity (MAC, serial, UEFI vars)
 *.bin
