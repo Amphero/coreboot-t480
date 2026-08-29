@@ -111,7 +111,7 @@ CONFIG_EDK2_SECURE_BOOT_SUPPORT=y
 # LSV 0 means "same as the current version".
 CONFIG_DRIVERS_EFI_FW_INFO=y
 CONFIG_DRIVERS_EFI_MAIN_FW_GUID="271c57fb-af28-5d13-96d4-c8ad68ef4ea1"
-CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=0x001A000B
+CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=0x001A0010
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x00000000
 # The SMI handler only hands out full-flash access when coreboot found a
 # capsule this boot, so the writer needs this to be able to write at all.
