@@ -120,9 +120,18 @@ The patch now raises `SlowSlewRateForIa` only.
 One trap for anyone trimming it further: the registers left unset are not left
 alone. With `AcousticNoiseMitigation` on they reach FSP as 0, which is `Fast/2`
 - a value, not the pre-mitigation default. The mitigation cannot be enabled for
-one rail in isolation, so a flicker that survives this version would point at
-the mitigation flag itself or at GT's `Fast/2`, not at anything left over from
-the first attempt.
+one rail in isolation.
+
+The trimmed version was measured the same evening and is clean: no flicker
+under 30 s of full load, none across ten 2 s load/idle cycles, no i915 or drm
+warning in the kernel log. Speakers, `speaker-test` at 90 %, 30 s of digital
+silence with the amp held awake, jack detection in both directions, stereo
+separation and the microphone all behave as they did before. That also settles
+the register question above - `Fast/2` on GT is fine, it was Fast/16 or the
+disabled ramp that flickered.
+
+What none of this shows is whether the patch does anything about the whine.
+This machine has never had it.
 
 There is a free proxy for it that needs no firmware at all:
 `intel_idle.max_cstate=1` on the kernel command line suppresses deep package-C
