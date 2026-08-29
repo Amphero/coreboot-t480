@@ -1,0 +1,93 @@
+diff --git a/src/ec/lenovo/h8/h8.h b/src/ec/lenovo/h8/h8.h
+--- a/src/ec/lenovo/h8/h8.h
++++ b/src/ec/lenovo/h8/h8.h
+@@ -6,6 +6,19 @@
+ #include <stdint.h>
+ #include <device/device.h>
+ 
++/*
++ * Keyboard backlight. The first two are the EC's own bit pattern in
++ * H8_CONFIG1; KBL_ABSENT is ours and never reaches the EC. It exists
++ * because the T480 ships with and without a backlit keyboard and the
++ * devicetree cannot tell them apart - see ssdt.c, where it decides
++ * whether HKBL is published at all.
++ */
++enum h8_keyboard_backlight {
++	KBL_OFF = 0,
++	KBL_ON = 1,
++	KBL_ABSENT = 2
++};
++
+ enum usb_always_on {
+ 	UAO_OFF = 0,
+ 	UAO_AC_AND_BATTERY = 1,
+diff --git a/src/ec/lenovo/h8/cfr.h b/src/ec/lenovo/h8/cfr.h
+--- a/src/ec/lenovo/h8/cfr.h
++++ b/src/ec/lenovo/h8/cfr.h
+@@ -36,11 +36,19 @@
+ #endif
+ 
+ /* Keyboard Backlight */
+-static const struct sm_object backlight = SM_DECLARE_BOOL({
++static const struct sm_object backlight = SM_DECLARE_ENUM({
+ 	.opt_name	= "backlight",
+ 	.ui_name	= "Keyboard Backlight",
+-	.ui_helptext	= "Enable or disable the keyboard backlight",
+-	.default_value	= false,
++	.ui_helptext	= "Disabled leaves it dark at boot, the OS can still "
++			  "switch it on. Not installed hides it from the OS "
++			  "as well, for keyboards that have no backlight.",
++	.default_value	= KBL_OFF,
++	.values		= (const struct sm_enum_value[]) {
++		{ "Disabled",		KBL_OFF		},
++		{ "Enabled",		KBL_ON		},
++		{ "Not installed",	KBL_ABSENT	},
++		SM_ENUM_VALUE_END
++	},
+ });
+ 
+ /* USB Always-On */
+diff --git a/src/ec/lenovo/h8/ssdt.c b/src/ec/lenovo/h8/ssdt.c
+--- a/src/ec/lenovo/h8/ssdt.c
++++ b/src/ec/lenovo/h8/ssdt.c
+@@ -2,6 +2,7 @@
+ 
+ #include <console/console.h>
+ #include <acpi/acpigen.h>
++#include <option.h>
+ #include <stdio.h>
+ #include <string.h>
+ 
+@@ -39,7 +40,14 @@
+ 	acpigen_write_name_byte("HWAN", h8_has_wwan(dev) ? ONE_OP : ZERO_OP);
+ 	acpigen_write_name_byte("HKLT", (conf && conf->has_thinklight) ?
+ 				ONE_OP : ZERO_OP);
+-	acpigen_write_name_byte("HKBL", (conf && conf->has_keyboard_backlight) ?
++	/*
++	 * The board says the hardware can exist, the setup option says
++	 * whether this particular machine has it. Without the second half
++	 * thinkpad_acpi creates a kbd_backlight LED on keyboards that have
++	 * none, and the desktop offers a brightness slider for nothing.
++	 */
++	acpigen_write_name_byte("HKBL", (conf && conf->has_keyboard_backlight &&
++					 get_uint_option("backlight", KBL_OFF) != KBL_ABSENT) ?
+ 				ONE_OP : ZERO_OP);
+ 	acpigen_write_name_byte("HUWB", (conf && conf->has_uwb) ?
+ 				ONE_OP : ZERO_OP);
+diff --git a/src/ec/lenovo/h8/h8.c b/src/ec/lenovo/h8/h8.c
+--- a/src/ec/lenovo/h8/h8.c
++++ b/src/ec/lenovo/h8/h8.c
+@@ -268,8 +268,11 @@
+ 
+ 	reg8 = conf->config1;
+ 	if (conf->has_thinklight || conf->has_keyboard_backlight) {
+-		/* Default to both backlights */
+-		reg8 = (reg8 & 0xf3) | ((get_uint_option("backlight", 0) & 0x3) << 2);
++		/* KBL_ABSENT is not an EC state, it means leave both dark */
++		unsigned int backlight = get_uint_option("backlight", KBL_OFF);
++		if (backlight == KBL_ABSENT)
++			backlight = KBL_OFF;
++		reg8 = (reg8 & 0xf3) | ((backlight & 0x3) << 2);
+ 	}
+ 	ec_write(H8_CONFIG1, reg8);
+ 	ec_write(H8_CONFIG2, conf->config2);
