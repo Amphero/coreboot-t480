@@ -558,10 +558,19 @@ whine that tracks cpu load and is there in the setup menu, so before any
 OS driver.
 
 `AcousticNoiseMitigation` gates the rest (`chip.h:441`, passed through in
-`chip.c:475`). Slew goes to Fast/16 on IA, GT and SA, fast package-C
-ramping off on all three - the most the UPDs allow. Diagnostic values.
-If they help, tune back to the mildest setting that still works: slow
-slew costs turbo response, disabling the ramp costs package-C residency.
+`chip.c:475`). Only `SlowSlewRateForIa` is raised, to Fast/16. The whine
+follows cpu load, so IA is the suspect.
+
+The first version of this patch took GT and SA to Fast/16 as well and
+disabled fast package-C ramping on all three. It was built, installed and
+measured on 2026-08-29: the screen flickered badly enough to be hard to
+read. GT feeds the iGPU, and slowing its rail that far is not something
+the reported symptom asks for. See `docs/hda-notes.md`.
+
+Watch out for one thing when trimming this further: the registers left
+unset are **not** left alone. Once `AcousticNoiseMitigation` is on they go
+to FSP as 0, which is `Fast/2` - a value, not the pre-mitigation default.
+There is no way to enable the mitigation for one rail only.
 
 Upstream sets none of this on `sklkbl_thinkpad`; other boards do, e.g.
 `acer/aspire_vn7_572g` and `clevo/cml-u`.
