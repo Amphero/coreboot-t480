@@ -547,6 +547,33 @@ setup menu. It is not a proven fix - the board this repo is built on runs
 the upstream table without any whine - it is the A/B half that makes the
 class-D theory testable.
 
+## base/0060-t480-acoustic-noise-mitigation.patch
+
+**Files:** `src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb`
+
+Sets the Skylake acoustic noise UPDs, which the board leaves at their FSP
+defaults: fast VR slew rates and fast package-C ramping. Both make the
+rails audible under changing load, which is the symptom in issue #10 - a
+whine that tracks cpu load and is there in the setup menu, so before any
+OS driver.
+
+`AcousticNoiseMitigation` gates the rest (`chip.h:441`, passed through in
+`chip.c:475`). Slew goes to Fast/16 on IA, GT and SA, fast package-C
+ramping off on all three - the most the UPDs allow. Diagnostic values.
+If they help, tune back to the mildest setting that still works: slow
+slew costs turbo response, disabling the ramp costs package-C residency.
+
+Upstream sets none of this on `sklkbl_thinkpad`; other boards do, e.g.
+`acer/aspire_vn7_572g` and `clevo/cml-u`.
+
+Inserts above `# Generate ACPI P-State table` and leaves the
+`device ref hda on end` anchor alone - `apply-devicetree.sh` runs after
+the patches and needs it.
+
+`IslVrCmd` sits right above these in `chip.c` and is another VR C-state
+workaround, also unset. Not touched: whether this board has an Intersil
+VR is unknown.
+
 ## edk2/0001-fmpdxe-slot-capsule-scaffolding.patch
 
 **Files:** `UefiPayloadPkg/UefiPayloadPkg.dsc`,
