@@ -108,6 +108,22 @@ That is patch 0060. `IslVrCmd` sits right above these in `chip.c` and is
 another VR C-state workaround, also unset and not touched - whether this board
 has an Intersil VR is unknown.
 
+Measured 2026-08-29, first attempt: mitigation on, Fast/16 on IA, GT and SA,
+fast package-C ramping disabled on all three. It installed and ran - the sine
+did not click, which is the control that confirms the click came from 0050 and
+nothing else - but **the screen flickered badly enough to be hard to read**.
+Reverted to the other slot.
+
+GT feeds the iGPU and nothing about a load-tracking whine asks for slowing it.
+The patch now raises `SlowSlewRateForIa` only.
+
+One trap for anyone trimming it further: the registers left unset are not left
+alone. With `AcousticNoiseMitigation` on they reach FSP as 0, which is `Fast/2`
+- a value, not the pre-mitigation default. The mitigation cannot be enabled for
+one rail in isolation, so a flicker that survives this version would point at
+the mitigation flag itself or at GT's `Fast/2`, not at anything left over from
+the first attempt.
+
 There is a free proxy for it that needs no firmware at all:
 `intel_idle.max_cstate=1` on the kernel command line suppresses deep package-C
 states and with them the fast ramping. If the whine drops under that, the UPDs

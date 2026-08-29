@@ -5,18 +5,18 @@ diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb b/src/mainboard/
          register "PmConfigSlpSusMinAssert" = "3"        # 500ms
          register "PmConfigSlpAMinAssert" = "3"          # 2s
  
-+	# Acoustic noise mitigation. The T480 sets none of these, so the FSP
-+	# defaults apply: fast VR slew rates and fast package-C ramping, which
-+	# is what makes the rails audible under changing load. Diagnostic
-+	# values - the most aggressive the UPDs allow, to be tuned down to
-+	# whatever still works. See docs/hda-notes.md and issue #10.
++	# Acoustic noise mitigation for issue #10 - a whine that tracks cpu
++	# load. The board sets none of these, so the FSP defaults apply.
++	#
++	# Only the IA rail is slowed. The whine follows cpu load, so IA is the
++	# suspect; an earlier build that also took GT to Fast/16 and disabled
++	# fast package-C ramping on all three rails made the screen flicker
++	# badly (measured 2026-08-29, docs/hda-notes.md).
++	#
++	# Note the unset registers are not "left alone": once mitigation is on
++	# they are passed as 0, which is Fast/2, not the pre-mitigation default.
 +	register "AcousticNoiseMitigation" = "1"
 +	register "SlowSlewRateForIa" = "3"		# Fast/16
-+	register "SlowSlewRateForGt" = "3"		# Fast/16
-+	register "SlowSlewRateForSa" = "3"		# Fast/16
-+	register "FastPkgCRampDisableIa" = "1"
-+	register "FastPkgCRampDisableGt" = "1"
-+	register "FastPkgCRampDisableSa" = "1"
 +
  	# Generate ACPI P-State table
  	register "eist_enable" = "true"
