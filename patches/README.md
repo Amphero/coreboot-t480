@@ -511,6 +511,84 @@ SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
 failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
 means all five registers were taken and the range did not happen.
 
+## base/0044-efi-capsule-slot-update-option.patch
+
+**Files:** `payloads/external/Makefile.mk`,
+`payloads/external/edk2/Makefile`,
+`src/drivers/efi/Kconfig`
+
+Adds `DRIVERS_EFI_CAPSULE_SLOT_UPDATE` and carries it through to the
+payload build, where it makes the edk2 Makefile pass
+`-D SLOT_CAPSULE_SUPPORT=TRUE` instead of upstream's
+`-D CAPSULE_SUPPORT=TRUE`. That define is what picks the FmpDxe
+arrangement from edk2/0001 - FmpDxe in the firmware, writing one slot -
+over the upstream one that embeds it into the capsule and rewrites the
+whole chip.
+
+Depends on `VBOOT_SLOTS_RW_AB`: without two slots there is no inactive
+one to write.
+
+Maintenance note: the symbol has to appear in **both** variable lists in
+`payloads/external/Makefile.mk` - `EDK2_CAPSULE_ARGS` and the
+`UEFIPAYLOAD.fd` recipe. Miss one and the payload is quietly built the
+upstream way; nothing warns.
+
+## base/0045-capsule-trust-anchor-without-generate.patch
+
+**File:** `src/drivers/efi/Kconfig`
+
+Moves the "Capsule signing certificates" menu and
+`DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` from
+`DRIVERS_EFI_GENERATE_CAPSULE` to `DRIVERS_EFI_UPDATE_CAPSULES`.
+
+Upstream ties the trust anchor to generating a capsule in-tree, but the
+two are independent. The certificate is what the firmware's FmpDxe
+verifies incoming capsules against, so it has to be configurable
+wherever capsules can be *applied*. This build generates its capsules
+with `scripts/make-capsule.py`, outside the tree, so without this patch
+the option is not visible at all and the default stands - and that
+default is `BaseTools/Source/Python/Pkcs7Sign/TestRoot.pub.pem`, EDK2's
+published test certificate, whose private half ships with EDK2. Anyone
+could sign a capsule for this machine.
+
+`CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` in `config/defconfig`
+is what fills it; the keys come from `scripts/gen-capsule-certs.sh`.
+
+## base/0046-init-crtm-before-vboot-extends-the-pcrs.patch
+
+**Files:** `src/security/tpm/tspi/crtm.c`, `src/security/tpm/tspi/crtm.h`,
+`src/security/vboot/vboot_logic.c`
+
+Splits the lazy CRTM initialization out of `tspi_cbfs_measurement()`
+into `tspi_ensure_crtm()` and calls it from `extend_pcrs()`, before
+vboot logs anything.
+
+Initializing the CRTM clears the pre-RAM log. Upstream triggers it from
+the first CBFS measurement, and with vboot starting in the bootblock
+that happens *after* `extend_pcrs()` - so the boot mode, the GBB HWID
+and the firmware version went into the log and were wiped a moment
+later. The PCRs kept the digests either way; only the log lost the
+entries, and a log that does not reconstruct the PCRs tells the OS
+nothing.
+
+Guarded with `CONFIG(TPM_MEASURED_BOOT)` because `extend_pcrs()` also
+runs without it.
+
+## base/0047-tpm2-acpi-without-log-area.patch
+
+**Files:** `src/acpi/acpi.c`, `src/security/tpm/Kconfig`
+
+Adds `TPM2_ACPI_NO_LOG_AREA`, which leaves LASA and LAML in the TPM2
+ACPI table at zero instead of pointing them at coreboot's log.
+
+Linux reads the log the ACPI table names in preference to the EFI event
+log. The ACPI one is coreboot's own and ends where the payload takes
+over; the complete chain lives in the payload's TCG2 log, which
+edk2/0005 fills with the bootloader's entries first. Publish both and
+the OS picks the short one, and the PCRs do not reconstruct.
+
+The log itself stays in CBMEM regardless - `cbmem -L` is unaffected.
+
 ## regression/0050-t480-hda-verbs-from-stock-bios.patch
 
 **Files:**
@@ -670,6 +748,170 @@ a plain build exercises it.
 Maintenance note: the new header is CRLF like every other file in that
 tree, so `git apply` reports whitespace warnings for it. Expected, not a
 defect.
+
+## edk2/0003-fmp-device-slot-lib.patch
+
+**Files:** `UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c` (new),
+`.../FmpDeviceSlotLib.inf` (new)
+
+The writer that edk2/0001 names but does not provide. `FmpDeviceLib` is
+FmpDxe's device back end; this implementation writes a single
+`RW_SECTION` instead of the whole chip, which is why nothing has to be
+unlocked for it. coreboot programs its protected ranges at
+`BS_DEV_RESOURCES` and seals them there - before capsules are parsed at
+`BS_DEV_INIT` - and those ranges cover `WP_RO`, `SI_DESC` and `SI_GBE`
+while leaving the BIOS region writable. The slots are in the BIOS
+region.
+
+Where things are comes from `gEfiFlashLayoutInfoHobGuid` (edk2/0002):
+coreboot's copy of the flash map plus the offset of the CBFS it booted
+from. That offset falls inside exactly one `RW_SECTION` and so names the
+running slot; the other one is the target. Reading `vb2_shared_data`
+instead was rejected - that is vboot's internal state, not an interface.
+
+**The capsule carries both slots, A then B, and only the matching half
+is written.** A slot image is not interchangeable: FSP-M is
+execute-in-place on this SoC (`FSP_M_XIP`, selected unconditionally by
+`src/soc/intel/skylake/Kconfig`, and unavoidable - FSP-M is what brings
+memory up, so there is no RAM to copy it into), so it is bound to its
+flash address and romstage references it there. Measured on a built
+image: of twelve CBFS files, `fallback/romstage` and `fspm.bin` differ
+between the slots, the rest are byte-identical. Writing the wrong half
+would pass verification and then fail to boot - vboot checks that VBLOCK
+and FW_MAIN agree with each other, which they would, and has nothing to
+say about the address FSP-M was linked for.
+
+Writing only works during a boot where coreboot found a pending capsule.
+Full-flash access through the SMI handler is latched once per boot from
+the capsule count (`smmstore_preprocess_cmd`); outside that the block
+calls return unsupported. That is the intended sequence: fwupd stages
+the capsule, the reboot makes coreboot find it, the payload applies it.
+
+After a successful write the trial boot is armed in VBNV (CMOS, at
+`CONFIG_VBOOT_VBNV_OFFSET + 14`, which is what coreboot reads unless the
+block fails to verify). The next boot runs the new image once and falls
+back on its own if it does not come up. Reporting success stays with the
+OS - `scripts/vbnv.py boot-ok` - because firmware cannot know it. See
+"The trial boot has to reach userspace" in `docs/vboot-notes.md`.
+
+Failure codes are in the range FmpDxe reserves for device libraries
+(`LAST_ATTEMPT_STATUS_DEVICE_LIBRARY_MIN_ERROR_CODE_VALUE` and up);
+anything below it gets flattened to `ERROR_UNSUCCESSFUL` before the OS
+sees it. Hence one code per failure the library can hit.
+
+## edk2/0004-esrt-from-fmp-instances.patch
+
+**Files:** `UefiPayloadPkg/UefiPayloadPkg.dsc`,
+`UefiPayloadPkg/UefiPayloadPkg.fdf`
+
+Adds `EsrtFmpDxe` next to the static ESRT that `BlSupportDxe` installs.
+It rebuilds the table from the FMP instances at ReadyToBoot, and unlike
+the static one it fills `LastAttemptStatus` - without it a failed update
+is invisible to the OS and fwupd can never say whether anything worked.
+
+No conflict between the two: both install on their own schedule and
+`InstallConfigurationTable` replaces an entry of the same GUID, so the
+later one wins. `EsrtFmpDxe` installs nothing when it finds no FMP
+instance, so it cannot blank a working table.
+
+The entry reports as device firmware rather than system firmware.
+Marking it as system firmware would mean putting our GUID into
+`PcdSystemFmpCapsuleImageTypeIdGuid`, and the dsc parser does not expand
+`$(CAPSULE_MAIN_FW_GUID)` inside a PCD value.
+
+## edk2/0005-relog-bootloader-tpm-measurements.patch
+
+**Files:** `UefiPayloadPkg/Include/Coreboot.h`,
+`UefiPayloadPkg/Include/Library/BlParseLib.h`,
+`UefiPayloadPkg/Library/CbParseLib/CbParseLib.c`,
+`UefiPayloadPkg/Library/SblParseLib/SblParseLib.c`,
+`UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c` + `.inf`
+
+coreboot extends PCRs long before the payload runs, and Tcg2Dxe starts a
+log that knows nothing about them - so the log the OS gets cannot
+reconstruct the PCRs. Tcg2Dxe already replays `gTcgEvent2EntryHobGuid`
+hobs into its log ahead of its own measurements, which is the right
+place already, so this only has to translate the entries. The PCRs are
+not touched; they already hold these digests.
+
+Finding the log needs a new parse function. `FindCbTag()` returns the
+first record of a tag, but the coreboot table carries one
+`CB_TAG_CBMEM_ENTRY` per cbmem entry, so `ParseTpmLogInfo()` walks them
+all looking for `CB_CBMEM_ID_TPM2_TCG_LOG`. `SblParseLib` gets a stub
+returning `RETURN_NOT_FOUND`, as every function of the class needs both
+back ends to link.
+
+coreboot's entries are `TCG_PCR_EVENT2` structures with a single digest
+and are reusable verbatim. What makes them safe to trust is the vendor
+block: magic `CBT2`, the major version, `EntrySize` and
+`NumEntries <= MaxEntries` all get checked, and the total is bounded
+against the cbmem entry before anything is copied. A log in coreboot's
+non-TCG format carries a different magic and is skipped.
+
+Pairs with base/0047 - re-logging only helps if the OS also stops
+reading the shorter ACPI log.
+
+## edk2/0006-sha256-only-pcr-bank.patch
+
+**Files:** `SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c`,
+`UefiPayloadPkg/UefiPayloadPkg.dsc`
+
+Cuts the hash instances down to SHA256, sets `PcdTpm2HashMask` to match,
+and makes Tcg2Dxe reallocate the TPM's banks to that mask.
+
+The reason is the log, not the crypto. The SpecID header lists every
+active bank, the replayed bootloader events (edk2/0005) carry a single
+SHA256 digest, and OS-side parsers stop at the first event whose digest
+count disagrees with the header. coreboot measures SHA256 and nothing
+else, so every further active bank poisons the log.
+
+Upstream's `Tcg2Pei` would have done the bank alignment
+(`SyncPcrAllocationsAndPcrMask`), but this payload has no PEI phase.
+Doing it in Tcg2Dxe's entry point is the replacement.
+
+The allocation takes effect at the next TPM startup, so the boot that
+performs it still runs on the old banks and the one after comes up
+clean. No reset follows it, on purpose: if the allocation does not
+stick, a reset turns that into a boot loop.
+
+The hash router rebuilds `PcdTcg2HashAlgorithmBitmap` from the
+registered instances, so dropping the SHA1/384/512/SM3 libraries from
+the dsc is part of the same change, not tidying.
+
+## edk2/0007-shut-tpm-platform-hierarchy-at-ready-to-boot.patch
+
+**Files:** `SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c` + `.inf`,
+`UefiPayloadPkg/UefiPayloadPkg.dsc`,
+`UefiPayloadPkg/UefiPayloadPkg.fdf`
+
+Puts `Tcg2PlatformDxe` into the payload and moves its trigger from
+`SmmReadyToLock` to ready-to-boot, so the TPM platform hierarchy is
+disabled before the OS starts. Issue #9.
+
+The move is necessary here. Upstream arms the callback on the
+`DxeSmmReadyToLock` protocol, but this payload's BDS installs that
+protocol in `PlatformBootManagerBeforeConsole` - before `AfterConsole`
+processes the pending TPM physical presence requests, which authorize
+with the still-empty `platformAuth`. A clear request from the OS would
+fail against a hierarchy that is already shut. Ready-to-boot is the last
+point before control transfer: PPI processing and Tcg2Dxe's bank
+reallocation (edk2/0006) are done, the OS has not run.
+
+`PcdRandomizePlatformHierarchy` is set to FALSE, so the hierarchy is
+disabled instead of getting a random `platformAuth`. Deterministic, and
+it does not hang on the quality of the RNG -
+`RandomizePlatformAuth()` ignores the entropy status and falls back to
+stack garbage.
+
+From the OS, `tpm2_getcap properties-variable` shows `phEnable: 0`
+while `shEnable` and `ehEnable` stay 1.
+
+One side effect: `TPM2_FieldUpgradeStart` authorizes with
+`TPM_RH_PLATFORM`, so no TPM firmware update can be applied from a
+running system on this firmware. That would have to happen in the
+payload, ahead of this callback. Academic for now - the vendor ships
+those updates as capsules against an ESRT entry only the stock BIOS
+publishes.
 
 ## tpm-reset/tpm2-clear-on-boot.patch
 
