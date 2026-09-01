@@ -567,6 +567,10 @@ measured on 2026-08-29: the screen flickered badly enough to be hard to
 read. GT feeds the iGPU, and slowing its rail that far is not something
 the reported symptom asks for. See `docs/hda-notes.md`.
 
+Installed here in slot A since 2026-08-29, no flicker and no audio fault
+in the boots since. That says nothing about the whine itself - it was
+never audible on this machine. #10 waits on the reporter.
+
 Watch out for one thing when trimming this further: the registers left
 unset are **not** left alone. Once `AcousticNoiseMitigation` is on they go
 to FSP as 0, which is `Fast/2` - a value, not the pre-mitigation default.
