@@ -4,13 +4,20 @@ Everything in this directory diverges from upstream and lives only in this
 repo. This file documents what each patch does, why it exists, and how to
 maintain it when upstream moves.
 
-There are three groups with different lifetimes:
+There are four groups with different lifetimes:
 
 | Directory | Applied to | Applied when | Ends up in |
 |-----------|------------|--------------|------------|
 | `base/` | coreboot | while building the **base image** (`Dockerfile.offline`, stage 2) | **every** ROM built from this repo |
 | `edk2/` | the MrChromebox EDK2 payload | same stage, right after `base/` | **every** ROM built from this repo |
 | `tpm-reset/` | coreboot | only in the per-variant step of `build-firmware.py --tpm-reset` | **only** the `..._tpmreset.rom` |
+| `regression/` | nothing | never | nothing |
+
+`regression/` is a graveyard: patches that were built, measured and found to
+make things worse. Nothing globs it, `config_hash()` does not cover it. They
+stay because the measurement behind them is worth keeping, and because the
+next person to have the same idea should find the answer before spending a
+day on it. Move one back into `base/` only with a new measurement.
 
 `base/` and `edk2/` patches are applied in lexical order, each with a
 mandatory `git apply --check` first. If upstream changes one of the patched
@@ -503,6 +510,78 @@ On success the log carries `BM-LOCKDOWN: Enabled protection for
 SI_DESC + SI_GBE` and a second `FPR` line next to the `WP_RO` one. Every
 failure path prints at `BIOS_ERR`; `No SPI FPR free!` from the FPR code
 means all five registers were taken and the range did not happen.
+
+## regression/0050-t480-hda-verbs-from-stock-bios.patch
+
+**Files:**
+`src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/hda_verb.c`
+
+In `regression/`, so it is not built. Measured 2026-08-29 against the
+previous firmware in the other slot, same machine and stimulus: with the
+stock table the speakers click once at signal onset and once at offset,
+and the tone is audibly worse. Upstream's table does neither. Details and
+the ruled-out causes are in `docs/hda-notes.md`.
+
+Replaces the ALC257 entry with the one the stock Lenovo BIOS uses. The
+table sits uncompressed at `0xda2c80` in a 16 MB dump, in a different
+encoding than coreboot's (`ec 10 57 02` for the header, coefficients as
+`0x500`/`0x4xx` pairs rather than finished dwords). Byte-identical in
+`n24ur39w`, in this board's pre-coreboot dump and in a foreign NM-B501
+image, so it is neither BIOS-version nor board specific.
+
+Upstream's pin configs were already right - all ten match. The codec
+coefficients were not: the stock BIOS issues 49 writes, upstream 14, and
+only three agree. Coef 0x38, the register upstream's own comment labels
+"ClassD 2W", is 0x7900 then 0x7901 in the stock BIOS against upstream's
+0x8981; 0x3c and 0x09 differ too, and the speaker EQ/DRC block on nodes
+0x53 and 0x54 - 32 writes - is absent upstream. Upstream in turn writes
+coef 0x37 (silence threshold), 0x30, 0x0a, 0x1a and node 0x58, which the
+stock BIOS never touches.
+
+The jack count goes 18 -> 38 and the pin macros give way to raw dwords
+because the block is a verbatim copy; keeping half of it in macro form
+would hide which parts are ours.
+
+Written for issue #10, where a whine tracking cpu load is audible in the
+setup menu. It is not a proven fix - the board this repo is built on runs
+the upstream table without any whine - it is the A/B half that makes the
+class-D theory testable.
+
+## base/0060-t480-acoustic-noise-mitigation.patch
+
+**Files:** `src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb`
+
+Sets the Skylake acoustic noise UPDs, which the board leaves at their FSP
+defaults: fast VR slew rates and fast package-C ramping. Both make the
+rails audible under changing load, which is the symptom in issue #10 - a
+whine that tracks cpu load and is there in the setup menu, so before any
+OS driver.
+
+`AcousticNoiseMitigation` gates the rest (`chip.h:441`, passed through in
+`chip.c:475`). Only `SlowSlewRateForIa` is raised, to Fast/16. The whine
+follows cpu load, so IA is the suspect.
+
+The first version of this patch took GT and SA to Fast/16 as well and
+disabled fast package-C ramping on all three. It was built, installed and
+measured on 2026-08-29: the screen flickered badly enough to be hard to
+read. GT feeds the iGPU, and slowing its rail that far is not something
+the reported symptom asks for. See `docs/hda-notes.md`.
+
+Watch out for one thing when trimming this further: the registers left
+unset are **not** left alone. Once `AcousticNoiseMitigation` is on they go
+to FSP as 0, which is `Fast/2` - a value, not the pre-mitigation default.
+There is no way to enable the mitigation for one rail only.
+
+Upstream sets none of this on `sklkbl_thinkpad`; other boards do, e.g.
+`acer/aspire_vn7_572g` and `clevo/cml-u`.
+
+Inserts above `# Generate ACPI P-State table` and leaves the
+`device ref hda on end` anchor alone - `apply-devicetree.sh` runs after
+the patches and needs it.
+
+`IslVrCmd` sits right above these in `chip.c` and is another VR C-state
+workaround, also unset. Not touched: whether this board has an Intersil
+VR is unknown.
 
 ## edk2/0001-fmpdxe-slot-capsule-scaffolding.patch
 
