@@ -1,8 +1,8 @@
 diff --git a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
-index 5379cd9654..1c1f429247 100644
+index ea89b2900..6a99edd53 100644
 --- a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
 +++ b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
-@@ -2898,6 +2898,24 @@ DriverEntry (
+@@ -2899,6 +2899,24 @@ DriverEntry (
      ASSERT_EFI_ERROR (Status);
    }
  
@@ -28,10 +28,10 @@ index 5379cd9654..1c1f429247 100644
      //
      // Setup the log area and copy event log from hob list to it
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index b7568bb4d9..6481aa8201 100644
+index e70a37177..4ffd971f3 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -1061,6 +1061,12 @@
+@@ -1100,6 +1100,12 @@
    gEfiSecurityPkgTokenSpaceGuid.PcdTpmInitializationPolicy|0
    ## Match the hash algorithms listed in Tcg2Dxe
    gEfiSecurityPkgTokenSpaceGuid.PcdTcg2HashAlgorithmBitmap|0x1F
@@ -44,7 +44,7 @@ index b7568bb4d9..6481aa8201 100644
    gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
  
  !include NetworkPkg/NetworkDynamicPcds.dsc.inc
-@@ -1497,11 +1503,10 @@
+@@ -1565,11 +1571,10 @@
        Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf
        NULL|SecurityPkg/Library/Tpm2DeviceLibDTpm/Tpm2InstanceLibDTpm.inf
        HashLib|SecurityPkg/Library/HashLibBaseCryptoRouter/HashLibBaseCryptoRouterDxe.inf

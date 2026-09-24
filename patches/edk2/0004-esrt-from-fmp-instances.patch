@@ -1,8 +1,8 @@
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index bb6a7ca..dca7e1c 100644
+index a85605407..e70a37177 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -1296,6 +1296,14 @@
+@@ -1311,6 +1311,14 @@
      <LibraryClasses>
        FmpDeviceLib|UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
    }
@@ -18,10 +18,10 @@ index bb6a7ca..dca7e1c 100644
  
  
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index 5104318..86f4b37 100644
+index 35c385d75..bd14a0ad4 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -542,6 +542,7 @@ INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
+@@ -556,6 +556,7 @@ INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  # The dsc gives this component a FILE_GUID of its own, so the reference
  # here has to name it too or nothing is placed in the volume.
  INF FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf

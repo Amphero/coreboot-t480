@@ -1,5 +1,5 @@
 diff --git a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
-index bb479c1..49a53ad 100644
+index bb479c177..49a53ad6c 100644
 --- a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
 +++ b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
 @@ -12,10 +12,9 @@
@@ -92,7 +92,7 @@ index bb479c1..49a53ad 100644
    }
  
 diff --git a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
-index 635302f..9344b3a 100644
+index 635302fe6..9344b3ab8 100644
 --- a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
 +++ b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.inf
 @@ -36,8 +36,5 @@
@@ -105,7 +105,7 @@ index 635302f..9344b3a 100644
  [Depex]
    gEfiTcg2ProtocolGuid
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index 4e9b9c6..985aff8 100644
+index 4ffd971f3..6e5137f1e 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
 @@ -1107,6 +1107,11 @@
@@ -120,7 +120,7 @@ index 4e9b9c6..985aff8 100644
  
  !include NetworkPkg/NetworkDynamicPcds.dsc.inc
  
-@@ -1578,6 +1583,13 @@
+@@ -1581,6 +1586,13 @@
  #    Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf //Modif H.E Avoid Hang Tcg2config
      Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
    }
@@ -135,10 +135,10 @@ index 4e9b9c6..985aff8 100644
      <LibraryClasses>
        Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibDTpm/Tpm12DeviceLibDTpm.inf
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index 2b96cb9..123133a 100644
+index bd14a0ad4..56f8d5024 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -441,6 +441,7 @@ INF  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
+@@ -444,6 +444,7 @@ INF  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
  INF  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
  INF  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
  INF  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf

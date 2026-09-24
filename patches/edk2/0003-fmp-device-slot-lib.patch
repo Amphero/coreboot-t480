@@ -1,6 +1,6 @@
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
 new file mode 100644
-index 0000000..a6d4d73
+index 000000000..a6d4d73c2
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
 @@ -0,0 +1,1050 @@
@@ -1056,7 +1056,7 @@ index 0000000..a6d4d73
 +}
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
 new file mode 100644
-index 0000000..40d04df
+index 000000000..40d04dff0
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
 @@ -0,0 +1,38 @@

@@ -1,5 +1,5 @@
 diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
-index aa6ca41..77b44fb 100644
+index 6ee9a6d94..1e6d8fd4b 100644
 --- a/UefiPayloadPkg/Include/Coreboot.h
 +++ b/UefiPayloadPkg/Include/Coreboot.h
 @@ -221,6 +221,18 @@ struct cb_boot_media_params {
@@ -22,7 +22,7 @@ index aa6ca41..77b44fb 100644
  struct cb_framebuffer {
    UINT32    tag;
 diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
-index 24c6c66..c0bf8b0 100644
+index 24c6c66f1..c0bf8b08f 100644
 --- a/UefiPayloadPkg/Include/Library/BlParseLib.h
 +++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
 @@ -186,6 +186,23 @@ ParseFlashLayoutInfo (
@@ -50,10 +50,10 @@ index 24c6c66..c0bf8b0 100644
    Parse update capsules passed in by bootloader
  
 diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
-index b62ec6b..4858360 100644
+index 5a32af68a..4d431cae5 100644
 --- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
 +++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
-@@ -882,6 +882,52 @@ ParseFlashLayoutInfo (
+@@ -954,6 +954,52 @@ ParseFlashLayoutInfo (
    return RETURN_SUCCESS;
  }
  
@@ -107,7 +107,7 @@ index b62ec6b..4858360 100644
  EFIAPI
  ParseFirmwareInfo (
 diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
-index b260f76..54439f3 100644
+index b260f7667..54439f398 100644
 --- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
 +++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
 @@ -347,6 +347,24 @@ ParseFlashLayoutInfo (
@@ -136,7 +136,7 @@ index b260f76..54439f3 100644
    Parse update capsules passed in by bootloader
  
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
-index b4a4cbf..4e62f89 100644
+index b4a4cbfd2..4e62f890a 100644
 --- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 +++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 @@ -327,6 +327,117 @@ MemInfoCallback (
@@ -270,7 +270,7 @@ index b4a4cbf..4e62f89 100644
    // Create guid hob for Tcg Physical Presence Interface
    //
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
-index 1e04c37..85dd18e 100644
+index 1e04c37f1..85dd18e0a 100644
 --- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
 +++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
 @@ -45,6 +45,7 @@

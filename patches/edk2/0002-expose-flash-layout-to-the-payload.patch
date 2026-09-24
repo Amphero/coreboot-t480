@@ -1,5 +1,5 @@
 diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
-index be364f914a..aa6ca41207 100644
+index 89471f8da..6ee9a6d94 100644
 --- a/UefiPayloadPkg/Include/Coreboot.h
 +++ b/UefiPayloadPkg/Include/Coreboot.h
 @@ -206,6 +206,21 @@ struct cb_cbmem_ref {
@@ -26,7 +26,7 @@ index be364f914a..aa6ca41207 100644
    UINT32    tag;
 diff --git a/UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h b/UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h
 new file mode 100644
-index 0000000000..fb97c92126
+index 000000000..fb97c9212
 --- /dev/null
 +++ b/UefiPayloadPkg/Include/Guid/FlashLayoutInfoGuid.h
 @@ -0,0 +1,36 @@
@@ -67,7 +67,7 @@ index 0000000000..fb97c92126
 +  UINT64    CbfsSize;
 +} FLASH_LAYOUT_INFO;
 diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
-index 6e070869db..24c6c66f15 100644
+index 6e070869d..24c6c66f1 100644
 --- a/UefiPayloadPkg/Include/Library/BlParseLib.h
 +++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
 @@ -15,6 +15,7 @@
@@ -101,10 +101,10 @@ index 6e070869db..24c6c66f15 100644
    Parse update capsules passed in by bootloader
  
 diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
-index 42759a2e86..b62ec6b9b7 100644
+index 9a0aa7f8b..5a32af68a 100644
 --- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
 +++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
-@@ -844,6 +844,44 @@ ParseInfoString (
+@@ -916,6 +916,44 @@ ParseInfoString (
    @retval RETURN_SUCCESS            Successfully parsed information.
    @retval RETURN_NOT_FOUND          The information is missing.
  **/
@@ -150,7 +150,7 @@ index 42759a2e86..b62ec6b9b7 100644
  EFIAPI
  ParseFirmwareInfo (
 diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
-index c409d9d94a..b260f76671 100644
+index c409d9d94..b260f7667 100644
 --- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
 +++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
 @@ -329,6 +329,24 @@ ParseFirmwareInfo (
@@ -179,7 +179,7 @@ index c409d9d94a..b260f76671 100644
    Parse update capsules passed in by bootloader
  
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
-index 83b5502bab..b4a4cbfd2b 100644
+index 83b5502ba..b4a4cbfd2 100644
 --- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 +++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 @@ -344,6 +344,8 @@ BuildHobFromBl (
@@ -218,7 +218,7 @@ index 83b5502bab..b4a4cbfd2b 100644
    // Create guid hob for Tcg Physical Presence Interface
    //
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
-index 11198c0b13..1e04c37f11 100644
+index 11198c0b1..1e04c37f1 100644
 --- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
 +++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
 @@ -71,6 +71,7 @@
@@ -230,13 +230,14 @@ index 11198c0b13..1e04c37f11 100644
    gEfiTcgPhysicalPresenceInfoHobGuid
  
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 3e5bc43d99..82e75335e3 100644
+index 619b5eebc..13a566c2f 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -61,6 +61,7 @@
- 
-   gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
+@@ -67,6 +67,8 @@
    gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
+   ## Include/Guid/SdhciNonPciInfoGuid.h
+   gUefiSdhciNonPciInfoGuid = { 0x374cb7ae, 0x5560, 0x4ed2, { 0xbd, 0x88, 0x1d, 0x80, 0x1f, 0x1b, 0xd4, 0x96 } }
++  ## Include/Guid/FlashLayoutInfoGuid.h
 +  gEfiFlashLayoutInfoHobGuid = { 0xa308e200, 0xdbfb, 0x5bb8, { 0x98, 0x75, 0x4d, 0x7d, 0x84, 0x91, 0xfe, 0xb4 } }
  
    gEfiTcgPhysicalPresenceInfoHobGuid = { 0xf367be59, 0x5891, 0x40eb, { 0x21, 0x44, 0xed, 0x2e, 0xac, 0x57, 0xfd, 0x14 }}

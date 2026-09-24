@@ -1,5 +1,5 @@
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index f8431d0..805f578 100644
+index 943e3c9f1..a85605407 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
 @@ -63,6 +63,27 @@
@@ -109,10 +109,10 @@ index f8431d0..805f578 100644
    MdeModulePkg/Universal/Metronome/Metronome.inf
    MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index e96c486..a1b7666 100644
+index 3577a4df1..35c385d75 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -549,6 +549,12 @@ INF  FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
+@@ -552,6 +552,12 @@ INF  FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
  INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  !endif
  
