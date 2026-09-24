@@ -7,11 +7,10 @@ Two-phase flow:
   PHASE 1  ./fetch.sh                        (once, with network -> sources/)
   PHASE 2  python3 scripts/build-firmware.py                        (NO network)
 
-This script builds exclusively from sources/ and runs both the image build and
-the variant passes with **--network=none** (verifiably offline). Which upstream
-versions that tree holds is decided by config/versions.lock at fetch time.
-Finished ROMs end up in roms/.
-Flashing: externally via CH341A - see README.md.
+Builds from sources/ only, image build and variant passes both with
+--network=none. Which upstream versions that tree holds was decided by
+config/versions.lock at fetch time. ROMs end up in roms/; flashing is external
+via CH341A, see README.md.
 
 Examples:
   python3 scripts/build-firmware.py                         # TPM + Setup Mode + RNG (final firmware)
@@ -109,7 +108,7 @@ def verify_checksums(src):
 
 
 def require_vboot_keys():
-    """With CONFIG_VBOOT=y and no keys/, coreboot silently signs with the public
+    """With CONFIG_VBOOT=y and no keys/, coreboot signs with the public
     vboot devkeys - anyone could then build an image this firmware accepts. Stop
     instead: the signature would look fine and mean nothing."""
     defconfig = (CONFIG / "defconfig").read_text()
@@ -214,9 +213,8 @@ def config_hash(src, mac):
     for sub in ("base", "edk2"):
         for p in sorted((src / "patches" / sub).glob("*.patch")):
             h.update(sub.encode() + b"/" + p.name.encode() + b"\0" + p.read_bytes() + b"\0")
-    # Signing keys: only the public halves and the keyblock go into the hash -
-    # they determine what the firmware verifies against, and hashing the
-    # private keys would put them in an image label.
+    # Only the public halves and the keyblock: they decide what the firmware
+    # verifies against, and a private key has no business in an image label.
     for k in sorted((src / "keys").glob("*")):
         if k.suffix in (".vbpubk", ".keyblock"):
             h.update(k.name.encode() + b"\0" + k.read_bytes() + b"\0")
@@ -266,11 +264,9 @@ def container_build(image, no_tpm, setup_mode, enable_rng, outname, reset_patch=
     reset_patch: optional clear patch (patches/tpm-reset/...). If set, it is applied before
     `make` -> a reset ROM that clears the TPM 2.0 via TPM2_Clear on EVERY boot; afterwards
     the ramstage is checked to prove the hook is really in there."""
-    # Every sed below is followed by a grep that PROVES the edit took. sed
-    # exits 0 when its pattern matches nothing (the same failure mode that got
-    # the base patches moved from sed to git apply --check) - and a silently
-    # skipped setup-mode edit would auto-enroll Microsoft keys instead of
-    # starting in Setup Mode.
+    # Every sed is followed by a grep that proves it took: sed exits 0 when it
+    # matches nothing - the failure mode that moved the base patches from sed to
+    # git apply --check. A skipped setup-mode edit would auto-enroll MS keys.
     steps = ['set -e', 'git config --global --add safe.directory "*"']
     if setup_mode:
         # Comment out the EnrollDefaultKeys DXE -> firmware starts in Setup Mode.
@@ -399,9 +395,8 @@ def main():
     ap.add_argument("--output", help="override the output file name entirely (default: coreboot_t480_<version>[...].rom)")
     args = ap.parse_args()
 
-    # Precedence: --mac > environment MAC= > config/board.conf. The board.conf
-    # entry ships commented out on purpose - the file is tracked in git and a
-    # MAC is machine identity.
+    # Precedence: --mac > MAC= in the environment > config/board.conf. That
+    # entry ships commented out: the file is tracked and a MAC is identity.
     mac = (args.mac or os.environ.get("MAC") or board_conf().get("MAC") or "").lower()
     if mac in ("aa:bb:cc:dd:ee:ff", "00:11:22:33:44:55"):
         sys.exit("ERROR: '%s' is the placeholder from the documentation, not a MAC - it would\n"

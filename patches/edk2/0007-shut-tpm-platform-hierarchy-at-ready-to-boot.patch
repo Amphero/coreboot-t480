@@ -52,7 +52,7 @@ index bb479c177..49a53ad6c 100644
     configure the TPM's platform authorization.
  
     @param[in] ImageHandle  The firmware allocated handle for the EFI image.
-@@ -69,19 +51,27 @@ Tcg2PlatformDxeEntryPoint (
+@@ -69,19 +51,26 @@ Tcg2PlatformDxeEntryPoint (
    IN    EFI_SYSTEM_TABLE  *SystemTable
    )
  {
@@ -69,13 +69,12 @@ index bb479c177..49a53ad6c 100644
 -            &Registration
 -            );
 +  //
-+  // Upstream arms this at SmmReadyToLock, but this payload's BDS installs
-+  // that protocol in PlatformBootManagerBeforeConsole - before AfterConsole
-+  // has processed the pending TPM physical presence requests, which
-+  // authorize with the still-empty platformAuth (a clear request from the
-+  // OS would fail against a protected hierarchy). Ready-to-boot is the
-+  // last point before control transfer: PPI processing and Tcg2Dxe's
-+  // entry-point bank reallocation are done, the OS has not run.
++  // Upstream arms this at SmmReadyToLock, but this BDS installs that
++  // protocol in PlatformBootManagerBeforeConsole - before AfterConsole has
++  // processed the pending TPM physical presence requests, which authorize
++  // with the still-empty platformAuth. Ready-to-boot is the last point
++  // before control transfer: PPI and Tcg2Dxe's bank reallocation are done,
++  // the OS has not run.
 +  //
 +  Status = EfiCreateEventReadyToBootEx (
 +             TPL_CALLBACK,
@@ -112,10 +111,10 @@ index 4ffd971f3..6e5137f1e 100644
    ## to this mask when they differ.
    gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x00000002
    gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
-+  ## Tcg2PlatformDxe: disable the platform hierarchy at ready-to-boot
-+  ## instead of randomizing platformAuth - deterministic, and it does not
-+  ## depend on the quality of the RNG (RandomizePlatformAuth ignores the
-+  ## entropy status and would fall back to stack garbage).
++  ## Tcg2PlatformDxe: disable the platform hierarchy at ready-to-boot rather
++  ## than randomize platformAuth - deterministic, and independent of the RNG
++  ## (RandomizePlatformAuth ignores the entropy status and would fall back
++  ## to stack garbage).
 +  gEfiSecurityPkgTokenSpaceGuid.PcdRandomizePlatformHierarchy|FALSE
  
  !include NetworkPkg/NetworkDynamicPcds.dsc.inc

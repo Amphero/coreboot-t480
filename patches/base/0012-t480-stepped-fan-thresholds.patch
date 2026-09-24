@@ -14,17 +14,16 @@ diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl b/src/mainboard/le
 index 3a949a2..291b77a 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/acpi/ec.asl
-@@ -4,9 +4,20 @@
+@@ -4,9 +4,19 @@
  #define BRIGHTNESS_DOWN \_SB.PCI0.GFX0.DECB
  #define THINKPAD_EC_GPE 22
  
 -Name(\TCRT, 100)
 +/*
-+ * 110, not the CPU's 100: at 100 the CPU merely throttles (PROCHOT), so
-+ * the EC sensor cannot exceed it while thermal management works - a trip
-+ * AT 100 turns a harmless boost transient into a hardware-protection
-+ * poweroff (observed under an all-core build). 110 is only reachable
-+ * when throttling itself has failed, which is what _CRT is for.
++ * 110, not the CPU's 100: at 100 the CPU only throttles (PROCHOT), so the
++ * EC sensor cannot pass it while thermal management works - a trip AT 100
++ * turns a boost transient into a hardware poweroff (seen under an all-core
++ * build). 110 is reachable only once throttling failed, which is _CRT's job.
 + */
 +Name(\TCRT, 110)
  Name(\TPSV, 90)
@@ -41,7 +40,7 @@ new file mode 100644
 index 0000000..10c9f2f
 --- /dev/null
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,36 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +#ifndef VARIANT_THERMAL_H
@@ -61,13 +60,12 @@ index 0000000..10c9f2f
 +#define FAN0_HFSP		0x07	/* fastest REGULATED level */
 +
 +/*
-+ * Trip points in degrees C, 8 K hysteresis each. _AC0 belongs to the
-+ * FASTEST level (ACPI defines it that way). The zone is polled every
-+ * 10 s (_TZP): a sustained all-core load gains 10-15 K between two
-+ * polls, so the top step must engage well below the passive trip
-+ * (\TPSV, 90) - at 85 it lost that race and the zone ran on into the
-+ * critical trip. The critical shutdown is the last resort, not part
-+ * of the fan curve.
++ * Trip points in degrees C, 8 K hysteresis. _AC0 is the FASTEST level
++ * (ACPI defines it so). The zone is polled every 10 s (_TZP) and a
++ * sustained all-core load gains 10-15 K between polls, so the top step
++ * must engage well below the passive trip (\TPSV, 90): at 85 it lost that
++ * race and ran on into the critical trip - the last resort, not part of
++ * the curve.
 + */
 +#define FAN0_THRESHOLD_ON	80
 +#define FAN0_THRESHOLD_OFF	72

@@ -2,15 +2,14 @@ diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.d
 index a85605407..e70a37177 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -1311,6 +1311,14 @@
+@@ -1311,6 +1311,13 @@
      <LibraryClasses>
        FmpDeviceLib|UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.inf
    }
-+  # The ESRT rebuilt from the FMP instances on ReadyToBoot, LastAttemptStatus
-+  # included - the static table BlSupportDxe installs never carries one, so
-+  # without this a failed update is invisible to the OS.  Installs nothing
-+  # when no FMP instance exists.  The entry reports as device rather than
-+  # system firmware: marking it would take our GUID in
++  # ESRT rebuilt from the FMP instances at ReadyToBoot, LastAttemptStatus
++  # included - BlSupportDxe's static table carries none, so a failed update
++  # would be invisible to the OS. Installs nothing without an FMP instance.
++  # Reports as device, not system firmware: that would need our GUID in
 +  # PcdSystemFmpCapsuleImageTypeIdGuid, and the dsc parser does not expand
 +  # $(CAPSULE_MAIN_FW_GUID) inside a PCD value.
 +  MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmpDxe.inf

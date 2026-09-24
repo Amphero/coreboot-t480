@@ -48,9 +48,9 @@ index 000000000..fb97c9212
 +
 +typedef struct {
 +  ///
-+  /// Address of the bootloader's in-memory copy of the flash map. coreboot
-+  /// keeps one in CBMEM unconditionally and points at it with CB_TAG_FMAP,
-+  /// so a consumer does not have to read or search the flash itself.
++  /// The bootloader's in-memory copy of the flash map. coreboot always keeps
++  /// one in CBMEM and points at it with CB_TAG_FMAP, so a consumer need not
++  /// search the flash itself.
 +  ///
 +  UINT64    FmapAddress;
 +  ///
@@ -59,9 +59,9 @@ index 000000000..fb97c9212
 +  UINT64    FmapOffset;
 +  UINT64    BootMediaSize;
 +  ///
-+  /// The CBFS the bootloader actually booted from. Under verified boot this
-+  /// identifies the running slot without having to parse vboot's own state,
-+  /// whose layout is not a stable interface.
++  /// The CBFS the bootloader booted from. Under verified boot that names the
++  /// running slot without parsing vboot's own state, whose layout is not a
++  /// stable interface.
 +  ///
 +  UINT64    CbfsOffset;
 +  UINT64    CbfsSize;
@@ -104,7 +104,7 @@ diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Lib
 index 9a0aa7f8b..5a32af68a 100644
 --- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
 +++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
-@@ -916,6 +916,44 @@ ParseInfoString (
+@@ -916,6 +916,43 @@ ParseInfoString (
    @retval RETURN_SUCCESS            Successfully parsed information.
    @retval RETURN_NOT_FOUND          The information is missing.
  **/
@@ -134,9 +134,8 @@ index 9a0aa7f8b..5a32af68a 100644
 +  LayoutInfo->CbfsSize      = Media->cbfs_size;
 +
 +  //
-+  // The in-memory copy is optional as far as this record is concerned - the
-+  // offset above is enough to find the map on the medium. Report what is
-+  // there and let the consumer decide.
++  // The in-memory copy is optional here: the offset above already finds the
++  // map on the medium. Report what is there, let the consumer decide.
 +  //
 +  FmapRef = FindCbTag (CB_TAG_FMAP);
 +  if (FmapRef != NULL) {

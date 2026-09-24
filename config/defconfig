@@ -27,21 +27,19 @@ CONFIG_VBOOT_ALWAYS_ENABLE_DISPLAY=y
 CONFIG_VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y
 # own signing keys from keys/ (never committed). Drop these four lines to fall
 # back to the public vboot devkeys.
-# Firmware version for rollback protection. futility puts it into the preamble
-# of both slots; vboot combines it with the keyblock's key version into
-# sd->fw_version and refuses anything strictly below the TPM counter. RAISE THIS
-# BY ONE FOR EVERY RELEASE that fixes something worth locking out - the counter
-# can never move without it. Raising it makes every older image unbootable once
-# the counter has followed (scripts/vbnv.py boot-ok), backups included; the
-# recovery path in WP_RO is not version-checked and always boots.
+# Firmware version for rollback protection. futility writes it into both slot
+# preambles; vboot combines it with the keyblock's key version into
+# sd->fw_version and refuses anything below the TPM counter. RAISE BY ONE FOR
+# EVERY RELEASE that locks something out - the counter cannot move without it.
+# Once the counter follows (scripts/vbnv.py boot-ok), every older image stops
+# booting, backups included. The recovery path in WP_RO is not version-checked.
 CONFIG_VBOOT_KEYBLOCK_VERSION=5
-# coreboot sets this GBB flag by default (security/vboot/Kconfig: "default y"),
-# and it makes vboot skip the rollback comparison entirely - 2firmware.c:189
-# logs "Ignoring FW rollback due to GBB flag" and boots the slot anyway. The
-# roll-forward twenty lines below has no such condition, so the counter still
-# advances: it moves and enforces nothing. Measured - a version-2 slot booted
-# with the counter at 3. The flag lives in the GBB inside WP_RO, so changing it
-# needs the external programmer.
+# coreboot defaults this GBB flag on (security/vboot/Kconfig), and it makes
+# vboot skip the rollback comparison - 2firmware.c:189 logs "Ignoring FW
+# rollback due to GBB flag" and boots anyway. The roll-forward twenty lines
+# below has no such condition, so the counter advances and enforces nothing.
+# Measured: a version-2 slot booted with the counter at 3. The flag sits in the
+# GBB inside WP_RO, so changing it needs the external programmer.
 # CONFIG_GBB_FLAG_FORCE_DEV_BOOT_USB is left at its default: it only feeds
 # vb2_fill_dev_boot_flags(), which nothing outside the kernel phase calls.
 # CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK is not set
@@ -50,13 +48,12 @@ CONFIG_VBOOT_RECOVERY_KEY="/opt/keys/recovery_key.vbpubk"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="/opt/keys/firmware_data_key.vbprivk"
 CONFIG_VBOOT_KEYBLOCK="/opt/keys/firmware.keyblock"
 # SPI write protection for WP_RO (docs/vboot-notes.md). A PCH protected range
-# register covers WP_RO exactly - 4 KB granularity; the chip's own BP bits only
-# do power-of-two blocks and would round up to the top 8 MB, taking half of
-# RW_SECTION_B with them. The range is sealed with FLOCKDN/DLOCK every boot and
-# blocks every host write including SMM - independent of bios_lock, which only
-# gates the regions outside it. SMMSTORE, the MRC cache and both RW slots stay
-# writable (slot updates keep working internally); any WP_RO change - keyset,
-# GBB, verstage, layout - needs the external programmer from now on.
+# covers WP_RO exactly at 4 KB granularity; the chip's own BP bits do
+# power-of-two blocks only and would round up to the top 8 MB, taking half of
+# RW_SECTION_B. The range is sealed with FLOCKDN/DLOCK every boot and blocks
+# every host write including SMM, independent of bios_lock. SMMSTORE, the MRC
+# cache and both slots stay writable; any WP_RO change - keyset, GBB, verstage,
+# layout - needs the external programmer.
 # BOOTMEDIA_LOCK_IN_VERSTAGE stays off: it would lock before ramstage and its
 # help text warns it blocks write-protect facilities there; everything running
 # between verstage and the ramstage lock is verified code anyway.
@@ -77,16 +74,15 @@ CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE=y
 # controller lock above.
 CONFIG_BOOTMEDIA_SMM_BWP=y
 CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
-# Flash descriptor: without this coreboot takes its default UNLOCK_FLASH_REGIONS
-# and runs `ifdtool -u`, which hands the host write access to every region -
-# descriptor, ME and GbE included, none of which SMM BWP or the WP_RO range
-# cover (measured: a GbE write succeeds on a fully locked machine). Locking
-# leaves the host read-only on the descriptor and shuts it out of ME writes;
-# ALLOW_CPU_READ_ACCESS keeps ME readable so a full-chip backup still works.
-# BIOS region stays read/write, so slot updates are unaffected. ifdtool
-# deliberately keeps GbE host-writable on this platform; the range above is
-# what closes that.
-# One-way: after this the descriptor itself needs the external programmer.
+# Flash descriptor: without this coreboot defaults to UNLOCK_FLASH_REGIONS and
+# runs `ifdtool -u`, handing the host write access to every region - descriptor,
+# ME and GbE, none of them covered by SMM BWP or the WP_RO range (measured: a
+# GbE write succeeds on a fully locked machine). Locking leaves the host
+# read-only on the descriptor and out of ME writes; ALLOW_CPU_READ_ACCESS keeps
+# ME readable for a full-chip backup. The BIOS region stays read/write, so slot
+# updates are unaffected. ifdtool keeps GbE host-writable on this platform -
+# that is what the range above closes. One-way: the descriptor needs the
+# programmer afterwards.
 CONFIG_LOCK_MANAGEMENT_ENGINE=y
 CONFIG_ME_REGION_ALLOW_CPU_READ_ACCESS=y
 CONFIG_SMMSTORE=y
@@ -113,12 +109,11 @@ CONFIG_DRIVERS_EFI_FW_INFO=y
 CONFIG_DRIVERS_EFI_MAIN_FW_GUID="271c57fb-af28-5d13-96d4-c8ad68ef4ea1"
 CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=0x001A0012
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x00000000
-# The SMI handler only hands out full-flash access when coreboot found a
-# capsule this boot, so the writer needs this to be able to write at all.
-# SLOT_UPDATE then picks the payload arrangement (patch 0044): FmpDxe stays in
-# the firmware and writes the inactive slot, rather than being embedded into
-# the capsule to rewrite the whole chip. Without it the edk2 Makefile passes
-# -D CAPSULE_SUPPORT=TRUE and the payload builds the other one.
+# The SMI handler hands out full-flash access only in a boot where coreboot
+# found a capsule, so without this the writer cannot write at all. SLOT_UPDATE
+# then picks the arrangement (patch 0044): FmpDxe stays in the firmware and
+# writes the inactive slot instead of riding in the capsule to rewrite the whole
+# chip. Without it the edk2 Makefile passes -D CAPSULE_SUPPORT=TRUE.
 CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_SLOT_UPDATE=y
 # Capsule trust anchor: FmpDxe accepts only capsules whose PKCS#7 chain ends

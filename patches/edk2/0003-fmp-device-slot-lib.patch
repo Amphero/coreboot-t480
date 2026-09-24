@@ -3,50 +3,41 @@ new file mode 100644
 index 000000000..a6d4d73c2
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSlotLib/FmpDeviceSlotLib.c
-@@ -0,0 +1,1050 @@
+@@ -0,0 +1,1041 @@
 +/** @file
 +  Firmware device services that update the inactive verified-boot slot.
 +
-+  UefiPayloadPkg's other FmpDeviceLib, FmpDeviceSmmLib, rewrites the whole
-+  flash chip and therefore needs every flash protection lifted while it runs.
-+  This one writes a single RW_SECTION and needs nothing unlocked: coreboot
-+  programs its protected ranges at BS_DEV_RESOURCES and seals them there,
-+  which is before capsules are parsed at BS_DEV_INIT, and those ranges cover
-+  WP_RO, SI_DESC and SI_GBE while leaving the BIOS region writable. The slots
-+  are in the BIOS region.
++  The other FmpDeviceLib, FmpDeviceSmmLib, rewrites the whole chip and needs
++  every flash protection lifted. This one writes a single RW_SECTION and needs
++  nothing unlocked: coreboot seals its protected ranges at BS_DEV_RESOURCES,
++  before capsules are parsed at BS_DEV_INIT, and they cover WP_RO, SI_DESC and
++  SI_GBE. The slots sit in the BIOS region, which stays writable.
 +
-+  Where things are comes from gEfiFlashLayoutInfoHobGuid, which carries
-+  coreboot's in-memory copy of the flash map and the offset of the CBFS that
-+  was actually booted from. That offset falls inside exactly one RW_SECTION
-+  and so names the running slot; the other one is the target. Reading vboot's
-+  own state was the alternative and was rejected - vb2_shared_data is internal
-+  and not an interface.
++  The layout comes from gEfiFlashLayoutInfoHobGuid: coreboot's flash map plus
++  the offset of the CBFS that was booted from. That offset falls inside exactly
++  one RW_SECTION and so names the running slot; the other is the target.
++  vboot's own state would do too, but vb2_shared_data is internal.
 +
-+  The image carries BOTH slots, A first then B, and only the half matching the
-+  target is written. A slot image is not interchangeable: FSP-M is
-+  execute-in-place on this SoC (FSP_M_XIP, selected unconditionally by
-+  src/soc/intel/skylake/Kconfig, and unavoidable because FSP-M is what brings
-+  memory up - there is no RAM to copy it into), so it is bound to its flash
-+  address, and romstage carries references to it. Measured on a built image:
-+  of twelve CBFS files, fallback/romstage and fspm.bin differ between the two
-+  slots and the rest are byte-identical.
++  The image carries BOTH slots, A then B; only the matching half is written.
++  Slot images are not interchangeable: FSP-M runs execute-in-place (FSP_M_XIP,
++  unconditional in src/soc/intel/skylake/Kconfig - FSP-M brings memory up, so
++  there is no RAM to copy it into), so it is bound to its flash address and
++  romstage references it. Measured on a built image: of twelve CBFS files only
++  fallback/romstage and fspm.bin differ between the slots.
 +
-+  Writing the wrong half would pass verification and then fail to boot. vboot
-+  checks that VBLOCK and FW_MAIN agree with each other, which they would, and
-+  it has nothing to say about the address FSP-M was linked for. Carrying both
-+  halves is what keeps that failure impossible rather than merely unlikely.
++  Writing the wrong half passes verification and then fails to boot: vboot
++  only checks VBLOCK against FW_MAIN and says nothing about the address FSP-M
++  was linked for. Carrying both halves makes that impossible, not unlikely.
 +
-+  Writing only works during a boot where coreboot found a pending capsule.
-+  Full-flash access through the SMI handler is latched once per boot from the
-+  capsule count (smmstore_preprocess_cmd), so outside that the block calls
-+  come back as unsupported. That is the intended flow, not a defect: fwupd
-+  stages the capsule, the reboot makes coreboot find it, and the payload
-+  applies it.
++  Writing works only in a boot where coreboot found a pending capsule:
++  full-flash access through the SMI handler is latched once per boot from the
++  capsule count (smmstore_preprocess_cmd), otherwise the block calls return
++  unsupported. That is the flow - fwupd stages, the reboot finds it, the
++  payload applies it.
 +
-+  After a successful write the trial boot is armed in VBNV, so the next boot
-+  runs the new image once and falls back on its own if it does not come up.
-+  Reporting that it did come up stays with the OS - scripts/vbnv.py boot-ok -
-+  because firmware cannot know it.
++  A successful write arms the trial boot in VBNV: the next boot runs the new
++  image once and falls back on its own if it does not come up. Confirming it
++  did stays with the OS (scripts/vbnv.py boot-ok); firmware cannot know.
 +
 +  Copyright (c) 2026, Amphero.<BR>
 +  SPDX-License-Identifier: BSD-2-Clause-Patent

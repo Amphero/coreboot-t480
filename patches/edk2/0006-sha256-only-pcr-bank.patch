@@ -2,21 +2,18 @@ diff --git a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe
 index ea89b2900..6a99edd53 100644
 --- a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
 +++ b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
-@@ -2899,6 +2899,24 @@ DriverEntry (
+@@ -2899,6 +2899,21 @@ DriverEntry (
      ASSERT_EFI_ERROR (Status);
    }
  
 +  //
-+  // Tcg2Pei would also have brought the TPM's bank allocation in line with
-+  // the mask (SyncPcrAllocationsAndPcrMask). Without that step banks nobody
-+  // extends stay active and poison the event log: the SpecID header lists
-+  // every active bank, the replayed bootloader events carry SHA256 only,
-+  // and the OS-side parsers stop at the first event whose digest count
-+  // differs from the header's algorithm count. Reallocate to the mask; the
-+  // allocation takes effect at the next TPM startup, so this boot continues
-+  // on the old banks and the next one comes up clean. Deliberately no reset
-+  // here: if the allocation does not stick, boot must not turn into a
-+  // reset loop.
++  // Tcg2Pei would have done this (SyncPcrAllocationsAndPcrMask). Without it
++  // banks nobody extends stay active and poison the event log: the SpecID
++  // header lists every active bank, the replayed bootloader events carry
++  // SHA256 only, and OS-side parsers stop at that mismatch. The allocation
++  // takes effect at the next TPM startup, so this boot runs on the old
++  // banks and the next comes up clean. No reset here: if it does not stick,
++  // boot must not turn into a reset loop.
 +  //
 +  Tpm2PcrMask &= TpmHashAlgorithmBitmap;
 +  if ((Tpm2PcrMask != 0) && (ActivePCRBanks != Tpm2PcrMask)) {
@@ -31,27 +28,26 @@ diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.d
 index e70a37177..4ffd971f3 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -1100,6 +1100,12 @@
+@@ -1100,6 +1100,11 @@
    gEfiSecurityPkgTokenSpaceGuid.PcdTpmInitializationPolicy|0
    ## Match the hash algorithms listed in Tcg2Dxe
    gEfiSecurityPkgTokenSpaceGuid.PcdTcg2HashAlgorithmBitmap|0x1F
-+  ## SHA256 only.  The bootloader measures SHA256 and nothing else; every
-+  ## further active bank is advertised in the event log header while the
-+  ## replayed bootloader events carry a single digest, and the OS log
-+  ## parsers stop at that mismatch.  Tcg2Dxe reallocates the TPM's banks
-+  ## to this mask when they differ.
++  ## SHA256 only. The bootloader measures nothing else; a further active
++  ## bank is advertised in the event log header while the replayed events
++  ## carry a single digest, and OS log parsers stop at that mismatch.
++  ## Tcg2Dxe reallocates the TPM's banks to this mask when they differ.
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x00000002
    gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
  
  !include NetworkPkg/NetworkDynamicPcds.dsc.inc
-@@ -1565,11 +1571,10 @@
+@@ -1565,11 +1570,10 @@
        Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf
        NULL|SecurityPkg/Library/Tpm2DeviceLibDTpm/Tpm2InstanceLibDTpm.inf
        HashLib|SecurityPkg/Library/HashLibBaseCryptoRouter/HashLibBaseCryptoRouterDxe.inf
 -      NULL|SecurityPkg/Library/HashInstanceLibSha1/HashInstanceLibSha1.inf
 +      # SHA256 only - the router rebuilds PcdTcg2HashAlgorithmBitmap from the
-+      # registered instances, and every registered algorithm ends up in the
-+      # event log header.  See PcdTpm2HashMask above.
++      # registered instances, and each one lands in the event log header.
++      # See PcdTpm2HashMask above.
        NULL|SecurityPkg/Library/HashInstanceLibSha256/HashInstanceLibSha256.inf
 -      NULL|SecurityPkg/Library/HashInstanceLibSha384/HashInstanceLibSha384.inf
 -      NULL|SecurityPkg/Library/HashInstanceLibSha512/HashInstanceLibSha512.inf

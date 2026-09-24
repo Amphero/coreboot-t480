@@ -1,22 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # coreboot T480 build with EDK2/UEFI payload  -  PHASE 2 (BUILD, fully OFFLINE)
 #
-# This Dockerfile compiles the firmware from the PRE-FETCHED sources produced by
-# PHASE 1 (./fetch.sh). It makes NO network access and is meant to be built with:
+# Compiles the firmware from the sources PHASE 1 (./fetch.sh) fetched. No
+# network access; built with:
 #
 #   podman build --network=none \
 #       --build-arg MAC_ADDRESS="xx:xx:xx:xx:xx:xx" \
 #       -f build/Dockerfile.offline -t coreboot-t480 \
-#       sources/<pinned|latest>            # <-- build context IS the sources tree
+#       sources                            # <-- build context IS the sources tree
 #
-# This is the sole build recipe (the workspace no longer carries the upstream
-# radleylewis online Dockerfile). defconfig, splash.bmp and apply-devicetree.sh
-# come from the build context: ./fetch.sh copies them from config/ + build/ into
-# sources/<mode>/ before this runs.
+# scripts/build-firmware.py does exactly this. defconfig, splash.bmp and
+# apply-devicetree.sh come from the build context too - ./fetch.sh copies them
+# there from config/ and build/.
 #
-# (scripts/build-firmware.py does exactly this and adds --network=none.)
-#
-# Requirements met entirely by the build context (sources/<mode>/):
+# Everything the build needs is in that context:
 #   coreboot/            full checkout @ pinned commit, submodules populated,
 #                        util/crossgcc/tarballs/ pre-filled (no toolchain download)
 #   edk2/mrchromebox/    MrChromebox EDK2 clone (+ submodules), pre-placed into
@@ -25,8 +22,8 @@
 #   libreboot/*.tar.xz   the libreboot release tarball
 #   defconfig, splash.bmp
 #
-# FROM image (coreboot-t480-deps) carries every apt/pip dependency and is built
-# once, WITH network, by ./fetch.sh. Nothing here runs apt-get.
+# The FROM image (coreboot-t480-deps) carries every apt/pip dependency and is
+# built once, with network, by ./fetch.sh. Nothing here runs apt-get.
 
 # ---------- Stage 1: libreboot injection (OFFLINE) ----------
 # Runs `mk inject` using the pre-populated lbmk cache to produce a ROM with a
@@ -68,10 +65,9 @@ RUN set -e; \
 # ---------- Stage 2: coreboot + EDK2 build (OFFLINE) ----------
 FROM coreboot-t480-deps
 
-# coreboot: full checkout with submodules + crossgcc tarballs already present.
-# The toolchain builds FIRST, straight from the pristine tree - defconfig,
-# patches, EDK2 and the splash land in later layers, so changing any of them
-# no longer invalidates the (slow) crossgcc layer.
+# coreboot: full checkout with submodules and crossgcc tarballs. The toolchain
+# builds FIRST from the pristine tree; defconfig, patches, EDK2 and the splash
+# land in later layers, so changing them does not invalidate the slow one.
 COPY --chown=builder:builder coreboot /opt/coreboot
 
 USER builder
@@ -81,10 +77,9 @@ RUN git config --global user.name "builder" && \
     git config --global --add safe.directory '*'
 
 RUN echo "" && echo "======= STEP 1 - building cross-compiler (from pre-fetched tarballs) =======" && echo ""
-# No retry loop here (unlike the online build): with the tarballs pre-fetched
-# this must succeed in one pass. If it tries to download, --network=none makes it
-# fail fast - which correctly signals a gap in PHASE 1 rather than looping forever.
-# Needs no .config - crossgcc is a standalone target.
+# No retry loop: with the tarballs pre-fetched this succeeds in one pass, and a
+# download attempt fails fast under --network=none - which is the right signal,
+# a gap in PHASE 1. Needs no .config, crossgcc is a standalone target.
 RUN make crossgcc-i386 CPUS="$(nproc)"
 
 # defconfig + board.conf + optional splash (glob form tolerates a missing splash).
@@ -97,20 +92,17 @@ COPY --chown=builder:builder apply-devicetree.sh /opt/apply-devicetree.sh
 # vboot signing keys. Empty unless keys/ exists in the project; the defconfig
 # then keeps pointing at the vboot devkeys.
 COPY --chown=builder:builder keys /opt/keys
-# Pre-place the MrChromebox EDK2 clone into coreboot's edk2 workspace. Because
-# the directory already exists, coreboot's edk2 Makefile skips the online
-# `git clone` (any `git fetch origin` it still attempts fails harmlessly offline;
-# the origin/<branch> ref and all submodules are already present locally).
+# The MrChromebox EDK2 clone in coreboot's edk2 workspace: the directory exists,
+# so coreboot's edk2 Makefile skips its `git clone`. A `git fetch origin` it
+# still tries fails harmlessly - ref and submodules are already here.
 COPY --chown=builder:builder edk2/mrchromebox /opt/coreboot/payloads/external/edk2/workspace/mrchromebox
 # The deguarded/MAC-injected ROM from stage 1 - source of ifd.bin/me.bin/gbe.bin.
 COPY --from=libreboot --chown=builder:builder /opt/lbmk/injected.rom /opt/libreboot.rom
 
-# Board patches from patches/base/, applied in lexical order (mirrored into the
-# build context by fetch.sh and build-firmware.py::sync_build_config). Replaces
-# the former inline seds: every patch MUST apply - a pattern miss aborts the
-# build instead of silently producing a ROM without the change.
-#   0001  expose "Restore AC power after loss" in the CFR setup menu
-#   0002  default the Intel ME to disabled (Kconfig select, T480 only)
+# Board patches from patches/base/, in lexical order (mirrored into the build
+# context by fetch.sh and build-firmware.py::sync_build_config). What each one
+# does is in patches/README.md. Every patch MUST apply - the former inline seds
+# missed silently and produced a ROM without the change.
 COPY --chown=builder:builder patches /opt/patches
 RUN set -e; cd /opt/coreboot; \
     for p in /opt/patches/base/*.patch; do \
@@ -120,10 +112,9 @@ RUN set -e; cd /opt/coreboot; \
       git apply "$p"; \
     done
 
-# Payload patches from patches/edk2/, same rules against the MrChromebox EDK2
-# tree copied in above. Separate from patches/base/ because it is a different
-# upstream on its own release cycle - a patch that stops applying should name
-# the tree it belongs to.
+# Payload patches from patches/edk2/, same rules, against the EDK2 tree copied
+# in above. Separate from base/ because that is a different upstream on its own
+# release cycle - a patch that stops applying should name its tree.
 RUN set -e; cd /opt/coreboot/payloads/external/edk2/workspace/mrchromebox; \
     for p in /opt/patches/edk2/*.patch; do \
       [ -e "$p" ] || continue; \
@@ -151,12 +142,9 @@ RUN [ -f /opt/coreboot/splash.bmp ] || \
     sed -i '/CONFIG_EDK2_BOOTSPLASH_FILE/d; /CONFIG_EDK2_FOLLOW_BGRT_SPEC/d' /opt/coreboot/defconfig
 RUN cp defconfig .config && make olddefconfig
 
-# Pin the EDK2 revision coreboot checks out to what PHASE 1 actually pre-placed
-# in workspace/mrchromebox: the exact commit from versions.lock when available
-# (deterministic even after the upstream branch moved), the branch name as the
-# fallback. Needed for `latest`: coreboot's Kconfig default may name a different
-# uefipayload_* branch (e.g. 26.06 defaults to uefipayload_2603) than the one we
-# resolved/fetched.
+# Pin coreboot's EDK2 revision to what PHASE 1 placed in workspace/mrchromebox:
+# the commit from versions.lock, the branch name as fallback. coreboot's Kconfig
+# default may name another branch - 26.06 defaults to uefipayload_2603.
 ARG EDK2_BRANCH
 ARG EDK2_COMMIT
 RUN REV="$EDK2_COMMIT"; [ -n "$REV" ] || REV="${EDK2_BRANCH:+origin/$EDK2_BRANCH}"; \

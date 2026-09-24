@@ -144,16 +144,15 @@ index db1b18a..247153e 100644
  #include <soc/ramstage.h>
  #include "variant.h"
  
-@@ -9,13 +11,31 @@ void mainboard_silicon_init_params(FSP_SIL_UPD *params)
+@@ -9,13 +11,30 @@ void mainboard_silicon_init_params(FSP_SIL_UPD *params)
  	variant_config_gpios();
  }
  
 +/*
-+ * One SSDT hook for everything the board adds: the dGPU description
-+ * (when present) and the fan profile chosen in the setup menu, published
-+ * as \FPRO for the thermal zone (ec/lenovo/h8/acpi/thermal.asl reads it).
-+ * Keep it chained - assigning ssdt_add_dgpu directly here would drop the
-+ * fan profile, assigning only a fan hook would drop the dGPU from ACPI.
++ * One SSDT hook for everything the board adds: the dGPU description (when
++ * present) and the fan profile from the setup menu, published as \FPRO for
++ * ec/lenovo/h8/acpi/thermal.asl. Keep it chained - assigning ssdt_add_dgpu
++ * directly would drop the fan profile, a fan-only hook the dGPU.
 + */
 +static void mainboard_fill_ssdt(const struct device *dev)
 +{
@@ -183,21 +182,19 @@ diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/
 index 10c9f2f..81f529d 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-@@ -34,4 +34,24 @@
+@@ -34,4 +34,22 @@
  #define FAN3_THRESHOLD_ON	54
  #define FAN3_THRESHOLD_OFF	46
  
 +/*
-+ * Fan profiles for the setup-menu option "fan_profile" (published as
-+ * \FPRO by ramstage.c). One row per profile; each row lists the
-+ * _AC0-_AC3 ON/OFF pairs in degrees C for the FTBL package in
-+ * ec/lenovo/h8/acpi/thermal.asl.
++ * Fan profiles for the setup-menu option "fan_profile", published as \FPRO
++ * by ramstage.c. One row per profile: the _AC0-_AC3 ON/OFF pairs in degrees
++ * C for the FTBL package in ec/lenovo/h8/acpi/thermal.asl.
 + *
-+ * "EC only" parks all four trips 1 K staggered just below the CPU's
-+ * throttle point (100 C): the EC curve rules alone, but if it ever
-+ * fails there is still an ACPI escalation before throttling and the
-+ * critical trip (\TCRT, 110). Do NOT disable the trips instead - that
-+ * would remove the safety net entirely.
++ * "EC only" parks all four trips 1 K staggered just below the CPU's throttle
++ * point (100 C): the EC curve rules alone, but an ACPI escalation remains
++ * before throttling and the critical trip (\TCRT, 110). Do NOT disable the
++ * trips instead - that removes the safety net.
 + */
 +#define FAN_PROFILE_QUIET	88, 80,  80, 72,  72, 64,  64, 56
 +#define FAN_PROFILE_BALANCED	FAN0_THRESHOLD_ON, FAN0_THRESHOLD_OFF, \

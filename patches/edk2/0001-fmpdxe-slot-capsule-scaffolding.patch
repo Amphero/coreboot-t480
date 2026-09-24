@@ -2,22 +2,20 @@ diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.d
 index 943e3c9f1..a85605407 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -63,6 +63,27 @@
+@@ -63,6 +63,25 @@
    DEFINE CAPSULE_MAIN_FW_GUID         =
    DEFINE CAPSULE_EMBED_FMP_DXE        = FALSE
  
 +  #
 +  # Slot-only capsule updates.
 +  #
-+  # CAPSULE_SUPPORT builds FmpDxe to update the whole flash chip - embedded
-+  # into the capsule or, with CAPSULE_EMBED_FMP_DXE=FALSE, in the firmware
-+  # with FmpDeviceSmmLib - and therefore needs every flash protection
-+  # lifted.  This one keeps FmpDxe in the firmware and pairs it with
-+  # FmpDeviceSlotLib, which writes only the inactive vboot slot - the one
-+  # region the protected ranges leave writable anyway.
++  # CAPSULE_SUPPORT has FmpDxe rewrite the whole chip - in the capsule, or
++  # with CAPSULE_EMBED_FMP_DXE=FALSE in the firmware via FmpDeviceSmmLib -
++  # and needs every flash protection lifted. This keeps FmpDxe in the
++  # firmware with FmpDeviceSlotLib, which writes only the inactive vboot
++  # slot, the one region the protected ranges leave writable.
 +  #
-+  # The two are mutually exclusive: they disagree about what FmpDxe is
-+  # allowed to touch.
++  # Mutually exclusive: they disagree about what FmpDxe may touch.
 +  #
 +  DEFINE SLOT_CAPSULE_SUPPORT         = FALSE
 +
@@ -30,7 +28,7 @@ index 943e3c9f1..a85605407 100644
    #
    # Crypto Support
    #
-@@ -379,12 +400,22 @@
+@@ -379,12 +398,21 @@
    UefiUsbLib|MdePkg/Library/UefiUsbLib/UefiUsbLib.inf
    UefiScsiLib|MdePkg/Library/UefiScsiLib/UefiScsiLib.inf
    OemHookStatusCodeLib|MdeModulePkg/Library/OemHookStatusCodeLibNull/OemHookStatusCodeLibNull.inf
@@ -38,12 +36,11 @@ index 943e3c9f1..a85605407 100644
 +!if $(CAPSULE_SUPPORT) == TRUE || $(SLOT_CAPSULE_SUPPORT) == TRUE
    CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.inf
 +  !if $(SLOT_CAPSULE_SUPPORT) == TRUE
-+  # Always text here, even with a bootsplash.  A capsule can be applied from
-+  # a ProcessCapsules() call that runs before a GOP exists; the graphics
-+  # library's first progress call fails there, and DxeCapsuleLib answers a
-+  # failed first call by handing FmpDxe a NULL progress callback, which it
-+  # rejects (PROGRESS_CALLBACK_ERROR, 0x1001).  The text library prints into
-+  # the void and succeeds.
++  # Always text, even with a bootsplash. ProcessCapsules() can run before a
++  # GOP exists; the graphics library's first progress call then fails,
++  # DxeCapsuleLib answers that with a NULL progress callback, and FmpDxe
++  # rejects it (PROGRESS_CALLBACK_ERROR, 0x1001). The text library prints
++  # into the void and succeeds.
 +  DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibText/DisplayUpdateProgressLibText.inf
 +  !else
    # Use the graphics implementation for update progress.
@@ -54,7 +51,7 @@ index 943e3c9f1..a85605407 100644
    # If there are no specific checks to do, null-library suffices
    CapsuleUpdatePolicyLib|FmpDevicePkg/Library/CapsuleUpdatePolicyLibNull/CapsuleUpdatePolicyLibNull.inf
    FmpAuthenticationLib|SecurityPkg/Library/FmpAuthenticationLibPkcs7/FmpAuthenticationLibPkcs7.inf
-@@ -682,7 +713,7 @@
+@@ -682,7 +710,7 @@
  !if $(PERFORMANCE_MEASUREMENT_ENABLE)
    PerformanceLib|MdeModulePkg/Library/DxePerformanceLib/DxePerformanceLib.inf
  !endif
@@ -63,7 +60,7 @@ index 943e3c9f1..a85605407 100644
    CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeRuntimeCapsuleLib.inf
  !endif
  
-@@ -756,7 +787,11 @@
+@@ -756,7 +784,11 @@
    gEfiMdeModulePkgTokenSpaceGuid.PcdHiiOsRuntimeSupport|FALSE
    gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE
    ## Whether capsules are allowed to persist across reset.
@@ -75,7 +72,7 @@ index 943e3c9f1..a85605407 100644
  
  
    #
-@@ -824,7 +859,11 @@
+@@ -824,7 +856,11 @@
    gEfiMdePkgTokenSpaceGuid.PcdMaximumUnicodeStringLength|1800000
  
    ## Whether FMP capsules are enabled.
@@ -87,7 +84,7 @@ index 943e3c9f1..a85605407 100644
    ## Whether embedded drivers in FMP capsules are supported (opt-in).
    gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSupport|FALSE
  
-@@ -1260,6 +1299,20 @@
+@@ -1260,6 +1296,20 @@
    MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
  !endif
  
