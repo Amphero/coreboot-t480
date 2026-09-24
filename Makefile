@@ -6,6 +6,7 @@
 # so the `make` calls mentioned in the docs work verbatim.
 #
 #   make fetch                   # = ./fetch.sh            (PHASE 1, network)
+#   make check-updates           # = ./fetch.sh --check-updates  (read-only)
 #   make fetch-latest            # = ./fetch.sh --latest    (moves config/versions.lock)
 #   make build                   # = build-firmware.py      (standard, WITH TPM)
 #   make build ARGS=--tpm-reset  # additionally a reset ROM (TPM2_Clear) -> README.md
@@ -17,7 +18,7 @@
 ARGS ?=
 PY   := python3
 
-.PHONY: build fetch fetch-latest help
+.PHONY: build fetch fetch-latest check-updates help
 
 ## build: the standard firmware (TPM + Setup Mode + RNG).
 ## Extra ROMs/options via ARGS=... (e.g. ARGS=--tpm-reset for a reset ROM).
@@ -31,6 +32,10 @@ fetch:
 ## fetch-latest: resolve the newest upstream versions and rewrite config/versions.lock.
 fetch-latest:
 	./fetch.sh --latest
+
+## check-updates: compare config/versions.lock with upstream (reads only, writes nothing).
+check-updates:
+	./fetch.sh --check-updates
 
 help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## /  /'

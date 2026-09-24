@@ -10,6 +10,7 @@
 #   ./fetch.sh                     # fetch the versions in config/versions.lock
 #   ./fetch.sh --latest            # resolve newest upstream, REWRITE config/versions.lock
 #   ./fetch.sh --refresh           # re-fetch sources even where stamps exist
+#   ./fetch.sh --check-updates     # compare the lock with upstream, change nothing
 #
 # --latest picks WHICH versions, --refresh whether to re-download; they are
 # independent and can be combined. A ref that changed in the lock re-fetches
@@ -19,7 +20,11 @@
 #   COREBOOT_REF=<commit|tag>  EDK2_BRANCH=uefipayload_JJMM  LBMK_REF=<tag|commit>
 #   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/..._t480_vfsp_16mb.tar.xz
 #
-# Flags: --latest  --refresh  --rebuild-deps
+# --check-updates writes nothing: it prints the newest upstream versions next
+# to the lock and exits 0 (current) or 10 (something moved).
+# GIT_JOBS=<n> lowers the parallel submodule clones (default 4).
+#
+# Flags: --latest  --refresh  --rebuild-deps  --check-updates
 set -euo pipefail
 
 PROJECT="$(cd "$(dirname "$0")" && pwd)"
@@ -30,17 +35,39 @@ DEPS_IMAGE="coreboot-t480-deps"
 LATEST=0
 REFRESH=0
 REBUILD_DEPS=0
+CHECK=0
 for a in "$@"; do
   case "$a" in
-    --latest)       LATEST=1 ;;
-    --refresh)      REFRESH=1 ;;
-    --rebuild-deps) REBUILD_DEPS=1 ;;
+    --latest)        LATEST=1 ;;
+    --refresh)       REFRESH=1 ;;
+    --rebuild-deps)  REBUILD_DEPS=1 ;;
+    --check-updates) CHECK=1 ;;
     -h|--help) sed -n '3,/^set -euo pipefail/p' "$0" | head -n -1; exit 0 ;;
     *) echo "Unknown argument: $a" >&2; exit 2 ;;
   esac
 done
 
 die(){ printf '\n\033[1;31mfetch.sh ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
+
+# --- --check-updates ---------------------------------------------------------
+# Same resolver as the fetch (build/fetch-sources.sh), so only one place knows
+# how versions are found. In the deps image if it exists, else on the host -
+# building a 2 GB image to answer a question is not worth it.
+if [ "$CHECK" = "1" ]; then
+  [ "$LATEST$REFRESH$REBUILD_DEPS" = "000" ] \
+    || die "--check-updates reads only and combines with nothing else."
+  [ -f "$CONFIG/versions.lock" ] || die "config/versions.lock is missing - nothing to compare against."
+  if command -v podman >/dev/null && podman image exists "$DEPS_IMAGE"; then
+    exec podman run --rm -e CHECK=1 -e HOME=/tmp/fetchhome \
+      -v "$BUILD":/work:ro,z -v "$CONFIG":/config:ro,z \
+      "$DEPS_IMAGE" bash /work/fetch-sources.sh
+  fi
+  command -v git >/dev/null && command -v curl >/dev/null \
+    || die "no '$DEPS_IMAGE' image and no git/curl on the host.
+   Run ./fetch.sh once (it builds the image), or install git and curl."
+  exec env CHECK=1 LOCK_IN="$CONFIG/versions.lock" bash "$BUILD/fetch-sources.sh"
+fi
+
 command -v podman >/dev/null || die "podman is missing (sudo pacman -S podman)"
 if [ -f /etc/subuid ] && ! grep -q "^$(id -un):" /etc/subuid; then
   echo "fetch.sh: no /etc/subuid entry for $(id -un) - rootless podman may need:"
@@ -102,6 +129,7 @@ podman run --rm \
   -e HOME=/tmp/fetchhome \
   -e LATEST="$LATEST" \
   -e REFRESH="$REFRESH" \
+  -e GIT_JOBS="${GIT_JOBS:-}" \
   -e LIBREBOOT_TARBALL_PROVIDED="$PROVIDED" \
   -e COREBOOT_REF="${COREBOOT_REF:-}" \
   -e EDK2_BRANCH="${EDK2_BRANCH:-}" \

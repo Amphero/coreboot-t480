@@ -164,6 +164,11 @@ newest upstream versions and rewrites the file; `--refresh` only forces a
 re-download; `--rebuild-deps` rebuilds the build-environment image after a
 `build/Dockerfile.deps` change.
 
+`./fetch.sh --check-updates` prints the lock next to what upstream has and
+writes nothing; exit 0 means current, 10 means something moved. It also catches
+a ref that stayed put while its commit did not - a branch that got new commits,
+a re-cut tag.
+
 ### Choosing what to build
 
 Two kinds of switch decide what ends up on the chip. **Build flags** pick a
@@ -184,6 +189,7 @@ updates, Secure Boot in Setup Mode, TPM enabled.
 | `WP_RO` sealed against the OS | `CONFIG_BOOTMEDIA_LOCK_CONTROLLER` + `CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO` | RO changes need the programmer afterwards |
 | descriptor and GbE sealed too | `CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE` | second range, patch 0043 - the MAC then needs the programmer |
 | rollback protection to bite | raise `CONFIG_VBOOT_KEYBLOCK_VERSION`, record it | see [versions and the rollback counter](#versions-and-the-rollback-counter) |
+| to know whether upstream moved | `./fetch.sh --check-updates` | read-only; exit 10 means there is something new |
 | newer upstream sources | `./fetch.sh --latest`, or edit `config/versions.lock` | only the components whose ref moved are re-fetched |
 | the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, fwupd's SPI checks and `setpci` |
 | a different boot logo | replace `config/splash.bmp` | 24-bit uncompressed BMP, max 1920x1080 |
