@@ -12,6 +12,8 @@
 #   LATEST       1 = resolve newest upstream instead of reading the lock
 #   CHECK        1 = compare the lock with upstream, print, download nothing
 #   REFRESH      1 = re-fetch every component, ignoring its .stamp
+#   GIT_JOBS     parallel submodule clones (default 4)
+#   NET_TRIES    attempts per network step before giving up (default 3)
 #   Overrides (LATEST=1 only; with the lock they would contradict it):
 #     COREBOOT_REF  EDK2_BRANCH  LIBREBOOT_VERSION  LBMK_REF
 #   LIBREBOOT_TARBALL_PROVIDED  1 = tarball already placed in /sources/libreboot/
@@ -27,6 +29,10 @@ SRC="/sources"
 # CHECK=1 also runs on the host, where the lock is not at /config.
 LOCK_IN="${LOCK_IN:-/config/versions.lock}"      # input, read-only
 NPROC="$(nproc)"
+# Parallel clones, not NPROC: how hard we hit a forge, not how many cores build.
+# github throttles bursts; that shows up as "could not read Username".
+GIT_JOBS="${GIT_JOBS:-4}"
+NET_TRIES="${NET_TRIES:-3}"
 # For the lbmk populate run only; that inject is discarded. The real MAC comes
 # from config/board.conf (or --mac) in PHASE 2.
 POPULATE_MAC="02:00:00:00:00:01"
@@ -321,23 +327,60 @@ fi
 #     CONFIG_EDK2_REPOSITORY to keep that workspace dir name.
 # =====================================================================
 ED="$SRC/edk2/mrchromebox"
+# 1-2 GB, no mirror fallback (coreboot and lbmk have one), and github fails it
+# mid-transfer often enough. Retry with half the parallelism instead of starting
+# the download over.  $1 label, then the command; it reads $JOBS for its -j.
+retry_net(){
+  local label="$1" attempt=1 rc=0; shift
+  JOBS="$GIT_JOBS"
+  while :; do
+    rc=0; "$@" || rc=$?
+    [ "$rc" = "0" ] && return 0
+    [ "$attempt" -lt "$NET_TRIES" ] || return "$rc"
+    if [ "$JOBS" -gt 1 ]; then JOBS=$(( JOBS / 2 )); fi
+    log "$label failed (attempt $attempt/$NET_TRIES) - again with -j$JOBS in $(( attempt * 20 ))s"
+    sleep $(( attempt * 20 ))
+    attempt=$(( attempt + 1 ))
+  done
+}
+# github cancels HTTP/2 streams on long packs ("curl 92 ... CANCEL", "early
+# EOF"). Slower, but it arrives. -c reaches the submodule fetches.
+GIT_NET=(-c http.version=HTTP/1.1)
+# No --recurse-submodules: one failing submodule would take the finished
+# top-level clone with it.
+edk2_clone(){ git "${GIT_NET[@]}" clone -q --branch "$EDK2_BRANCH" --single-branch \
+                "$EDK2_URL" "$ED"; }
+edk2_update(){ git "${GIT_NET[@]}" -C "$ED" fetch -q --force "$EDK2_URL" \
+                 "+refs/heads/$EDK2_BRANCH:refs/remotes/origin/$EDK2_BRANCH"; }
+# --jobs, not -j: git 2.39's submodule update rejects the short form.
+edk2_submodules(){ git "${GIT_NET[@]}" -C "$ED" submodule update --init --checkout \
+                     --recursive --jobs "$JOBS"; }
+
 if [ -f "$SRC/edk2/.stamp-fetch" ] && [ "$REFRESH" != "1" ]; then
   log "edk2 already fetched - skipping"
 else
-  log "cloning edk2 branch $EDK2_BRANCH (+ submodules) ..."
-  rm -rf "$SRC/edk2"; mkdir -p "$SRC/edk2"
-  git clone -q --branch "$EDK2_BRANCH" --single-branch --recurse-submodules -j"$NPROC" \
-    "$EDK2_URL" "$ED" || die "edk2 clone ($EDK2_BRANCH) failed"
-  # Detach on the RESOLVED commit, not the branch head - the lock names an
-  # exact commit, so the tree is reproducible even after the branch moved on.
+  # Keep a tree from a died run: fetching costs the delta, cloning the
+  # gigabytes. Dropped only if it is no git tree or points elsewhere.
+  if [ "$REFRESH" != "1" ] && [ -d "$ED/.git" ] \
+     && [ "$(git -C "$ED" remote get-url origin 2>/dev/null)" = "$EDK2_URL" ]; then
+    log "edk2 tree from an earlier run - fetching $EDK2_BRANCH into it instead of re-cloning"
+    retry_net "edk2 fetch" edk2_update || die "edk2 fetch ($EDK2_BRANCH) failed"
+  else
+    log "cloning edk2 branch $EDK2_BRANCH ..."
+    rm -rf "$SRC/edk2"; mkdir -p "$SRC/edk2"
+    retry_net "edk2 clone" edk2_clone \
+      || die "edk2 clone ($EDK2_BRANCH) failed - if the log says 'could not read
+   Username for https://github.com', that is throttling: retry with GIT_JOBS=1."
+  fi
+  # The resolved commit, not the branch head: the lock names an exact commit,
+  # so the tree stays reproducible after the branch moved on.
   if [ -n "${EDK2_COMMIT:-}" ]; then
     git -C "$ED" checkout -q --detach "$EDK2_COMMIT" \
       || die "edk2: pinned commit $EDK2_COMMIT not on branch $EDK2_BRANCH (history rewritten?)"
   else
     git -C "$ED" checkout -q --detach "origin/$EDK2_BRANCH"
   fi
-  git -C "$ED" submodule update --init --checkout --recursive \
-    || die "edk2 submodules failed"
+  retry_net "edk2 submodules" edk2_submodules || die "edk2 submodules failed"
   touch "$SRC/edk2/.stamp-fetch"
 fi
 
