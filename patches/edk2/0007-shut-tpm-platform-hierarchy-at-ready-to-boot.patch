@@ -1,5 +1,5 @@
 diff --git a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
-index bb479c177..49a53ad6c 100644
+index bb479c177..156fd9a23 100644
 --- a/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
 +++ b/SecurityPkg/Tcg/Tcg2PlatformDxe/Tcg2PlatformDxe.c
 @@ -12,10 +12,9 @@
@@ -104,11 +104,11 @@ index 635302fe6..9344b3ab8 100644
  [Depex]
    gEfiTcg2ProtocolGuid
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index 4ffd971f3..6e5137f1e 100644
+index 316504e63..a57e039c9 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -1107,6 +1107,11 @@
-   ## to this mask when they differ.
+@@ -1103,6 +1103,11 @@
+   ## Tcg2Dxe reallocates the TPM's banks to this mask when they differ.
    gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x00000002
    gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
 +  ## Tcg2PlatformDxe: disable the platform hierarchy at ready-to-boot rather
@@ -119,7 +119,7 @@ index 4ffd971f3..6e5137f1e 100644
  
  !include NetworkPkg/NetworkDynamicPcds.dsc.inc
  
-@@ -1581,6 +1586,13 @@
+@@ -1576,6 +1581,13 @@
  #    Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf //Modif H.E Avoid Hang Tcg2config
      Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
    }
