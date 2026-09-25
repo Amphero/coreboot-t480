@@ -10,7 +10,7 @@ present in the setup menu. No repro on this machine.
 ## Where the stock table lives
 
 Uncompressed at `0xda2c80` in a 16 MB dump, a second ALC257 table at `0xda3b20`,
-616 bytes each. The DXE volumes are LZMA and hold nothing relevant - a plain
+616 bytes each. The DXE volumes are LZMA and hold nothing relevant. A plain
 search for `0x10ec0257` finds the table in neither, because the encoding differs
 from coreboot's:
 
@@ -33,7 +33,7 @@ All ten pins in the `0xda2c80` table are identical to what upstream carries,
 including `0x40661b45` on nid 0x1d and `0x0421101f` on nid 0x21. Upstream got
 that part right.
 
-The codec coefficients are a different set entirely - 49 writes against
+The codec coefficients are a different set entirely: 49 writes against
 upstream's 14, three in common:
 
 | node/coef | stock | upstream |
@@ -54,7 +54,7 @@ is its `Silence data mode Threshold (-84dB)`, which the stock BIOS never writes.
 
 Patch 0050 replaces the ALC257 entry with the stock one verbatim, jack count
 18 -> 38. Built, capsule-installed, measured 2026-08-29 against the previous
-firmware in the other slot - same machine, same volume, same stimulus (3 s of
+firmware in the other slot, same machine, same volume, same stimulus (3 s of
 440 Hz through `pw-play` at 63 %):
 
 | | upstream table, `verb size: 72` | stock table, `verb size: 152` |
@@ -67,10 +67,10 @@ in `patches/regression/`, where nothing builds it.
 
 Ruled out for the click, each by measurement:
 
-- the codec's D3/D0 transition - it survives `power_save=0`, codec pinned `active`
-- stream start/stop - it survives a permanently open silent stream that keeps
+- the codec's D3/D0 transition. It survives `power_save=0`, codec pinned `active`
+- stream start/stop. It survives a permanently open silent stream that keeps
   the output path up
-- the missing silence threshold - writing upstream's `coef 0x37 = 0xFE15` and
+- the missing silence threshold. Writing upstream's `coef 0x37 = 0xFE15` and
   `coef 0x30 = 0x9004` into the running codec changed nothing
 
 The last one is only evidence about runtime writes. The amp block may need the
@@ -79,13 +79,13 @@ codec; that was not chased further.
 
 Hypothesis, not measured: under the stock BIOS the firmware table is half the
 configuration and the Realtek Windows driver supplies the rest. Upstream's block
-looks like it was taken off a different machine, but it is self-contained - it
+looks like it was taken off a different machine, but it is self-contained. It
 has to work with no vendor driver behind it, which is why it carries the silence
 threshold the vendor's does not.
 
 ## Second pin config
 
-The table at `0xda3b20` differs from the first in exactly two pins - nid 0x12
+The table at `0xda3b20` differs from the first in exactly two pins: nid 0x12
 (internal mic) and nid 0x19 (mic jack) both `0x411111f0`, no microphone input at
 all. Not the T480s, whose upstream table has both populated. The legacy verb
 path keys on vendor/device alone, so both SKUs get the first table's pins.
@@ -100,18 +100,18 @@ and the board sets none of them. `AcousticNoiseMitigation` gates
 (`src/soc/intel/skylake/chip.h:441-463`, passed through at `chip.c:475-481`).
 Fast VR slew rates and fast package-C ramping are what make these rails audible
 under changing load, which fits "tracks cpu load, present in the setup menu"
-directly - where the HDA theory needs the codec to pick up and amplify rail
+directly, where the HDA theory needs the codec to pick up and amplify rail
 ripple, a second-order path. Other boards set them, e.g.
 `acer/aspire_vn7_572g` and `clevo/cml-u`; `sklkbl_thinkpad` does not.
 
 That is patch 0060. `IslVrCmd` sits right above these in `chip.c` and is
-another VR C-state workaround, also unset and not touched - whether this board
+another VR C-state workaround, also unset and not touched. Whether this board
 has an Intersil VR is unknown.
 
 Measured 2026-08-29, first attempt: mitigation on, Fast/16 on IA, GT and SA,
-fast package-C ramping disabled on all three. It installed and ran - the sine
+fast package-C ramping disabled on all three. It installed and ran. The sine
 did not click, which is the control that confirms the click came from 0050 and
-nothing else - but **the screen flickered badly enough to be hard to read**.
+nothing else, but **the screen flickered badly enough to be hard to read**.
 Reverted to the other slot.
 
 GT feeds the iGPU and nothing about a load-tracking whine asks for slowing it.
@@ -127,7 +127,7 @@ under 30 s of full load, none across ten 2 s load/idle cycles, no i915 or drm
 warning in the kernel log. Speakers, `speaker-test` at 90 %, 30 s of digital
 silence with the amp held awake, jack detection in both directions, stereo
 separation and the microphone all behave as they did before. That also settles
-the register question above - `Fast/2` on GT is fine, it was Fast/16 or the
+the register question above, `Fast/2` on GT is fine, it was Fast/16 or the
 disabled ramp that flickered.
 
 What none of this shows is whether the patch does anything about the whine.
