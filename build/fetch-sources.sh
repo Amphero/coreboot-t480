@@ -269,7 +269,7 @@ invalidate coreboot "$PREV_COREBOOT" "$COREBOOT_COMMIT" \
 invalidate edk2     "$PREV_EDK2"     "$EDK2_COMMIT"     "$SRC/edk2/.stamp-fetch"
 invalidate lbmk     "$PREV_LBMK"     "$LBMK_COMMIT"     "$SRC/lbmk/.stamp-populated"
 # libreboot needs no stamp: the version is in the file name, so a new one is
-# simply a file that is not there yet.
+# just a file that is not there yet.
 
 # =====================================================================
 # 2) coreboot  (source + selected submodules + crossgcc toolchain tarballs)
