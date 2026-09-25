@@ -37,7 +37,7 @@ W25Q128, 16 MB, at position U49.
 `fwupdmgr security` grades a machine against the
 [Host Security ID](https://fwupd.github.io/hsi.html) tests. Measured on this
 firmware (fwupd 2.1.7, 2026-08-24): every HSI-1 and HSI-2 test passes
-(HSI:2). The MTD pair needs one host-side config line - see the table.
+(HSI:2). The MTD pair needs one host-side config line. See the table.
 
 | HSI-1 | Status | Mechanism |
 |---|---|---|
@@ -62,8 +62,8 @@ firmware (fwupd 2.1.7, 2026-08-24): every HSI-1 and HSI-2 test passes
 hardware root of trust is gone. Its role is taken by vboot: verstage in the
 write-protected `WP_RO` region verifies the signed slots with your root key,
 and PCH protected ranges seal `WP_RO`, the descriptor and the GbE region
-against every write from a running system - root, SMM and BIOS Lock
-included. The trust boundary is physical access to the chip, and the keys
+against every write from a running system, including root, SMM and
+BIOS Lock. The trust boundary is physical access to the chip, and the keys
 are yours instead of the vendor's.
 
 Details and the measurements behind all of this: [docs/](docs/).
@@ -89,16 +89,16 @@ offline, from sources pinned in `config/versions.lock`. Both keysets are
 untracked in `keys/`; the build refuses to fall back to public keys.
 
 Variants (`--tpm-reset`, `--no-tpm`, custom splash, device toggles):
-[GUIDE.md - Building](GUIDE.md#building).
+[GUIDE.md: Building](GUIDE.md#building).
 
 ## Install and update
 
-**First install** - external flash with a CH341A programmer while the vendor
+**First install**: external flash with a CH341A programmer while the vendor
 BIOS is still on the chip. Bring the EC to `n24ur39w` first and dump the
 original flash; both are impossible later.
-[GUIDE.md - First install](GUIDE.md#first-install).
+[GUIDE.md: First install](GUIDE.md#first-install).
 
-**Updates** - through fwupd, from the running system:
+**Updates** through fwupd, from the running system:
 
 ```bash
 sudo systemctl restart fwupd     # required on this machine, see GUIDE
@@ -111,11 +111,11 @@ inactive slot and gives it one trial boot; if the new firmware does not come
 up, the next boot falls back to the old slot on its own. Secure Boot keys
 and settings are never touched. One-time fwupd setup and the alternative
 paths (kernel capsule loader, flashrom):
-[GUIDE.md - Updating](GUIDE.md#updating).
+[GUIDE.md: Updating](GUIDE.md#updating).
 
-**`WP_RO` refresh or a new vboot keyset** - the only case that needs the
+**`WP_RO` refresh or a new vboot keyset**. The only case that needs the
 programmer again: the region is sealed against the running system by design.
-[GUIDE.md - Externally, WP_RO included](GUIDE.md#externally-wp_ro-included).
+[GUIDE.md: Externally, WP_RO included](GUIDE.md#externally-wp_ro-included).
 
 ## What else is in there
 
@@ -136,6 +136,6 @@ measurements behind them are in [docs/](docs/) and
 [GPL-3.0](LICENSE) for the build system, scripts and documentation, inherited
 from the upstream project. The patch files carry the license of the tree they
 modify instead: GPL-2.0-only for `patches/base/` (coreboot), BSD-2-Clause-Patent
-for `patches/edk2/` (EDK2) - the SPDX headers inside the patches say so per
+for `patches/edk2/` (EDK2). The SPDX headers inside the patches say so per
 file. The sources fetched during the build have their own licenses and are not
 part of this repo.
