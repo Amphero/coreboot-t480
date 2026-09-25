@@ -22,14 +22,14 @@ day on it. Move one back into `base/` only with a new measurement.
 `base/` and `edk2/` patches are applied in lexical order, each with a
 mandatory `git apply --check` first. If upstream changes one of the patched
 files, the build **aborts with a clear error** instead of silently producing
-a ROM without the change - that is deliberate (this repo once used two
+a ROM without the change. That is deliberate (this repo once used two
 `sed -i` calls for the same job, and `sed` exits 0 even when its pattern no
 longer matches). After changing anything here, rebuild with `--rebuild-base`;
 `config_hash()` covers both directories, so an edited patch is noticed.
 
 Generate a new patch against the tree with the earlier ones already applied,
-not against pristine coreboot. Several of these touch the same files - 0033
-and 0036 both edit `ec/lenovo/h8/cfr.h` a few lines apart - and a patch cut
+not against pristine coreboot. Several of these touch the same files (0033
+and 0036 both edit `ec/lenovo/h8/cfr.h` a few lines apart), and a patch cut
 from the untouched tree carries context that no longer exists by the time it
 runs. `git worktree add` on `sources/coreboot`, apply everything up to the
 new patch, edit there, diff.
@@ -38,10 +38,10 @@ The two are separate because they track different upstreams on different
 release cycles. `edk2/` applies to the tree at
 `payloads/external/edk2/workspace/mrchromebox`, which is the clone named in
 `config/versions.lock`, not coreboot's. Patches against EDK2 submodules do
-not work this way - `git apply` there would have to run inside the submodule,
+not work this way. `git apply` there would have to run inside the submodule,
 and nothing does that.
 
-Either directory may be absent - git does not track empty ones - and
+Either directory may be absent (git does not track empty ones) and
 the loop skips it.
 
 ## base/0001-cfr-expose-power-on-after-fail.patch
@@ -70,7 +70,7 @@ This replaces an earlier sed that hardcoded `.default_value = 1` in the
 shared SoC header `intelblocks/cfr.h`. That was fragile twice over: it
 edited a header shared by every Intel SoC board, and the `1` was a magic
 number in an enum that upstream defines *inverted* (`{ "Disabled", 1 },
-{ "Enabled", 0 }`) - a future re-ordering would have silently flipped the
+{ "Enabled", 0 }`). A future re-ordering would have silently flipped the
 default to "ME enabled". The Kconfig select is the mechanism the option's
 help text itself prescribes, and it would be acceptable upstream.
 
@@ -94,7 +94,7 @@ control binary: EC automatic below the trip point, screaming unregulated
 
 - a second ASL `Field` over the same byte, mapping it whole as `HFSP`
   (several Fields on one OperationRegion are legal ASL),
-- `FANE(1)` now selects level 7 - the fastest **regulated** speed - instead
+- `FANE(1)` now selects level 7 (the fastest **regulated** speed) instead
   of disengage,
 - a new method `FANL(level)` to set any level (`0x00`-`0x07`, or `0x80` to
   hand control back to the EC).
@@ -114,7 +114,7 @@ thermal zone THM0 with a five-level state machine, entirely behind
 <https://doc.coreboot.org/drivers/acpi_fan_control.html> and implemented
 in `mainboard/samsung/stumpy`:
 
-- `FAN0`..`FAN4` are five `PNP0C0B` fan devices - one physical fan
+- `FAN0`..`FAN4` are five `PNP0C0B` fan devices. One physical fan
   presented as five speeds. Each has a PowerResource `FNP0`..`FNP4`.
 - `\FLVL` holds the current level; a **lower number means a faster fan**.
 - `_AC0`.._AC3` are the trip points with built-in hysteresis: the returned
@@ -130,7 +130,7 @@ Three properties are load-bearing; keep them when touching this file:
    ACPI is at rest.
 2. **`FNP4._OFF` is a deliberate no-op.** ACPI requires that `_STA` can
    reach 0 after `_OFF`; level 4 is the lowest state, there is nothing
-   below it. Linux forgives a violation - Windows disables the whole
+   below it. Linux forgives a violation. Windows disables the whole
    thermal zone.
 3. **`_INI` sets `\FLVL` and nothing else.** It runs before the OS
    attaches its EmbeddedControl handler, so an EC access there aborts the
@@ -149,7 +149,7 @@ only keep it compilable on its own.
 `.../variants/t480/include/variant/thermal.h` (new)
 
 Third fan patch: `select H8_FAN_STEPPED` for the **T480 only** (T470s,
-T480s, T580, X280 stay on upstream behaviour - they are untested) and the
+T480s, T580, X280 stay on upstream behaviour. They are untested) and the
 actual fan curve:
 
 | Level | HFSP | on at | off at | measured RPM | audible |
@@ -162,7 +162,7 @@ actual fan curve:
 
 `\TPSV` (90 C, passive throttling) is untouched. `\TCRT` moves from 100
 to 110: 100 is exactly the CPU's throttle point, so while thermal
-management works the EC sensor cannot exceed it - the trip did nothing
+management works the EC sensor cannot exceed it. The trip did nothing
 until a sustained all-core build outran the fan escalation (the zone is
 polled every 10 s, and the top step used to engage at 85 C only), and
 then it answered a temperature the silicon handles by throttling with a
@@ -176,18 +176,18 @@ with `--rebuild-base`, reflash. Keep each ON above its OFF (hysteresis),
 keep the order monotonic, and keep everything well below `\TPSV`.
 
 **Why level 1 is `0x05` and not `0x06`.** All eight HFSP levels were measured
-on a 20L5 - each held 60 s at idle through `thinkpad_acpi fan_control=1`,
+on a 20L5, each held 60 s at idle through `thinkpad_acpi fan_control=1`,
 settled RPM taken as the median of the last 20 s:
 
 | HFSP | `0x00` | `0x01` | `0x02` | `0x03` | `0x04` | `0x05` | `0x06` | `0x07` |
 |------|------|------|------|------|------|------|------|------|
 | RPM | 0 | 2665 | 2866 | 3018 | 3155 | 3573 | 3989 | 3994 |
 
-`0x06` and `0x07` are the same speed - 5 RPM apart, 0.13 %. With level 1 on
+`0x06` and `0x07` are the same speed, 5 RPM apart, 0.13 %. With level 1 on
 `0x06` the `_AC0` trip at 85 C therefore escalated to a fan speed that was
 already running since 76 C: a dead step. At the same time levels 2 and 1 were
 834 RPM apart, by far the largest jump and the one that is actually audible.
-`0x05` closes that hole - the four steps now sit at 2866 / 3155 / 3573 / 3994
+`0x05` closes that hole. The four steps now sit at 2866 / 3155 / 3573 / 3994
 RPM, i.e. 289 / 418 / 421 RPM apart, and `_AC0` becomes a real escalation.
 The trade-off is deliberate: between 72 and 80 C the machine now runs quieter
 and correspondingly warmer.
@@ -198,7 +198,7 @@ sustained full load settles is **not** reproducible, though: two 10-minute
 `stress-ng --cpu 8` runs ended at 76-77 C on level 1 and at 84-86 C on level 0,
 with the same measured fan speed (3987 / 3981 RPM) both times. Identical
 cooling with a 9 K different equilibrium means the difference comes from the
-heat input or the ambient, not from the curve - do not try to paper over it
+heat input or the ambient, not from the curve. Do not try to paper over it
 with thresholds.
 
 ## base/0020-cfr-fan-profile-option.patch
@@ -222,7 +222,7 @@ the ramstage reads it (`get_uint_option`) and publishes it as `\FPRO` in
 an SSDT; the thermal zone's `_ACx` methods look their trip points up in a
 per-profile package (`FTBL`) indexed by `\FPRO`, with the same 8 K
 hysteresis as before. Because the SSDT is generated at boot, **a profile
-change applies on the next reboot** - which is how leaving a firmware
+change applies on the next reboot**, which is how leaving a firmware
 setup menu works anyway.
 
 Three details that must survive future edits:
@@ -233,14 +233,14 @@ Three details that must survive future edits:
    silently drop the other (no dGPU in ACPI, or a dead profile option).
 2. **`\FPRO` is double-guarded:** clamped to 0..3 in C, and in ASL
    `CondRefOf` covers a missing SSDT entry while a `> 3` check covers
-   garbage - an out-of-range `Index()` into the package would hang the
+   garbage. An out-of-range `Index()` into the package would hang the
    thermal zone.
 3. **"EC only" does not disable the trips.** All four sit 1 K staggered
    just below the CPU's throttle point (100 C): in practice the EC curve
    rules alone (the mode for `thinkfan`/`zcfan` users), but if the EC
    curve ever fails there is still an ACPI escalation before throttling
    and the critical trip (`\TCRT`, 110). Setting the trips above `_CRT`
-   or removing them would delete that last net - don't.
+   or removing them would delete that last net. Don't.
 
 ## base/0030-t480-lenovo-bios-version-for-thinkpad_acpi.patch
 
@@ -249,7 +249,7 @@ Three details that must survive future edits:
 Makes `thinkpad_acpi` load without `force_load=1`. The driver's probe
 (`tpacpi_parse_fw_id`) requires the SMBIOS **BIOS version** to parse as a
 Lenovo firmware ID (`xxxyTkkW`, e.g. `N24ET65W`) and gives up before even
-reading the product version - coreboot's build id (`5cbf8afc-dirty`)
+reading the product version: coreboot's build id (`5cbf8afc-dirty`)
 fails that at the first lowercase letter. The board now reports
 `N24ET99W (1.99 )` for the T480: the stock scheme with a release above
 every real one, so no tool ever flags the firmware as outdated. coreboot
@@ -257,7 +257,7 @@ stays identifiable through the SMBIOS BIOS *vendor* string.
 
 Note: `CONFIG_MAINBOARD_VERSION="ThinkPad T480"` in `config/defconfig` is
 the second half of this fix (the driver checks the product version right
-after the firmware ID) - keep both.
+after the firmware ID). Keep both.
 
 ## base/0031-h8-no-master-wireless-switch.patch
 
@@ -266,7 +266,7 @@ after the firmware ID) - keep both.
 
 Fixes bluetooth/WWAN being **hard-blocked** in rfkill. The `WLSW` ACPI
 method reports the master wireless kill switch by reading EC bit
-0x48.1 (`GSTS`) - a relic of the sliders on X220-era ThinkPads. The
+0x48.1 (`GSTS`). A relic of the sliders on X220-era ThinkPads. The
 T480 has no such switch and its EC reads 0 there (measured via
 `ec_sys`), so `thinkpad_acpi` believed the radio master switch was off
 and hard-blocked both radios. Behind the new opt-in
@@ -277,7 +277,7 @@ Omitted, not stubbed: a first version returned a constant 1 instead.
 That un-does the hard-block, but any `WLSW` makes `thinkpad_acpi`
 register a `SW_RFKILL_ALL` master switch, and the kernel's
 `rfkill-input` handler answers "switch is on" by unblocking **every**
-radio at each boot (`net/rfkill/input.c`, handler connect) - which
+radio at each boot (`net/rfkill/input.c`, handler connect), which
 also defeated patch 0033. The board has no slider, so it reports none.
 
 ## base/0032-h8-extended-hotkeys.patch
@@ -303,7 +303,7 @@ the 7.1 source, `hotkey_notify_hotkey` and the keymap table):
 
 A new `REK` method reports these codes through the existing `MHKP`
 queue; everything sits behind the opt-in `H8_EXTENDED_HOTKEYS`,
-selected for the T480 only - older H8 boards keep their correct
+selected for the T480 only; older H8 boards keep their correct
 legacy codes.
 
 ## base/0033-h8-remember-bluetooth-state.patch
@@ -326,7 +326,7 @@ two old values keep forcing the radio on or off at every boot.
 
 Notes:
 
-- Other H8 boards see no change - without the symbol `cfr.h` declares
+- Other H8 boards see no change, without the symbol `cfr.h` declares
   the same `SM_DECLARE_BOOL` as upstream.
 - The EC's memory is standby-powered. Removing battery *and* charger
   resets it and the radio comes back on.
@@ -345,7 +345,7 @@ which overwrites whatever the OS left there through `HKEY.SWAN`. Behind
 `H8_WWAN_KEEP_STATE` the option gains a third value, `Last state` (2),
 which is the default and makes `h8_enable()` skip the write.
 
-Mechanically it is a mirror of 0033 - same register, same option style,
+Mechanically it is a mirror of 0033: same register, same option style,
 the `wwan` object already sits in the board's "Embedded Controller" form
 (`sklkbl_thinkpad/cfr.c`), so nothing about the menu changes except the
 value list.
@@ -379,7 +379,7 @@ thinkpad_acpi: acpi_evalf(\BLTH, vd, ...) failed: AE_NOT_FOUND
 
 For every radio rfkill switch it registers, the driver installs a
 `.shutdown` handler that calls a root-scope ACPI method to have the
-firmware save the radio state for S4/S5 - `\BLTH(5)` for bluetooth,
+firmware save the radio state for S4/S5: `\BLTH(5)` for bluetooth,
 `\WGSV(4)` for WWAN. Lenovo's DSDT has both; coreboot has neither, and
 `acpi_evalf()` reports the miss at `KERN_ERR`. They are visible even
 with `quiet loglevel=1` because `systemd-shutdown` raises the console
@@ -392,11 +392,11 @@ silent.
 
 Why an empty body is correct here: the state *is* preserved, just not the
 way Lenovo's firmware does it. The EC keeps register 0x3a across the
-reset and coreboot no longer overwrites it - that is patches 0033 and
+reset and coreboot no longer overwrites it. That is patches 0033 and
 0034. Without those two the stubs would be claiming something that is
 not true, so do not select this symbol on its own.
 
-The kernel calls `\BLTH`/`\WGSV` nowhere else - only from
+The kernel calls `\BLTH`/`\WGSV` nowhere else. Only from
 `bluetooth_shutdown()`/`wan_shutdown()` and the `*_exit()` paths that
 reuse them (checked in the 7.1 tree). That also gives a way to test
 without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
@@ -424,7 +424,7 @@ slider for hardware that may not be there. Issue #12.
 
 This started as a second, separate option for presence. Two booleans side
 by side, both reading "Disabled" and meaning different things, is a menu
-nobody can parse - and the obvious reading of "Keyboard Backlight:
+nobody can parse, and the obvious reading of "Keyboard Backlight:
 Disabled" is that the thing is gone, which it was not. One option with
 three states says what it means.
 
@@ -433,7 +433,7 @@ three states says what it means.
 values the bool had, so settings already in SMMSTORE survive.
 
 The T480 ships with and without a backlit keyboard, so this cannot live
-in the devicetree - it has to be per machine, which is why it is a setup
+in the devicetree. It has to be per machine, which is why it is a setup
 option and not a Kconfig.
 
 Takes effect after a reboot: the option lives in SMMSTORE and the SSDT is
@@ -447,7 +447,7 @@ Flash layout for the vboot port (see `docs/vboot-notes.md`): two signed
 4 MB slots `RW_SECTION_A/B`, `WP_RO` (FMAP, GBB, RO CBFS) at the top of
 the chip, `RW_MRC_CACHE` and `SMMSTORE` at their current absolute
 offsets so existing installs keep their settings across the migration.
-Inert on its own - the file only takes effect when `CONFIG_FMDFILE`
+Inert on its own. The file only takes effect when `CONFIG_FMDFILE`
 points at it, which only the vboot defconfig does. Layout validated
 with `fmaptool` (offsets tile `BIOS` exactly, three CBFSes recognized).
 
@@ -467,7 +467,7 @@ this board. No effect until `CONFIG_VBOOT=y` is set.
 Adds `&bios_lock` to the "System" form of the setup menu. Same shape as
 0001: the object already exists upstream in `intelblocks/cfr.h`,
 complete with a callback that hides the entry unless
-`BOOTMEDIA_SMM_BWP_RUNTIME_OPTION` is set - so the patch is inert until
+`BOOTMEDIA_SMM_BWP_RUNTIME_OPTION` is set, so the patch is inert until
 the defconfig enables SMM BIOS write protection. The option is the
 documented way to flash internally with that protection on: toggle
 "BIOS Lock" off, reboot, flash, toggle it back.
@@ -484,7 +484,7 @@ When rebasing, keep that order.
 Adds `BOOTMEDIA_LOCK_DESCRIPTOR_GBE` (default off, depends on
 `BOOTMEDIA_LOCK_CONTROLLER`) and, when set, programs a second Flash
 Protected Range over `SI_DESC` + `SI_GBE` from
-`boot_device_security_lockdown()` - same function, same boot state and
+`boot_device_security_lockdown()`: same function, same boot state and
 so the same FLOCKDN/DLOCK as the `WP_RO` range. Write protection only
 (`CTRLR_WP`), deliberately not the choice's `lock_type`: with
 `BOOTMEDIA_LOCK_WHOLE_NO_ACCESS` that would be `CTRLR_RWP` and take the
@@ -521,7 +521,7 @@ Adds `DRIVERS_EFI_CAPSULE_SLOT_UPDATE` and carries it through to the
 payload build, where it makes the edk2 Makefile pass
 `-D SLOT_CAPSULE_SUPPORT=TRUE` instead of upstream's
 `-D CAPSULE_SUPPORT=TRUE`. That define is what picks the FmpDxe
-arrangement from edk2/0001 - FmpDxe in the firmware, writing one slot -
+arrangement from edk2/0001 (FmpDxe in the firmware, writing one slot)
 over the upstream one that embeds it into the capsule and rewrites the
 whole chip.
 
@@ -529,7 +529,7 @@ Depends on `VBOOT_SLOTS_RW_AB`: without two slots there is no inactive
 one to write.
 
 Maintenance note: the symbol has to appear in **both** variable lists in
-`payloads/external/Makefile.mk` - `EDK2_CAPSULE_ARGS` and the
+`payloads/external/Makefile.mk`: `EDK2_CAPSULE_ARGS` and the
 `UEFIPAYLOAD.fd` recipe. Miss one and the payload is quietly built the
 upstream way; nothing warns.
 
@@ -546,7 +546,7 @@ two are independent. The certificate is what the firmware's FmpDxe
 verifies incoming capsules against, so it has to be configurable
 wherever capsules can be *applied*. This build generates its capsules
 with `scripts/make-capsule.py`, outside the tree, so without this patch
-the option is not visible at all and the default stands - and that
+the option is not visible at all and the default stands, and that
 default is `BaseTools/Source/Python/Pkcs7Sign/TestRoot.pub.pem`, EDK2's
 published test certificate, whose private half ships with EDK2. Anyone
 could sign a capsule for this machine.
@@ -565,7 +565,7 @@ vboot logs anything.
 
 Initializing the CRTM clears the pre-RAM log. Upstream triggers it from
 the first CBFS measurement, and with vboot starting in the bootblock
-that happens *after* `extend_pcrs()` - so the boot mode, the GBB HWID
+that happens *after* `extend_pcrs()`, so the boot mode, the GBB HWID
 and the firmware version went into the log and were wiped a moment
 later. The PCRs kept the digests either way; only the log lost the
 entries, and a log that does not reconstruct the PCRs tells the OS
@@ -587,7 +587,7 @@ over; the complete chain lives in the payload's TCG2 log, which
 edk2/0005 fills with the bootloader's entries first. Publish both and
 the OS picks the short one, and the PCRs do not reconstruct.
 
-The log itself stays in CBMEM regardless - `cbmem -L` is unaffected.
+The log itself stays in CBMEM regardless; `cbmem -L` is unaffected.
 
 ## regression/0050-t480-hda-verbs-from-stock-bios.patch
 
@@ -607,12 +607,12 @@ encoding than coreboot's (`ec 10 57 02` for the header, coefficients as
 `n24ur39w`, in this board's pre-coreboot dump and in a foreign NM-B501
 image, so it is neither BIOS-version nor board specific.
 
-Upstream's pin configs were already right - all ten match. The codec
+Upstream's pin configs were already right. All ten match. The codec
 coefficients were not: the stock BIOS issues 49 writes, upstream 14, and
 only three agree. Coef 0x38, the register upstream's own comment labels
 "ClassD 2W", is 0x7900 then 0x7901 in the stock BIOS against upstream's
 0x8981; 0x3c and 0x09 differ too, and the speaker EQ/DRC block on nodes
-0x53 and 0x54 - 32 writes - is absent upstream. Upstream in turn writes
+0x53 and 0x54 (32 writes) is absent upstream. Upstream in turn writes
 coef 0x37 (silence threshold), 0x30, 0x0a, 0x1a and node 0x58, which the
 stock BIOS never touches.
 
@@ -621,8 +621,8 @@ because the block is a verbatim copy; keeping half of it in macro form
 would hide which parts are ours.
 
 Written for issue #10, where a whine tracking cpu load is audible in the
-setup menu. It is not a proven fix - the board this repo is built on runs
-the upstream table without any whine - it is the A/B half that makes the
+setup menu. It is not a proven fix. The board this repo is built on runs
+the upstream table without any whine. It is the A/B half that makes the
 class-D theory testable.
 
 ## base/0060-t480-acoustic-noise-mitigation.patch
@@ -631,7 +631,7 @@ class-D theory testable.
 
 Sets the Skylake acoustic noise UPDs, which the board leaves at their FSP
 defaults: fast VR slew rates and fast package-C ramping. Both make the
-rails audible under changing load, which is the symptom in issue #10 - a
+rails audible under changing load, which is the symptom in issue #10. A
 whine that tracks cpu load and is there in the setup menu, so before any
 OS driver.
 
@@ -646,19 +646,19 @@ read. GT feeds the iGPU, and slowing its rail that far is not something
 the reported symptom asks for. See `docs/hda-notes.md`.
 
 Installed here in slot A since 2026-08-29, no flicker and no audio fault
-in the boots since. That says nothing about the whine itself - it was
+in the boots since. That says nothing about the whine itself. It was
 never audible on this machine. #10 waits on the reporter.
 
 Watch out for one thing when trimming this further: the registers left
 unset are **not** left alone. Once `AcousticNoiseMitigation` is on they go
-to FSP as 0, which is `Fast/2` - a value, not the pre-mitigation default.
+to FSP as 0, which is `Fast/2`. A value, not the pre-mitigation default.
 There is no way to enable the mitigation for one rail only.
 
 Upstream sets none of this on `sklkbl_thinkpad`; other boards do, e.g.
 `acer/aspire_vn7_572g` and `clevo/cml-u`.
 
 Inserts above `# Generate ACPI P-State table` and leaves the
-`device ref hda on end` anchor alone - `apply-devicetree.sh` runs after
+`device ref hda on end` anchor alone; `apply-devicetree.sh` runs after
 the patches and needs it.
 
 `IslVrCmd` sits right above these in `chip.c` and is another VR C-state
@@ -674,7 +674,7 @@ Adds `SLOT_CAPSULE_SUPPORT` (default FALSE) next to upstream's
 `CAPSULE_SUPPORT`, and with it a second arrangement of `FmpDxe`.
 
 Upstream builds `FmpDxe` embedded into the capsule or, since
-`uefipayload_2608` (`CAPSULE_EMBED_FMP_DXE`), in the firmware - either
+`uefipayload_2608` (`CAPSULE_EMBED_FMP_DXE`), in the firmware. Either
 way it runs `FmpDeviceSmmLib` and updates the whole flash chip, which
 its own header says needs every flash protection lifted. That is the
 opposite of this build. `SLOT_CAPSULE_SUPPORT` puts `FmpDxe` into the firmware
@@ -685,7 +685,7 @@ before capsules are parsed at `BS_DEV_INIT`, and they leave the BIOS
 region writable while sealing `WP_RO`, `SI_DESC` and `SI_GBE`.
 
 The two defines are mutually exclusive and the dsc raises `!error` if
-both are set - they disagree about where `FmpDxe` lives and what it may
+both are set. They disagree about where `FmpDxe` lives and what it may
 touch.
 
 Also widens the `CAPSULE_SUPPORT` library block (`CapsuleLib`,
@@ -695,14 +695,14 @@ true, because `FmpDxe` needs all of it either way.
 
 **Inert on its own, and not yet switchable.** With the define at FALSE
 the build is byte-identical to before. Setting it TRUE fails until
-`FmpDeviceSlotLib` exists - the dsc names an `.inf` that no patch
+`FmpDeviceSlotLib` exists. The dsc names an `.inf` that no patch
 provides yet.
 
 Open decision, deliberately not taken here: whether to add `EsrtFmpDxe`
-alongside. It is not a conflict question - `BlSupportDxe` installs its
+alongside. It is not a conflict question: `BlSupportDxe` installs its
 static entry at its entry point, both ESRT drivers install theirs on
 ReadyToBoot, and `InstallConfigurationTable` replaces an entry of the
-same GUID, so the later one simply wins. `EsrtFmpDxe` also bails out
+same GUID, so the later one wins. `EsrtFmpDxe` also bails out
 without installing when it finds no FMP instance, so it cannot blank a
 working table.
 
@@ -720,7 +720,7 @@ worked. `EsrtFmpDxe` fills it from the FMP instance.
 `UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c` + `.inf`,
 `UefiPayloadPkg/UefiPayloadPkg.dec`
 
-A DXE driver cannot reach `BlParseLib` - that one runs in the payload
+A DXE driver cannot reach `BlParseLib`. That one runs in the payload
 entry phase. So the coreboot table is read there and handed on as a HOB,
 the same way `gEfiFirmwareInfoHobGuid` already works, and
 `FmpDeviceSlotLib` will pick it up with `GetFirstGuidHob`.
@@ -736,13 +736,13 @@ the same way `gEfiFirmwareInfoHobGuid` already works, and
 - `CbfsOffset`, the CBFS coreboot actually booted from. Under verified
   boot that is `FW_MAIN_A` or `FW_MAIN_B`, so it identifies the running
   slot. The alternative was `CB_TAG_VBOOT_WORKBUF`, which means parsing
-  `vb2_shared_data` - vboot's internal state, not a stable interface.
+  `vb2_shared_data`, vboot's internal state, not a stable interface.
 
 `SblParseLib` gets a stub returning `RETURN_NOT_FOUND`. Every function of
 the class is implemented by both bootloader backends; without it the Slim
 Bootloader build would fail to link.
 
-Applies unconditionally - unlike 0001 there is no define. That also means
+Applies unconditionally; unlike 0001 there is no define. That also means
 a plain build exercises it.
 
 Maintenance note: the new header is CRLF like every other file in that
@@ -758,8 +758,8 @@ The writer that edk2/0001 names but does not provide. `FmpDeviceLib` is
 FmpDxe's device back end; this implementation writes a single
 `RW_SECTION` instead of the whole chip, which is why nothing has to be
 unlocked for it. coreboot programs its protected ranges at
-`BS_DEV_RESOURCES` and seals them there - before capsules are parsed at
-`BS_DEV_INIT` - and those ranges cover `WP_RO`, `SI_DESC` and `SI_GBE`
+`BS_DEV_RESOURCES` and seals them there, before capsules are parsed at
+`BS_DEV_INIT`, and those ranges cover `WP_RO`, `SI_DESC` and `SI_GBE`
 while leaving the BIOS region writable. The slots are in the BIOS
 region.
 
@@ -767,17 +767,17 @@ Where things are comes from `gEfiFlashLayoutInfoHobGuid` (edk2/0002):
 coreboot's copy of the flash map plus the offset of the CBFS it booted
 from. That offset falls inside exactly one `RW_SECTION` and so names the
 running slot; the other one is the target. Reading `vb2_shared_data`
-instead was rejected - that is vboot's internal state, not an interface.
+instead was rejected. That is vboot's internal state, not an interface.
 
 **The capsule carries both slots, A then B, and only the matching half
 is written.** A slot image is not interchangeable: FSP-M is
 execute-in-place on this SoC (`FSP_M_XIP`, selected unconditionally by
-`src/soc/intel/skylake/Kconfig`, and unavoidable - FSP-M is what brings
+`src/soc/intel/skylake/Kconfig`, and unavoidable. FSP-M is what brings
 memory up, so there is no RAM to copy it into), so it is bound to its
 flash address and romstage references it there. Measured on a built
 image: of twelve CBFS files, `fallback/romstage` and `fspm.bin` differ
 between the slots, the rest are byte-identical. Writing the wrong half
-would pass verification and then fail to boot - vboot checks that VBLOCK
+would pass verification and then fail to boot, vboot checks that VBLOCK
 and FW_MAIN agree with each other, which they would, and has nothing to
 say about the address FSP-M was linked for.
 
@@ -791,7 +791,7 @@ After a successful write the trial boot is armed in VBNV (CMOS, at
 `CONFIG_VBOOT_VBNV_OFFSET + 14`, which is what coreboot reads unless the
 block fails to verify). The next boot runs the new image once and falls
 back on its own if it does not come up. Reporting success stays with the
-OS - `scripts/vbnv.py boot-ok` - because firmware cannot know it. See
+OS (`scripts/vbnv.py boot-ok`), because firmware cannot know it. See
 "The trial boot has to reach userspace" in `docs/vboot-notes.md`.
 
 Failure codes are in the range FmpDxe reserves for device libraries
@@ -806,7 +806,7 @@ sees it. Hence one code per failure the library can hit.
 
 Adds `EsrtFmpDxe` next to the static ESRT that `BlSupportDxe` installs.
 It rebuilds the table from the FMP instances at ReadyToBoot, and unlike
-the static one it fills `LastAttemptStatus` - without it a failed update
+the static one it fills `LastAttemptStatus`; without it a failed update
 is invisible to the OS and fwupd can never say whether anything worked.
 
 No conflict between the two: both install on their own schedule and
@@ -828,7 +828,7 @@ Marking it as system firmware would mean putting our GUID into
 `UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c` + `.inf`
 
 coreboot extends PCRs long before the payload runs, and Tcg2Dxe starts a
-log that knows nothing about them - so the log the OS gets cannot
+log that knows nothing about them, so the log the OS gets cannot
 reconstruct the PCRs. Tcg2Dxe already replays `gTcgEvent2EntryHobGuid`
 hobs into its log ahead of its own measurements, which is the right
 place already, so this only has to translate the entries. The PCRs are
@@ -848,7 +848,7 @@ block: magic `CBT2`, the major version, `EntrySize` and
 against the cbmem entry before anything is copied. A log in coreboot's
 non-TCG format carries a different magic and is skipped.
 
-Pairs with base/0047 - re-logging only helps if the OS also stops
+Pairs with base/0047: re-logging only helps if the OS also stops
 reading the shorter ACPI log.
 
 ## edk2/0006-sha256-only-pcr-bank.patch
@@ -871,7 +871,7 @@ Doing it in Tcg2Dxe's entry point is the replacement.
 
 The allocation takes effect at the next TPM startup, so the boot that
 performs it still runs on the old banks and the one after comes up
-clean. No reset follows it, on purpose: if the allocation does not
+clean. No reset follows it: if the allocation does not
 stick, a reset turns that into a boot loop.
 
 The hash router rebuilds `PcdTcg2HashAlgorithmBitmap` from the
@@ -890,7 +890,7 @@ disabled before the OS starts. Issue #9.
 
 The move is necessary here. Upstream arms the callback on the
 `DxeSmmReadyToLock` protocol, but this payload's BDS installs that
-protocol in `PlatformBootManagerBeforeConsole` - before `AfterConsole`
+protocol in `PlatformBootManagerBeforeConsole`, before `AfterConsole`
 processes the pending TPM physical presence requests, which authorize
 with the still-empty `platformAuth`. A clear request from the OS would
 fail against a hierarchy that is already shut. Ready-to-boot is the last
@@ -899,7 +899,7 @@ reallocation (edk2/0006) are done, the OS has not run.
 
 `PcdRandomizePlatformHierarchy` is set to FALSE, so the hierarchy is
 disabled instead of getting a random `platformAuth`. Deterministic, and
-it does not hang on the quality of the RNG -
+it does not hang on the quality of the RNG:
 `RandomizePlatformAuth()` ignores the entropy status and falls back to
 stack garbage.
 
@@ -909,7 +909,7 @@ while `shEnable` and `ehEnable` stay 1.
 One side effect: `TPM2_FieldUpgradeStart` authorizes with
 `TPM_RH_PLATFORM`, so no TPM firmware update can be applied from a
 running system on this firmware. That would have to happen in the
-payload, ahead of this callback. Academic for now - the vendor ships
+payload, ahead of this callback. Academic for now. The vendor ships
 those updates as capsules against an ESRT entry only the stock BIOS
 publishes.
 
@@ -935,7 +935,7 @@ git diff -- <files of that patch> > ../../patches/base/<same-name>.patch
 
 Keep the numbering (0001/0002 = setup menu, 0010-0012 = stepped fan,
 0020 = fan profiles, 0030-0035 = OS compatibility, 0040-0047 = vboot,
-lockdown, capsules, TPM) - the patches are applied in lexical order and
+lockdown, capsules, TPM). The patches are applied in lexical order and
 later ones build on the context of earlier ones (0012 on 0002's Kconfig,
 0020 on 0011/0012, 0030 on 0020's ramstage.c, 0033 on 0031/0032's
 Kconfig hunks, 0034/0035 on 0033's).
