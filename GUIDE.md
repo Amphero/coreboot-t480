@@ -19,25 +19,25 @@ Contents:
 
 ### While the vendor BIOS is still installed
 
-Two things have to happen before coreboot goes on - both are impossible
+Two things have to happen before coreboot goes on. Both are impossible
 afterwards:
 
 - **Bring the EC to `n24ur39w`.** Lenovo's updater does not run under
   coreboot, and the EC has no update path afterwards. Update (or downgrade)
   with Lenovo's bootable updater to the BIOS release that carries EC firmware
-  `n24ur39w` - coreboot's EC support, including the debug UART unlock, is
+  `n24ur39w`, coreboot's EC support, including the debug UART unlock, is
   written against exactly that EC code. In the vendor BIOS setup disable
   "Secure Rollback Prevention" and enable "Flash BIOS Updating by End Users"
-  (both under Security → UEFI BIOS Update Option); the bootable updater wants
+  (both under Security > UEFI BIOS Update Option); the bootable updater wants
   Secure Boot off and legacy/CSM boot on. Run it on AC with a charged battery
   and pick the option that also updates the EC.
 - **Dump the original firmware.** Once before the Lenovo update and once more
-  right before flashing coreboot - the second dump is what you restore if
+  right before flashing coreboot. The second dump is what you restore if
   anything goes wrong.
 
 > [!WARNING]
 > This ROM is for the T480 only. The T480s looks the same on the outside but
-> is wired differently - flashing a T480 image onto it bricks it.
+> is wired differently. Flashing a T480 image onto it bricks it.
 
 ### Build the ROM
 
@@ -52,7 +52,7 @@ MAC=AA:BB:CC:DD:EE:FF python3 scripts/build-firmware.py
 
 Both keysets live in `keys/`, untracked. The build refuses to run without
 them rather than falling back to public keys anyone can use. The MAC is that
-of the onboard NIC - read it with `ip link show enp0s31f6 | grep ether`, or
+of the onboard NIC. Read it with `ip link show enp0s31f6 | grep ether`, or
 from a dump of the original firmware (offset 0x1000):
 
 ```bash
@@ -63,16 +63,16 @@ xxd -s 0x1000 -l 6 -p backup.bin | sed 's/../&:/g;s/:$//'
 
 External flashing with the CH341A is the only way for the first install.
 Power off, unplug AC, remove the external battery, take off the bottom cover
-(all screws out, then pry gently - Lenovo's Hardware Maintenance Manual or
+(all screws out, then pry gently. Lenovo's Hardware Maintenance Manual or
 any teardown video shows how), unplug the internal battery's connector from
 the board and pop out the CR2032 coin cell.
 
 The chip is the Winbond W25Q128 at U49, towards the middle of the board near
 the RAM slots. A second, smaller SOIC-8 nearby holds the Thunderbolt
-firmware - don't clip that one. Clip on U49, pin 1 on the dot.
+firmware. Don't clip that one. Clip on U49, pin 1 on the dot.
 
 The W25Q128 is a 3.3 V chip and many cheap CH341A boards drive the data
-lines at 5 V - use a fixed/modded one. Wiring and general SPI flashing:
+lines at 5 V. Use a fixed/modded one. Wiring and general SPI flashing:
 [Libreboot's 25xx NOR guide](https://libreboot.org/docs/install/spi.html).
 
 ```bash
@@ -114,7 +114,7 @@ I/O error until it is recomputed once:
 sudo python3 scripts/vbnv.py fix-checksum
 ```
 
-Install the boot-ok service - it reports a successful boot to vboot, which
+Install the boot-ok service. It reports a successful boot to vboot, which
 is what lets the rollback counter advance
 ([rollback protection](#rollback-protection)):
 
@@ -136,7 +136,7 @@ sudo systemctl enable --now vboot-boot-ok.service
 ```
 
 The copy is deliberate: the unit runs as root, and a repo in `$HOME` is
-writable by your user - root should not execute from there. It also means
+writable by your user. Root should not execute from there. It also means
 the copy has to be refreshed whenever `scripts/vbnv.py` changes.
 
 Then enroll Secure Boot ([Secure Boot](#secure-boot)) and set up fwupd
@@ -166,13 +166,13 @@ re-download; `--rebuild-deps` rebuilds the build-environment image after a
 
 `./fetch.sh --check-updates` prints the lock next to what upstream has and
 writes nothing; exit 0 means current, 10 means something moved. It also catches
-a ref that stayed put while its commit did not - a branch that got new commits,
+a ref that stayed put while its commit did not. A branch that got new commits,
 a re-cut tag.
 
 ### Choosing what to build
 
 Two kinds of switch decide what ends up on the chip. **Build flags** pick a
-payload variant and are passed per run - the base image is shared, so they
+payload variant and are passed per run. The base image is shared, so they
 are cheap. **Config changes** in `config/` alter the firmware itself and
 need `--rebuild-base` (about 20 minutes; the toolchain layer is cached).
 
@@ -182,18 +182,18 @@ updates, Secure Boot in Setup Mode, TPM enabled.
 
 | If you want | change | note |
 |-------------|--------|------|
-| no verified boot at all | drop `CONFIG_VBOOT`/`CONFIG_FMDFILE` from `config/defconfig` | different flash layout - needs an external flash, settings are lost |
+| no verified boot at all | drop `CONFIG_VBOOT`/`CONFIG_FMDFILE` from `config/defconfig` | different flash layout; needs an external flash, settings are lost |
 | verified boot with your own keys | `sh scripts/gen-vboot-keys.sh` | the build refuses to sign with the public devkeys |
 | capsule updates with your own root | `sh scripts/gen-capsule-certs.sh` | the build refuses to embed a missing trust anchor |
 | flash writes blocked outside SMM | `CONFIG_BOOTMEDIA_SMM_BWP` + `..._RUNTIME_OPTION` | adds the **BIOS Lock** toggle to the setup menu |
 | `WP_RO` sealed against the OS | `CONFIG_BOOTMEDIA_LOCK_CONTROLLER` + `CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO` | RO changes need the programmer afterwards |
-| descriptor and GbE sealed too | `CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE` | second range, patch 0043 - the MAC then needs the programmer |
+| descriptor and GbE sealed too | `CONFIG_BOOTMEDIA_LOCK_DESCRIPTOR_GBE` | second range, patch 0043; the MAC then needs the programmer |
 | rollback protection to bite | raise `CONFIG_VBOOT_KEYBLOCK_VERSION`, record it | see [versions and the rollback counter](#versions-and-the-rollback-counter) |
 | to know whether upstream moved | `./fetch.sh --check-updates` | read-only; exit 10 means there is something new |
 | newer upstream sources | `./fetch.sh --latest`, or edit `config/versions.lock` | only the components whose ref moved are re-fetched |
 | the SPI controller hidden from Linux | `DT_DEVICE_FAST_SPI=n` in `config/board.conf` | hides `/dev/mtd*`, fwupd's SPI checks and `setpci` |
 | a different boot logo | replace `config/splash.bmp` | 24-bit uncompressed BMP, max 1920x1080 |
-| a different MAC | `--mac` or `MAC=` in `config/board.conf` | `board.conf` is tracked - a MAC there shows up in diffs |
+| a different MAC | `--mac` or `MAC=` in `config/board.conf` | `board.conf` is tracked; a MAC there shows up in diffs |
 
 Build flags, no rebuild needed:
 
@@ -204,12 +204,12 @@ Build flags, no rebuild needed:
 | `--auto-enroll` | enroll Microsoft's Secure Boot keys instead of Setup Mode |
 | `--no-rng` | leave out the RNG |
 | `--plain` | just the raw base ROM (TPM on, Microsoft keys auto-enrolled) |
-| `--version NAME` | version part of the ROM **file name** - unrelated to the firmware versions |
+| `--version NAME` | version part of the ROM **file name**; unrelated to the firmware versions |
 | `--rebuild-base` | rebuild from scratch after editing `config/defconfig`, `config/board.conf` or `patches/` |
 
 Patches in `patches/base/` are applied to the coreboot tree when the base
-image is built, in lexical order and with a mandatory `git apply --check` -
-a patch that no longer applies aborts the build instead of being skipped
+image is built, in lexical order and with a mandatory `git apply --check`.
+A patch that no longer applies aborts the build instead of being skipped
 silently. `patches/edk2/` works the same way for the payload tree. **Each
 patch is documented in [patches/README.md](patches/README.md).**
 
@@ -258,7 +258,7 @@ podman run --rm --network=none -v "$PWD/roms":/out:z --user root \
 ```
 
 That produces the base image (TPM on, Microsoft keys auto-enrolled). The
-default variant - TPM, Setup Mode, RNG - is the variant pass on top of it,
+default variant (TPM, Setup Mode, RNG) is the variant pass on top of it,
 which only `build-firmware.py` does, as does the capsule/cab step.
 
 </details>
@@ -268,15 +268,15 @@ which only `build-firmware.py` does, as does the capsule/cab step.
 Two version numbers, two jobs:
 
 - **`CONFIG_DRIVERS_EFI_MAIN_FW_VERSION`** is the version the ESRT reports
-  and capsules carry - fwupd compares against it. Encoding is
+  and capsules carry, fwupd compares against it. Encoding is
   `(major << 16) | minor`, e.g. `0x001A0008` for 26.08. Raise it for every
   release, or fwupd only installs with `--allow-reinstall`.
 - **`CONFIG_VBOOT_KEYBLOCK_VERSION`** is the rollback version. vboot refuses
   any slot below the counter in the TPM, so raising it locks out every older
-  image - backups included - once the counter follows. Raise it only for a
+  image (backups included) once the counter follows. Raise it only for a
   release that should do that (a fixed verstage bug, a leaked key), and
   record it first in
-  [docs/firmware-versions.md](docs/firmware-versions.md) - the build refuses
+  [docs/firmware-versions.md](docs/firmware-versions.md). The build refuses
   unrecorded values. Full mechanics, pitfalls and the ways back:
   [rollback protection](#rollback-protection).
 
@@ -293,7 +293,7 @@ region an update writes.
 
 One-time host setup. Local cabs carry no LVFS signature, fwupd runs this
 machine on two batteries whose combined level trips its power check, and
-with your own Secure Boot keys there is no shim - three config lines and one
+with your own Secure Boot keys there is no shim. Three config lines and one
 signature deal with all of it. Capsule authenticity does not depend on any
 of this: the firmware verifies the PKCS#7 chain against the root in
 `keys/capsule/` and refuses anything else.
@@ -313,8 +313,8 @@ sudo systemctl restart fwupd
 
 The MTD pair of HSI-2 checks (#7) is host setup too. fwupd asks the flash
 chip for its block-protection bits (`MEMISLOCKED`), and those cannot be set
-here without locking the SMM capsule writer out along with everything else -
-the protection is the PCH protected ranges plus SMM BWP. The honest state is
+here without locking the SMM capsule writer out along with everything else.
+The protection is the PCH protected ranges plus SMM BWP. So there is
 no MTD device at all; flashrom's internal path talks PCI directly and does
 not use it. Disabling the mtd *plugin* instead would taint the daemon
 (gnome-control-center flags it).
@@ -339,7 +339,7 @@ automount on `/efi` that idle-unmounts after 120 s, so at install time it
 is usually not mounted; fwupd then asks UDisks to mount it, the request
 itself touches `/efi`, the automount wins the race and UDisks fails the
 install with `UDisks2.Error.AlreadyMounted`. A daemon started while `/efi`
-is mounted binds to the existing mountpoint and never calls mount - and
+is mounted binds to the existing mountpoint and never calls mount, and
 the restart's own ESP probing mounts it, which is why install-right-after-
 restart works every time. The alternative is pinning the automount
 (`TimeoutIdleSec=infinity` drop-in for `efi.automount`) so the ESP stays
@@ -351,19 +351,19 @@ binary; the reboot runs it once, it hands the capsule to `UpdateCapsule()`
 and warm-resets; coreboot finds the capsule and the payload's FmpDxe
 verifies the signature, writes the inactive slot and arms a one-shot trial
 boot; the firmware resets again and the trial boot comes up on the new
-firmware. `vboot-boot-ok.service` reports it good - if it never gets that
+firmware. `vboot-boot-ok.service` reports it good. If it never gets that
 far, the next boot falls back to the old slot on its own.
 
 Afterwards `fwupdmgr get-history` shows the update,
 `cat /sys/firmware/efi/esrt/entries/entry0/last_attempt_status` is `0` on
-success. On failure that field names the failed check - the slot library
+success. On failure that field names the failed check. The slot library
 reports codes from `0x1800` up (see
 `patches/edk2/0003-fmp-device-slot-lib.patch`), FmpDxe's own codes start at
 `0x1000`.
 
 ### With the kernel capsule loader
 
-Same firmware path, no fwupd - useful for testing capsules directly:
+Same firmware path, no fwupd, useful for testing capsules directly:
 
 ```bash
 sudo modprobe capsule-loader
@@ -402,8 +402,8 @@ layout change needs an external flash, not this path.
 
 ### Externally, WP_RO included
 
-Needed when the RO half really changes - verstage, the bootblock, the GBB
-(keyset, rollback flag), the FMAP layout - or to refresh the RO fallback
+Needed when the RO half really changes (verstage, the bootblock, the GBB
+with keyset and rollback flag, the FMAP layout) or to refresh the RO fallback
 copy. This is the only way to write `WP_RO` once the controller lock is on,
 and the only update path that needs the clip:
 
@@ -415,11 +415,11 @@ sudo flashrom -p ch341a_spi --fmap -i WP_RO -i RW_SECTION_A -i RW_SECTION_B \
 Both slots and RO are replaced at once, so there is no trial-boot fallback.
 When the build also raises the rollback version, disable
 `vboot-boot-ok.service` before flashing and re-enable it after the new
-firmware has booted a few times - the counter follows the first boot after a
+firmware has booted a few times. The counter follows the first boot after a
 success report, and a success reported by the *old* firmware would advance
 it before the new one has proven itself.
 
-Pulling the coin cell for the flash stales the CMOS checksum again - run
+Pulling the coin cell for the flash stales the CMOS checksum again. Run
 `sudo vbnv fix-checksum` once after boot. The vboot state itself survives:
 coreboot restores it from the copy in `RW_NVRAM`.
 
@@ -442,7 +442,7 @@ settings sit in SMMSTORE outside the written regions, and the TPM is not
 cleared, so a LUKS auto-unlock keeps working. The old keyset plays no part
 in the process.
 
-**`WP_RO` has to be written** - the root key lives there. Writing only the
+**`WP_RO` has to be written**. The root key lives there. Writing only the
 slots leaves the old root key in place, both slots fail verification, and
 the machine ends up in a recovery boot. Recoverable by repeating the flash
 with `WP_RO` included, but avoidable. A power cut in the middle is
@@ -452,7 +452,7 @@ copy, and the flash can be repeated from there.
 The capsule signing chain in `keys/capsule/` is replaced the same way:
 `mv keys/capsule keys/capsule.old`, `sh scripts/gen-capsule-certs.sh`,
 rebuild, update. The new root rides into the firmware with any update path,
-programmer not required - the trust anchor lives in the slots, not in RO.
+programmer not required. The trust anchor lives in the slots, not in RO.
 
 ## Verified boot
 
@@ -460,7 +460,7 @@ The flash is split into a read-only section and two signed, switchable
 copies of the firmware. `WP_RO` holds the bootblock with verstage and the
 GBB with the public root key; `RW_SECTION_A` and `RW_SECTION_B` each hold a
 full signed firmware. verstage checks the signature of a slot before jumping
-into it and falls back A → B → RO when that fails.
+into it and falls back A > B > RO when that fails.
 
 ```
 0x240000  RW_MRC_CACHE   0x010000
@@ -473,7 +473,7 @@ into it and falls back A → B → RO when that fails.
 ```
 
 What this holds against a running system: firmware in the RW slots cannot be
-swapped for something you did not sign - a correctly signed image from a
+swapped for something you did not sign. A correctly signed image from a
 different keyset is refused and the machine boots the other slot. `WP_RO` is
 sealed by a PCH protected range on every boot, out of reach of root, SMM and
 the BIOS Lock toggle alike. What remains: writing correctly-signed images
@@ -492,7 +492,7 @@ Three, with different jobs, all untracked in `keys/`:
 
 Storing the first two is about theft, not loss. Whoever holds the private
 keys can build firmware or capsules this machine accepts, and there is no
-revocation list - invalidating a stolen key means rolling the keyset
+revocation list. Invalidating a stolen key means rolling the keyset
 ([replacing the vboot keyset](#replacing-the-vboot-keyset)). Losing them
 costs one rebuild.
 
@@ -500,7 +500,7 @@ costs one rebuild.
 <summary>vboot keys by hand</summary>
 <br>
 
-Tools first - `dumpRSAPublicKey` needs compiling, `vbutil_*` only exist as
+Tools first: `dumpRSAPublicKey` needs compiling, `vbutil_*` only exist as
 futility subcommands (`$V` = `3rdparty/vboot`):
 
 ```bash
@@ -533,7 +533,7 @@ futility vbutil_keyblock --unpack firmware.keyblock --signpubkey root_key.vbpubk
 
 ### Checking and testing the slots
 
-Which slot booted, and whether it was a recovery boot - that MRC message
+Which slot booted, and whether it was a recovery boot. That MRC message
 appears only in recovery, since there is no recovery MRC region here:
 
 ```bash
@@ -543,7 +543,7 @@ grep -aE 'Slot [AB] is|MRC: failed to locate region type 0' /sys/firmware/log
 Slot selection is sticky: after a fallback vboot keeps booting the other
 slot, because `VB2_NV_TRY_NEXT` persists and nothing in this firmware resets
 it (upstream leaves that to the ChromeOS updater). Harmless while both slots
-carry the same image - but repairing the broken slot does not move the
+carry the same image, but repairing the broken slot does not move the
 machine back onto it. `scripts/vbnv.py` is that missing step:
 
 ```bash
@@ -576,7 +576,7 @@ image as the source (`-i RW_SECTION_B -w other.rom`). Restoring is
 `-i RW_SECTION_A -i RW_SECTION_B -w` from the good ROM.
 
 Two things decide whether the test means anything: write into the slot the
-machine actually boots - vboot never looks at the other one - and leave that
+machine actually boots (vboot never looks at the other one) and leave that
 other slot intact, it is the way back. Wiping both lands you in an RO
 recovery boot, which still comes up but retrains memory.
 
@@ -587,7 +587,7 @@ recovery boot, which still comes up but retrains memory.
 <br>
 
 Reading needs no tool. The block is 16 bytes at CMOS index 0x34, which is
-`CONFIG_VBOOT_VBNV_OFFSET` (0x26) plus the 14 RTC bytes - and `/dev/nvram`
+`CONFIG_VBOOT_VBNV_OFFSET` (0x26) plus the 14 RTC bytes. `/dev/nvram`
 hides exactly those 14, so the file offset is 0x26 again:
 
 ```bash
@@ -596,7 +596,7 @@ sudo od -An -tx1 -j 0x26 -N 16 /dev/nvram
 
 | Byte | Meaning |
 |------|---------|
-| 0 | header - valid when `byte & 0xc3 == 0x40` |
+| 0 | header; valid when `byte & 0xc3 == 0x40` |
 | 1 | bits 0-3: trial boots left (`TRY_COUNT`) |
 | 2 | recovery request |
 | 7 | bits 0-1 result of this boot, bit 2 running slot, bit 3 next slot, bits 4-5 previous result, bit 6 previous slot (0 = A, 1 = B). Result: 0 unknown, 1 trying, 2 success, 3 failure |
@@ -606,14 +606,14 @@ So byte 7 = `02` reads as: this boot reported success, slot A is running,
 slot A is next, and the previous boot is unknown on slot A. `2e` would be
 success on B, B next, previous boot successful on A.
 
-Writing needs the CRC recomputed - polynomial `x^8 + x^2 + x + 1`, vboot's
-`vb2_crc8` - and a block whose CRC does not match is discarded by the
+Writing needs the CRC recomputed (polynomial `x^8 + x^2 + x + 1`, vboot's
+`vb2_crc8`), and a block whose CRC does not match is discarded by the
 firmware on the next boot. `fix-checksum` is the `NVRAM_SETCKS` ioctl on
 `/dev/nvram` and has no shell equivalent.
 
 </details>
 
-A recovery boot - both slots unusable - runs the RO copy and comes up fully,
+A recovery boot (both slots unusable) runs the RO copy and comes up fully,
 so the slots can be rewritten from there. It skips the MRC cache and
 retrains memory, which costs a minute or two of black screen.
 
@@ -621,13 +621,13 @@ retrains memory, which costs a minute or two of black screen.
 
 vboot keeps a firmware version in the TPM and refuses any slot below it. The
 counter only advances when the *previous* boot was reported successful, and
-nothing in coreboot or vboot ever reports that - upstream leaves it to the
+nothing in coreboot or vboot ever reports that. Upstream leaves it to the
 ChromeOS updater. `vbnv boot-ok` is that report; the service from
 [first boot](#first-boot) runs it late in the boot, so "successful" means
 the machine actually came up.
 
 The counter then follows on the next boot. Read it with
-`tpm2_nvread 0x1007 | od -An -tx1` - bytes 3-6 are the version, little
+`tpm2_nvread 0x1007 | od -An -tx1`, bytes 3-6 are the version, little
 endian.
 
 Two settings decide whether any of this has an effect:
@@ -637,14 +637,14 @@ Two settings decide whether any of this has an effect:
   counter cannot move past a version that never changes.
 - **`CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`**, off. coreboot enables it
   by default, and it makes vboot skip the comparison while the counter still
-  advances - measured here, a version-2 slot booted with the counter at 3.
+  advances, measured here, a version-2 slot booted with the counter at 3.
   It sits in the GBB, so changing it is a `WP_RO` write.
 
 Once the counter has followed a version, every older image is refused: the
 ROMs in `roms/` and any backup among them.
 
 The roll-forward wants a success report from the previous boot and the same
-slot. It does not check that the report came from the same image - which is
+slot. It does not check that the report came from the same image, which is
 what `vbnv arm-update` (and the trial boot a capsule update arms itself) is
 for. A trial boot is marked `TRYING` instead of trusting the old report, so
 the counter waits for the new firmware to report for itself, and a slot that
@@ -657,8 +657,8 @@ verstage, before the new firmware runs.
 Once the counter has moved past an image, that image is refused. Three ways
 out; the first two need no programmer.
 
-**Re-sign it with a higher version.** The firmware body is not touched -
-only the signature blocks are rewritten:
+**Re-sign it with a higher version.** The firmware body is not touched.
+Only the signature blocks are rewritten:
 
 ```bash
 podman run --rm --network=none --user root -v "$PWD/roms":/w:z \
@@ -672,14 +672,14 @@ podman run --rm --network=none --user root -v "$PWD/roms":/w:z \
 ```
 
 Then flash the two slots ([internally with flashrom](#internally-with-flashrom)).
-`futility` is not on the host - it comes from the build image, which also
+`futility` is not on the host. It comes from the build image, which also
 carries the keys. The kernel subkey is the one the build used
 (`CONFIG_VBOOT_KERNEL_KEY`, the vboot devkey by default); it plays no part
 in firmware verification.
 
 **Or clear the TPM.** The `--tpm-reset` ROM recreates the vboot spaces with
 the counter at 0. It flashes into the slots, so the `WP_RO` lock does not
-stand in the way - but everything sealed to the TPM is invalidated, LUKS
+stand in the way, but everything sealed to the TPM is invalidated, LUKS
 included ([TPM reset](#tpm-reset)).
 
 **Or set `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK`**, which disables the check
@@ -742,14 +742,14 @@ tpm2_pcrread sha256:2
 LUKS can be bound to it on top of the usual policy
 (`systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=2`), so the disk only
 auto-unlocks under unmodified firmware. Caveat: **every firmware update
-changes PCR 2** - the first boot after an update falls back to the
+changes PCR 2**. The first boot after an update falls back to the
 passphrase, and the binding has to be re-enrolled
 (`systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=2`).
 
 The root of trust stays in software: Boot Guard is deliberately disabled
 (deguard) so the ME can be neutered. Measured boot therefore makes firmware
 tampering detectable and keeps sealed secrets from being released to a
-modified firmware - it does not stop an attacker who can rewrite the flash
+modified firmware. It does not stop an attacker who can rewrite the flash
 and fake the measurements.
 
 ### TPM reset
@@ -771,10 +771,10 @@ that clears the TPM on every boot via TPM2_Clear.
 python3 scripts/build-firmware.py --tpm-reset
 ```
 
-Internal flashing only works with coreboot already on the chip - it needs
+Internal flashing only works with coreboot already on the chip. It needs
 the FMAP that only a coreboot image has, and the vendor BIOS locks the flash
 anyway. Running coreboot, only the slots are written, so all settings
-survive and the sealed `WP_RO` is never touched - the reset hook runs from
+survive and the sealed `WP_RO` is never touched. The reset hook runs from
 the booted slot, the RO copy stays the normal firmware:
 
 ```bash
@@ -800,7 +800,7 @@ TPM itself). On systemd 257+ mask `systemd-pcrproduct.service`, the T480's
 TPM chip doesn't support what it needs.
 
 The clear is authorized through the TPM's platform hierarchy, whose auth is
-empty right after firmware startup - that is why it needs no owner password
+empty right after firmware startup. That is why it needs no owner password
 and also lifts a latched disableClear. Not combinable with `--no-tpm`.
 
 Afterwards, re-enroll anything sealed to the old TPM state: wipe and re-add
@@ -816,7 +816,7 @@ fails with "key does not belong to this TPM".
 
 - No `TPM-RESET` lines in the log: the normal ROM was flashed instead of
   `..._tpmreset.rom`.
-- step3 with rc != 0x0: the raw TPM response is logged right above it -
+- step3 with rc != 0x0: the raw TPM response is logged right above it:
   `0x120` is TPM_RC_DISABLED, `0x9a2` is TPM_RC_BAD_AUTH. Flash the backup
   back and investigate before trying again.
 - `tpm2_getcap` finds no TPM: check that `/dev/tpm0` exists and that the
@@ -840,18 +840,18 @@ fwupdmgr update        # "Thunderbolt host controller" -> NVM 23.00
 ```
 
 Verified on this build (20.00 -> 23.00 with coreboot running). If the flash
-has already filled up and the controller is dead, fwupd no longer sees it -
-recovery is then external, on the small SOIC-8: erase, flash a 1 MB null
+has already filled up and the controller is dead, fwupd no longer sees it.
+Recovery is then external, on the small SOIC-8: erase, flash a 1 MB null
 image, boot the machine once, then flash Lenovo's `tb.bin`. The procedure is
 in [Libreboot's T480 guide](https://libreboot.org/docs/install/t480.html)
 under "Thunderbolt issue".
 
 ### Fan control
 
-The fan runs in five regulated levels driven by the ACPI thermal zone - the
+The fan runs in five regulated levels driven by the ACPI thermal zone. The
 old behaviour (EC automatic until 80 C, then unregulated full blast) is
 gone. Four profiles can be picked in the setup menu under
-**Embedded Controller → Fan profile**; a change applies on the next boot:
+**Embedded Controller > Fan profile**; a change applies on the next boot:
 
 | Profile | Character | First fan level at |
 |---------|-----------|--------------------|
@@ -861,13 +861,13 @@ gone. Four profiles can be picked in the setup menu under
 | EC only | firmware keeps its hands off the fan | - |
 
 "EC only" is for userspace fan control (thinkfan, zcfan): the firmware trip
-points move just below the CPU's throttle point, so the EC curve - or your
-tool - rules alone, with one ACPI escalation left as the last net. Curve
+points move just below the CPU's throttle point, so the EC curve, or your
+tool, rules alone, with one ACPI escalation left as the last net. Curve
 details and tuning: [patches/README.md](patches/README.md).
 
 ### Bluetooth and WWAN
 
-**Embedded Controller → Bluetooth** has three settings:
+**Embedded Controller > Bluetooth** has three settings:
 
 | Setting | Behaviour |
 |---------|-----------|
@@ -879,8 +879,8 @@ With "Last state", turning the radio off in the OS is enough; it stays off.
 Pulling both battery and charger clears the EC's memory and the radio comes
 back.
 
-**Embedded Controller → WWAN** has the same three settings and works the
-same way - it is the neighbouring bit in the same EC register (patch 0034).
+**Embedded Controller > WWAN** has the same three settings and works the
+same way. It is the neighbouring bit in the same EC register (patch 0034).
 Untested: there is no WWAN card in the machine this was built on.
 
 <details>
@@ -888,20 +888,20 @@ Untested: there is no WWAN card in the machine this was built on.
 <br>
 
 Upstream only knows Disabled/Enabled and writes the EC bit on every boot, so
-bluetooth turned off in the OS was back on after the next reboot -
+bluetooth turned off in the OS was back on after the next reboot:
 `thinkpad_acpi` reads its rfkill state from exactly that bit. With "Last
 state" the firmware does not touch it, and the EC keeps it across the reset.
 
 The second half of the fix is patch 0031: the firmware no longer announces a
 wireless master switch (`WLSW`), which the kernel answered by unblocking all
-radios on every boot - details in [patches/README.md](patches/README.md).
+radios on every boot. Details in [patches/README.md](patches/README.md).
 The switch this all controls is `tpacpi_bluetooth_sw` in `rfkill list`;
 `hci0` only exists while the radio has power.
 
 At shutdown `thinkpad_acpi` asks the firmware to save both radio states
 through ACPI methods that only Lenovo's BIOS has, and logged two
 `AE_NOT_FOUND` errors when it did not find them. Patch 0035 adds the two
-methods as empty stubs - the state is kept in the EC anyway, so there is
+methods as empty stubs. The state is kept in the EC anyway, so there is
 nothing for them to do.
 
 </details>
@@ -937,7 +937,7 @@ The EC has a debug console that is locked by default; the unlock key for the
 T480/T580 is known and already in the coreboot tree. Enable it with
 `CONFIG_MEC1653_ENABLE_UART=y` in `config/defconfig` and `--rebuild-base`.
 coreboot then unlocks the EC debug interface at boot and maps the EC's UART
-to host I/O port 0x3f8, IRQ 4 over LPC - that is the classic COM1, so no
+to host I/O port 0x3f8, IRQ 4 over LPC. That is the classic COM1, so no
 soldering: the console should appear as `/dev/ttyS0` in Linux
 (`screen /dev/ttyS0 115200`).
 
@@ -957,16 +957,16 @@ default in this repo.
 
 | | blocks | switch |
 |---|--------|--------|
-| **SMM BIOS write protect** (`BOOTMEDIA_SMM_BWP`) | every write from the OS - the whole BIOS region | **BIOS Lock** in the setup menu, System form |
-| **`WP_RO` controller lock** (`BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) | writes to `WP_RO` only - FMAP, GBB with the root key, RO copy | none; re-armed on every boot |
-| **descriptor + GbE lock** (`BOOTMEDIA_LOCK_DESCRIPTOR_GBE`) | writes to `SI_DESC` and `SI_GBE` - region permissions, MAC | none; re-armed on every boot |
+| **SMM BIOS write protect** (`BOOTMEDIA_SMM_BWP`) | every write from the OS; the whole BIOS region | **BIOS Lock** in the setup menu, System form |
+| **`WP_RO` controller lock** (`BOOTMEDIA_LOCK_WPRO_VBOOT_RO`) | writes to `WP_RO` only; FMAP, GBB with the root key, RO copy | none; re-armed on every boot |
+| **descriptor + GbE lock** (`BOOTMEDIA_LOCK_DESCRIPTOR_GBE`) | writes to `SI_DESC` and `SI_GBE`; region permissions, MAC | none; re-armed on every boot |
 
 The last two have no off switch by design. Both are protected ranges in the
 SPI controller, sealed with `FLOCKDN` before the payload runs, and they
 ignore BIOS Lock, root and SMM alike. Reads are untouched, so a full-chip
 backup still works. `WP_RO`, the descriptor and the MAC need the CH341A.
 
-Everything else - both slots, SMMSTORE, the MRC cache - stays writable
+Everything else (both slots, SMMSTORE, the MRC cache) stays writable
 internally once BIOS Lock is off. Capsule updates work with BIOS Lock on:
 their write path runs inside SMM. Check the current state:
 
@@ -978,7 +978,7 @@ sudo setpci -s 00:1f.5 dc.b                     # aa = BIOS Lock on, 8b = off
 The log shows two `FPR` lines, one for `0x00aa0000-0x00ffffff` and one for
 `0x00000000-0x00002fff`, plus `Enabled bootmedia protection` and
 `Enabled protection for SI_DESC + SI_GBE`. `No SPI FPR free!` means a lock
-did not happen - check after a coreboot or FSP update.
+did not happen. Check after a coreboot or FSP update.
 
 `flashrom --flash-name` does not report the chipset registers here. With the
 controller visible it opens `/dev/mtd0` and takes the MTD path, which prints
@@ -1003,7 +1003,7 @@ registers say what is in force.
   needs no override.
 - The kernel binds the SPI controller and exposes the chip as `/dev/mtd0`.
   flashrom then prints `Erase/write done` even when the hardware dropped
-  every write - only the `VERIFIED.` line proves anything.
+  every write. Only the `VERIFIED.` line proves anything.
 - A full-chip verify always fails once the firmware has run:
   `RW_MRC_CACHE`, `SMMSTORE` and `RW_NVRAM` hold runtime state, and the ME
   writes a few bytes into `SI_ME`. Verify the firmware regions instead:
@@ -1030,14 +1030,14 @@ two bytes.
 
 `/dev/efi_capsule_loader` only exists after `modprobe capsule-loader`. A
 shell redirect into the missing path creates a regular file in `/dev` and
-stages nothing - no error anywhere. The kernel confirms a real staging with
+stages nothing. No error anywhere. The kernel confirms a real staging with
 `efi: Successfully uploaded capsule file` in dmesg. A staged capsule lives
 in RAM: it survives a warm `reboot`, not a poweroff.
 
 ## Cleaning up
 
 A full build cycle leaves five things on disk; together they run to some
-50 GB. All of it is reproducible - the only artifacts worth keeping are the
+50 GB. All of it is reproducible. The only artifacts worth keeping are the
 `.rom`/`.cap`/`.cab` of the deployed version and everything under `keys/`
 (which no cleanup below touches).
 
@@ -1058,16 +1058,16 @@ podman rmi -a -f                                     # or: drop every image
 ```
 
 The versions are in `config/versions.lock`, tracked, so everything can be
-fetched and rebuilt later - `sources/` only saves the download. Keeping the
+fetched and rebuilt later; `sources/` only saves the download. Keeping the
 two images skips most of the compile on the next build; dropping everything
 costs one `./fetch.sh` plus a full toolchain build (~1-2 h). Aborted builds
 (power loss, Ctrl-C) leave their half-finished layers behind as untagged
 images. Pruning them breaks nothing, but a rerun of the same build would
-have picked those layers up from cache - prune after the build has
+have picked those layers up from cache. Prune after the build has
 succeeded, not between attempts.
 
-To keep the built toolchain without the image store, save the image itself -
-that turns the rebuild into a `podman load`:
+To keep the built toolchain without the image store, save the image itself.
+That turns the rebuild into a `podman load`:
 
 ```bash
 podman save coreboot-t480 | zstd -T0 > coreboot-t480.tar.zst
