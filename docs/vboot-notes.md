@@ -15,14 +15,14 @@ which is what makes the controller-level write protection possible
 (see "The two protected ranges" below).
 
 SMMSTORE is found at runtime by coreboot's SMM driver through an FMAP
-lookup (`drivers/smmstore/store.c`), not by a hardcoded offset - keeping
+lookup (`drivers/smmstore/store.c`), not by a hardcoded offset. Keeping
 the offset is about preserving contents, not about function.
 
 ## Why `VBOOT_CLEAR_RECOVERY_IN_RAMSTAGE=y`
 
 Without it a single recovery event pins the machine to RO boots forever.
-`vb2api_clear_recovery()` is called from `2kernel.c` - the depthcharge
-path this payload never runs - and from `bootmode.c:61`, which is only
+`vb2api_clear_recovery()` is called from `2kernel.c` (the depthcharge
+path this payload never runs) and from `bootmode.c:61`, which is only
 compiled with this option. The request stays in VBNV, so every boot
 re-enters recovery.
 
@@ -35,7 +35,7 @@ and clears the request, the second selects a slot again.
 ## Why `VBOOT_ALWAYS_ENABLE_DISPLAY=y`
 
 The SoC selects `VBOOT_MUST_REQUEST_DISPLAY`, which skips display init on
-normal verified boots - no splash, dark until the kernel takes over. The
+normal verified boots. No splash, dark until the kernel takes over. The
 decision is taken in verstage, so shipping a fix needs a `WP_RO` write,
 not just a slot update.
 
@@ -45,7 +45,7 @@ not just a slot update.
 a recovery boot. `lookup_region_type()` asks for `RECOVERY_FLAG` in that
 case; `normal_training` carries `NORMAL_FLAG` only (because vboot starts
 in the bootblock) and there is no recovery MRC region here, so nothing
-matches. A recovery boot therefore also retrains memory - a minute or two
+matches. A recovery boot therefore also retrains memory. A minute or two
 of black screen.
 
 Use `cbmem -1` to look at the current boot; the console buffer holds
@@ -59,14 +59,14 @@ failing slot flips that field permanently: `fail_impl()` writes
 `1 - fw_slot` at `2misc.c:123`, reached through `vb2api_fail()` from
 `vb2_load_fw_keyblock()` and `vb2_load_fw_preamble()`. Restoring the
 broken slot does not move the machine back to it, and nothing in the
-firmware ever does - upstream leaves that to the ChromeOS updater
+firmware ever does. Upstream leaves that to the ChromeOS updater
 (`crossystem fw_try_next`). Harmless while both slots carry the same
 image.
 
 The second fallback, the one inside `vb2_select_fw_slot()` itself
 (`2misc.c:394`), needs `last_fw_result == VB2_FW_RESULT_TRYING`, which is
 only written when `VB2_NV_TRY_COUNT` is non-zero. That is not the reason
-for the sticky slot above - but it is not dead code either, as this file
+for the sticky slot above, but it is not dead code either, as this file
 used to claim. Two things set the field: `scripts/vbnv.py arm-update`, and
 the capsule path in the firmware, which arms a trial boot after writing the
 inactive slot.
@@ -83,7 +83,7 @@ it silently failed.
 Measured 2026-08-29, and it is confusing from the outside: fwupd reports
 `last_attempt_status 0` and the ESRT shows the new version under
 `last_attempt_version`, while `fw_version` still names the old one.
-`vbnv.py show` is what makes it obvious - `previous slot B`,
+`vbnv.py show` is what makes it obvious, `previous slot B`,
 `previous result trying`, `trial boots left 0`, `next boot slot A`.
 
 So after installing a capsule, boot all the way through once. Visit the
@@ -96,7 +96,7 @@ and a full boot commits it.
 The first boot after enabling vboot clears the TPM:
 `factory_initialize_tpm2()` starts with `tlcl_force_clear()` before
 setting up the NV spaces (`security/vboot/secdata_tpm2.c`). Everything
-sealed to the TPM is invalidated once - LUKS falls back to the passphrase
+sealed to the TPM is invalidated once; LUKS falls back to the passphrase
 and needs re-enrolling. It happens once; the spaces persist, and later
 key or firmware changes do not repeat it.
 
@@ -109,7 +109,7 @@ version into PCR 10; measured boot keeps using PCR 2.
 The roll-forward at `2firmware.c:210` wants all three of: a version above
 secdata, the same slot as the last boot, and `last_fw_result ==
 VB2_FW_RESULT_SUCCESS`. The third one is the problem. Nothing writes
-SUCCESS - not in coreboot, and not in vboot either outside its own unit
+SUCCESS, not in coreboot, and not in vboot either outside its own unit
 tests. vboot writes only FAILURE, TRYING and UNKNOWN; on ChromeOS the
 success report comes from userspace (`crossystem fw_result`), and a
 coreboot-only integration has no equivalent.
@@ -133,7 +133,7 @@ Range register covering `WP_RO` (0xaa0000-0xffffff). The FPRs work at
 is covered exactly; the FMAP offsets are flash-absolute because
 `boot_device_ro()` spans `CONFIG_ROM_SIZE`, not the BIOS region. The
 chipset lockdown then sets FLOCKDN and DLOCK, sealing the register until
-the next reset - and the next boot re-arms it before the payload runs.
+the next reset, and the next boot re-arms it before the payload runs.
 
 `BOOTMEDIA_LOCK_DESCRIPTOR_GBE` (patch 0043) adds a second range over
 `SI_DESC` + `SI_GBE` (0x0-0x2fff) from the same function, so both are
@@ -152,13 +152,13 @@ boundaries.
 
 Consequences, measured and structural:
 
-- Every host write into either range is dropped by the controller - OS,
+- Every host write into either range is dropped by the controller. OS,
   SMM and the `bios_lock` toggle make no difference. The mechanisms are
   independent: EISS gates the BIOS region, the ranges seal `WP_RO` and
   the descriptor.
 - The MRC cache is written at `BS_DEV_ENUMERATE/ON_EXIT`, the FPRs set
-  at `BS_DEV_RESOURCES/ON_ENTRY`, FLOCKDN at `BS_DEV_RESOURCES/ON_EXIT` -
-  no ordering conflict, and everything writable lies outside both ranges
+  at `BS_DEV_RESOURCES/ON_ENTRY`, FLOCKDN at `BS_DEV_RESOURCES/ON_EXIT`.
+  No ordering conflict, and everything writable lies outside both ranges
   anyway. `BOOTMEDIA_LOCK_IN_VERSTAGE` is therefore not needed here.
 - `GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK` (the rollback-protection
   escape hatch) sits in the GBB inside `WP_RO`: external-only from now
@@ -167,7 +167,7 @@ Consequences, measured and structural:
 - A successful lock prints `BM-LOCKDOWN: Enabled bootmedia protection`
   and `BM-LOCKDOWN: Enabled protection for SI_DESC + SI_GBE`, each with
   an FPR line carrying the range. `No SPI FPR free!` would mean all five
-  registers were taken and a lock silently did not happen - check the log
+  registers were taken and a lock silently did not happen. Check the log
   after any coreboot or FSP update.
 
 Measured on hardware, firmware version 4. Both registers read back from
@@ -179,7 +179,7 @@ control write is what rules out the write path itself as the cause.
 
 ## Generating keys
 
-`scripts/keygeneration/create_new_keys.sh` is unusable here - it insists
+`scripts/keygeneration/create_new_keys.sh` is unusable here. It insists
 on ChromeOS AP-RO keys. `scripts/gen-vboot-keys.sh` calls the helpers in
 `common.sh` directly and works around two gaps: `dumpRSAPublicKey` has to
 be compiled by hand (the vboot Makefile wants libflashrom), and
@@ -188,7 +188,7 @@ be compiled by hand (the vboot Makefile wants libflashrom), and
 
 Build futility outside the fetched tree (`BUILD=/tmp/vbuild`). That tree
 is the offline build context, and writing into it invalidates the
-crossgcc layer cache - a config change then costs an hour instead of a
+crossgcc layer cache. A config change then costs an hour instead of a
 quarter of one.
 
 ## Hardware test results
@@ -200,5 +200,5 @@ quarter of one.
   rewritten from the running system.
 - Foreign keys: an image signed with a different keyset, written into the
   slot the machine actually boots, is refused and the other slot is
-  selected. Writing it into the other slot proves nothing - vboot never
+  selected. Writing it into the other slot proves nothing, vboot never
   looks at it.
