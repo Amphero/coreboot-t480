@@ -10,7 +10,7 @@ The mechanism works end to end, measured 2026-08-17 on the 26.08.2 build:
 capsule staged through `efi_capsule_loader`, warm reboot, firmware wrote the
 inactive slot (read back byte-identical to the capsule half), armed the trial
 boot, reset on its own, the trial boot came up and reported success, and the
-ESRT entry reads `last_attempt_status` 0. SMMSTORE was never touched - Secure
+ESRT entry reads `last_attempt_status` 0. SMMSTORE was never touched. Secure
 Boot keys and settings survived the whole cycle.
 
 It took three findings to get there, in order: the SmmStoreLib constructor
@@ -24,8 +24,8 @@ capsule built from the same ROM:
 - the kernel accepts it: `efi: Successfully uploaded capsule file with reboot
   type 'RESET_WARM'`
 - the firmware processes it and records a result: `Capsule0000`, `CapsuleLast`
-  and `CapsuleMax` appear under GUID `39b68c46-…`
-- `Capsule0000` carries our FMP capsule GUID `6dcbd5ed-…` and
+  and `CapsuleMax` appear under GUID `39b68c46-...`
+- `Capsule0000` carries our FMP capsule GUID `6dcbd5ed-...` and
   `CapsuleStatus = 0x8000000000000015`, i.e. `EFI_ABORTED`, payload index 1
 - slot A is byte-identical to what was in it before, so nothing was written
 
@@ -33,7 +33,7 @@ capsule built from the same ROM:
 
 `SmmStoreLib` keeps its state per linked driver: `mSmmStoreInfo` is a module
 global and stays NULL until `SmmStoreLibInitialize()` runs in that driver.
-`FmpDeviceSlotLib` never called it - the reference `FmpDeviceSmmLib` does it
+`FmpDeviceSlotLib` never called it. The reference `FmpDeviceSmmLib` does it
 from its constructor (`FmpDeviceSmmLib.c:1141`), which is exactly the kind of
 per-copy setup a library user forgets. So every store call in FmpDxe's copy
 returned `EFI_NO_MEDIA`, `FmpDeviceCheckImageWithStatus` hit its
@@ -44,7 +44,7 @@ usable detail. Patch 0003 now has the same constructor.
 
 ## The second abort: a progress bar, measured 2026-08-17
 
-With the constructor fix flashed, applying a capsule failed again - ESRT
+With the constructor fix flashed, applying a capsule failed again. ESRT
 `last_attempt_status` 0x1001, `LAST_ATTEMPT_STATUS_DRIVER_ERROR_PROGRESS_CALLBACK_ERROR`,
 nothing written, no trial boot armed. The chain: with `BOOTSPLASH_IMAGE` the
 dsc picks `DisplayUpdateProgressLibGraphics`; the capsule is applied from the
@@ -57,7 +57,7 @@ outright (`FmpDxe.c:1302`). Upstream's own dsc comment warns that the graphics
 library "aborts firmware update if GOP is missing".
 
 Patch 0001 now forces `DisplayUpdateProgressLibText` whenever
-`SLOT_CAPSULE_SUPPORT` is on, bootsplash or not - the text library prints into
+`SLOT_CAPSULE_SUPPORT` is on, bootsplash or not. The text library prints into
 the void and succeeds. Two upstream components disagreeing about whether a
 missing progress bar is fatal; the 0x1001 in the ESRT is also the first proof
 the new diagnosis path pays for itself.
@@ -74,7 +74,7 @@ the standard codes, all below the range; it now has one code per failure site,
 The other half: the ESRT the OS reads was the static one from `BlSupportDxe`,
 which never carries a `LastAttemptStatus` at all. Patch 0004 adds
 `EsrtFmpDxe`, which rebuilds the table from the FMP instances on ReadyToBoot
-and installs nothing when it finds none - so firmware built without capsule
+and installs nothing when it finds none, so firmware built without capsule
 support keeps the static table.
 
 ## Debug output does not fit
@@ -92,7 +92,7 @@ should give both the space and readable output. Not tried yet.
 ## A slot image is not interchangeable
 
 `FSP_M_XIP` is selected unconditionally by `src/soc/intel/skylake/Kconfig:19`
-and cannot be turned off - FSP-M is what brings memory up, so there is no RAM to
+and cannot be turned off. FSP-M is what brings memory up, so there is no RAM to
 copy it into. It is therefore bound to its flash address, and romstage carries
 references to it.
 
@@ -113,7 +113,7 @@ into a single slot image.
   it with `CB_TAG_FMAP`. Confirmed on hardware: `cbmem-464d4150` exists, and the
   payload reported `fmap@AA0000 (mem 7ABDC000)`, the same address coreboot's own
   CBMEM table lists.
-- The running slot comes from `CbfsOffset` in the same hob - `0x6B0000` on a
+- The running slot comes from `CbfsOffset` in the same hob: `0x6B0000` on a
   slot B boot, which is `FW_MAIN_B`. No need to parse `vb2_shared_data`, which
   is internal and not an interface.
 - `CbfsSize` is the size recorded in the CBFS, not the region size (0x30E7C0 vs
@@ -133,7 +133,7 @@ into a single slot image.
 ## Build system, things that cost time
 
 - EDK2 builds with `-q` (`payloads/external/edk2/Makefile:45`), which swallows
-  compiler and linker errors - a failing module reports only "Failed to execute
+  compiler and linker errors. A failing module reports only "Failed to execute
   command". `CONFIG_EDK2_CUSTOM_BUILD_PARAMS` is appended after it, so a `-v`
   there brings them back.
 - A new coreboot Kconfig symbol does not reach the edk2 sub-make on its own.
@@ -142,8 +142,8 @@ into a single slot image.
   `$(obj)/UEFIPAYLOAD.fd` for the payload build. A symbol needed at build time
   belongs in the second.
 - A dsc component with a `FILE_GUID` override needs the same override on the
-  fdf side (`INF FILE_GUID = … path`), or the module is built and silently not
-  placed in the volume. Check `Build/…/FV/DXEFV.inf` for the GUID, not the build
+  fdf side (`INF FILE_GUID = ... path`), or the module is built and silently not
+  placed in the volume. Check `Build/.../FV/DXEFV.inf` for the GUID, not the build
   log.
 - Changing anything under `sources/coreboot` invalidates the crossgcc layer and
   costs half an hour. Changing only `sources/edk2` does not.
@@ -163,14 +163,14 @@ Measured 2026-08-17 on the 26.08.2-15 build: the embedded PCD is
 byte-identical to `keys/capsule/root.pub.pem`; a capsule signed with the own
 chain applies (`last_attempt_status` 0); one signed with EDK2's test
 certificates is rejected with 0x1012
-(`LAST_ATTEMPT_STATUS_DRIVER_ERROR_IMAGE_AUTH_FAILURE`), writes nothing -
-the inactive slot read back byte-identical - and arms no trial boot.
+(`LAST_ATTEMPT_STATUS_DRIVER_ERROR_IMAGE_AUTH_FAILURE`), writes nothing.
+The inactive slot read back byte-identical, and arms no trial boot.
 
 ## fwupd, verified 2026-08-17
 
 The whole fwupd path works: `fwupdmgr install <cab>` staged the capsule via
 `BootNext` and its sbctl-signed `fwupdx64.efi.signed`, the firmware applied
-it, and `get-history` records the success. BIOS Lock stayed on - the write
+it, and `get-history` records the success. BIOS Lock stayed on. The write
 path runs inside SMM.
 
 Host-side requirements, all one-time (documented in GUIDE.md): fwupd.conf
@@ -181,7 +181,7 @@ even on AC; the `--ignore-power` flag no longer exists in fwupd 2.x) and
 `[uefi_capsule] DisableShimForSecureBoot=true` (own Secure Boot keys, no
 shim), plus `sbctl sign -o .../fwupdx64.efi.signed .../fwupdx64.efi`.
 
-The cab payload must be named `firmware.bin` inside the archive - fwupd's
+The cab payload must be named `firmware.bin` inside the archive, fwupd's
 loader looks for exactly that id.
 
 ## Next
@@ -192,10 +192,10 @@ reconstruction. Tracked as issues.
 
 ## Machine state as this was written
 
-Both slots hold the 26.08.2-15 build with the own trust anchor - slot B
+Both slots hold the 26.08.2-15 build with the own trust anchor. Slot B
 written by flashrom, slot A by the accepted capsule; slot A is running. BIOS
 Lock is off and wants re-enabling. The rollback counter and both preambles
-are at version 4. The kernel side needs `modprobe capsule-loader` - the
+are at version 4. The kernel side needs `modprobe capsule-loader`. The
 module is not auto-loaded, and a bare redirect into
 `/dev/efi_capsule_loader` when it is absent silently creates a regular file
 there.
