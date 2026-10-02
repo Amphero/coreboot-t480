@@ -246,11 +246,11 @@ def build_base(src, image, mac, force):
     print(f"[base] OFFLINE build '{image}' (MAC={mac}, --network=none) - first run ~30-60 min (crossgcc) ...")
     cmd = ["podman", "build", "--network=none", "--build-arg", f"MAC_ADDRESS={mac}",
            "--label", f"t480.confighash={chash}"]
-    # Pass the EDK2 branch/commit from versions.lock through to coreboot
+    # Pass the EDK2 ref/commit from versions.lock through to coreboot
     # (CONFIG_EDK2_TAG_OR_REV) so the exact pre-placed checkout is used.
-    edk2_branch = lock_get(src, "EDK2_BRANCH")
-    if edk2_branch:
-        cmd += ["--build-arg", f"EDK2_BRANCH={edk2_branch}"]
+    edk2_ref = lock_get(src, "EDK2_REF")
+    if edk2_ref:
+        cmd += ["--build-arg", f"EDK2_REF={edk2_ref}"]
     edk2_commit = lock_get(src, "EDK2_COMMIT")
     if edk2_commit:
         cmd += ["--build-arg", f"EDK2_COMMIT={edk2_commit}"]

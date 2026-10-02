@@ -158,6 +158,9 @@ minutes because coreboot builds its own toolchain, after that it's fast.
 
 `config/versions.lock` names the four upstream sources (coreboot, EDK2,
 libreboot, lbmk) down to the commit, and `./fetch.sh` fetches exactly those.
+`EDK2_REF` is a release tag (`26.09.1`) - MrChromebox tags releases now, and
+coreboot names such a tag as its own default; a `uefipayload_*` branch still
+works there if you want a line rather than a release.
 It is tracked, so a git tag pins the versions together with the defconfig,
 the patch series and the build scripts. `./fetch.sh --latest` resolves the
 newest upstream versions and rewrites the file; `--refresh` only forces a

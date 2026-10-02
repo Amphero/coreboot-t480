@@ -15,7 +15,7 @@
 #   GIT_JOBS     parallel submodule clones (default 4)
 #   NET_TRIES    attempts per network step before giving up (default 3)
 #   Overrides (LATEST=1 only; with the lock they would contradict it):
-#     COREBOOT_REF  EDK2_BRANCH  LIBREBOOT_VERSION  LBMK_REF
+#     COREBOOT_REF  EDK2_REF  LIBREBOOT_VERSION  LBMK_REF
 #   LIBREBOOT_TARBALL_PROVIDED  1 = tarball already placed in /sources/libreboot/
 #
 # Idempotent: a component with its .stamp is skipped. A changed ref drops that
@@ -92,6 +92,14 @@ tagcommit(){
   printf '%s' "$c"
 }
 
+# $1 ref -> commit. Works for a release tag and for a branch name.
+edk2_commit(){
+  local c
+  c="$(tagcommit "$EDK2_URL" "$1")"
+  [ -n "$c" ] || c="$(lsref "$EDK2_URL" "refs/heads/$1")"
+  printf '%s' "$c"
+}
+
 resolve_latest(){
   # coreboot: newest release tag YY.MM[.p]  (NOT master snapshots)
   if [ -z "${COREBOOT_REF:-}" ]; then
@@ -101,15 +109,24 @@ resolve_latest(){
       | sortver | tail -1)" || true
     [ -n "$COREBOOT_REF" ] || die "could not resolve a coreboot release tag (network?)"
   fi
-  # edk2: newest uefipayload_* branch. Two schemes coexist, YYYYMM (202309) and
-  # YYMM (2605), so pad 4 digits to 20YYMM or 2023xx outranks 26xx.
-  if [ -z "${EDK2_BRANCH:-}" ]; then
-    log "resolving newest MrChromebox uefipayload_* branch ..."
-    EDK2_BRANCH="$(git ls-remote --heads "$EDK2_URL" 2>/dev/null \
-      | sed -n 's#.*refs/heads/\(uefipayload_[0-9]\+\)$#\1#p' \
-      | while read -r b; do n="${b#uefipayload_}"; [ "${#n}" -eq 4 ] && n="20$n"; echo "$n $b"; done \
-      | sort -k1,1n | tail -1 | awk '{print $2}')" || true
-    [ -n "$EDK2_BRANCH" ] || die "could not resolve a uefipayload_* branch (network?)"
+  # edk2: MrChromebox tags releases (26.09.1, which is what coreboot 26.09 names
+  # as its default) and keeps the uefipayload_* branches as the lines they are cut
+  # from. Prefer a tag; the branch head is whatever is in flight.
+  if [ -z "${EDK2_REF:-}" ]; then
+    log "resolving newest MrChromebox edk2 release tag ..."
+    EDK2_REF="$(git ls-remote --tags --refs "$EDK2_URL" 2>/dev/null \
+      | sed -n 's#.*refs/tags/\([0-9][0-9]\.[0-9][0-9]\(\.[0-9]\+\)\?\)$#\1#p' \
+      | sortver | tail -1)" || true
+    if [ -z "$EDK2_REF" ]; then
+      # Older naming, two schemes: YYYYMM (202309) and YYMM (2605). Pad 4 digits
+      # to 20YYMM or 2023xx outranks 26xx.
+      log "no release tag - newest uefipayload_* branch instead ..."
+      EDK2_REF="$(git ls-remote --heads "$EDK2_URL" 2>/dev/null \
+        | sed -n 's#.*refs/heads/\(uefipayload_[0-9]\+\)$#\1#p' \
+        | while read -r b; do n="${b#uefipayload_}"; [ "${#n}" -eq 4 ] && n="20$n"; echo "$n $b"; done \
+        | sort -k1,1n | tail -1 | awk '{print $2}')" || true
+    fi
+    [ -n "$EDK2_REF" ] || die "could not resolve an edk2 ref (network?)"
   fi
   # lbmk: newest release tag (new scheme YY.MM[revN])
   if [ -z "${LBMK_REF:-}" ]; then
@@ -146,7 +163,7 @@ resolve_latest(){
 if [ "$CHECK" = "1" ]; then
   [ -f "$LOCK_IN" ] || die "config/versions.lock is missing - nothing to compare against."
   # An override would decide the answer instead of upstream.
-  for v in COREBOOT_REF EDK2_BRANCH LIBREBOOT_VERSION LBMK_REF; do
+  for v in COREBOOT_REF EDK2_REF LIBREBOOT_VERSION LBMK_REF; do
     [ -z "$(eval "printf '%s' \"\${$v:-}\"")" ] \
       || die "$v is set in the environment - the check compares the lock against
    upstream and takes no overrides."
@@ -156,7 +173,7 @@ if [ "$CHECK" = "1" ]; then
   # must not share variables.
   HAVE_COREBOOT_REF="$(lock_field "$LOCK_IN" COREBOOT_REF)"
   HAVE_COREBOOT_COMMIT="$(lock_field "$LOCK_IN" COREBOOT_COMMIT)"
-  HAVE_EDK2_BRANCH="$(lock_field "$LOCK_IN" EDK2_BRANCH)"
+  HAVE_EDK2_REF="$(lock_field "$LOCK_IN" EDK2_REF)"
   HAVE_EDK2_COMMIT="$(lock_field "$LOCK_IN" EDK2_COMMIT)"
   HAVE_LIBREBOOT_VERSION="$(lock_field "$LOCK_IN" LIBREBOOT_VERSION)"
   HAVE_LBMK_REF="$(lock_field "$LOCK_IN" LBMK_REF)"
@@ -167,7 +184,7 @@ if [ "$CHECK" = "1" ]; then
   # Tags get re-cut, branches move: compare the commits too.
   NOW_COREBOOT_COMMIT="$(tagcommit "$CB_URL" "$COREBOOT_REF")"
   NOW_LBMK_COMMIT="$(tagcommit "$LBMK_URL" "$LBMK_REF")"
-  NOW_EDK2_COMMIT="$(lsref "$EDK2_URL" "refs/heads/$EDK2_BRANCH")"
+  NOW_EDK2_COMMIT="$(edk2_commit "$EDK2_REF")"
 
   CHANGED=0
   short(){ printf '%.12s' "$1"; }
@@ -189,7 +206,7 @@ if [ "$CHECK" = "1" ]; then
 
   printf '\n\033[1;36m[fetch] config/versions.lock vs upstream\033[0m\n\n'
   report coreboot  "$HAVE_COREBOOT_REF"      "$COREBOOT_REF"      "$HAVE_COREBOOT_COMMIT" "$NOW_COREBOOT_COMMIT"
-  report edk2      "$HAVE_EDK2_BRANCH"       "$EDK2_BRANCH"       "$HAVE_EDK2_COMMIT"     "$NOW_EDK2_COMMIT"
+  report edk2      "$HAVE_EDK2_REF"          "$EDK2_REF"          "$HAVE_EDK2_COMMIT"     "$NOW_EDK2_COMMIT"
   report libreboot "$HAVE_LIBREBOOT_VERSION" "$LIBREBOOT_VERSION"
   report lbmk      "$HAVE_LBMK_REF"          "$LBMK_REF"          "$HAVE_LBMK_COMMIT"     "$NOW_LBMK_COMMIT"
   echo
@@ -211,14 +228,14 @@ else
   [ -f "$LOCK_IN" ] || die "config/versions.lock is missing - it is the input for the fetch.
    ./fetch.sh --latest resolves the newest upstream versions and creates it."
   # An override would contradict the file that is the source of truth.
-  for v in COREBOOT_REF EDK2_BRANCH LIBREBOOT_VERSION LBMK_REF; do
+  for v in COREBOOT_REF EDK2_REF LIBREBOOT_VERSION LBMK_REF; do
     [ -z "$(eval "printf '%s' \"\${$v:-}\"")" ] \
       || die "$v is set in the environment, but overrides only apply to --latest.
    Edit config/versions.lock instead."
   done
   # shellcheck disable=SC1090
   . "$LOCK_IN"
-  for v in COREBOOT_REF COREBOOT_COMMIT EDK2_BRANCH EDK2_COMMIT \
+  for v in COREBOOT_REF COREBOOT_COMMIT EDK2_REF EDK2_COMMIT \
            LIBREBOOT_VERSION LBMK_REF LBMK_COMMIT; do
     [ -n "$(eval "printf '%s' \"\${$v:-}\"")" ] || die "config/versions.lock: $v is missing"
   done
@@ -229,7 +246,7 @@ fi
 # a value that is already set: an earlier version overwrote EDK2_COMMIT with the
 # branch head and the lock then named a commit the tree did not contain.
 LIBREBOOT_TARBALL="libreboot-${LIBREBOOT_VERSION}_t480_vfsp_16mb.tar.xz"
-[ -n "${EDK2_COMMIT:-}" ] || EDK2_COMMIT="$(lsref "$EDK2_URL" "refs/heads/$EDK2_BRANCH")"
+[ -n "${EDK2_COMMIT:-}" ] || EDK2_COMMIT="$(edk2_commit "$EDK2_REF")"
 [ -n "${LBMK_COMMIT:-}" ] || LBMK_COMMIT="$(tagcommit "$LBMK_URL" "$LBMK_REF")"
 # coreboot: a commit is already exact; a tag needs dereferencing
 if [ -z "${COREBOOT_COMMIT:-}" ]; then
@@ -246,7 +263,7 @@ cat > "$LOCK" <<EOF
 # hashes it into the image label. Edit config/versions.lock, not this file.
 COREBOOT_REF=$COREBOOT_REF
 COREBOOT_COMMIT=$COREBOOT_COMMIT
-EDK2_BRANCH=$EDK2_BRANCH
+EDK2_REF=$EDK2_REF
 EDK2_COMMIT=$EDK2_COMMIT
 LIBREBOOT_VERSION=$LIBREBOOT_VERSION
 LIBREBOOT_TARBALL=$LIBREBOOT_TARBALL
@@ -348,10 +365,11 @@ retry_net(){
 GIT_NET=(-c http.version=HTTP/1.1)
 # No --recurse-submodules: one failing submodule would take the finished
 # top-level clone with it.
-edk2_clone(){ git "${GIT_NET[@]}" clone -q --branch "$EDK2_BRANCH" --single-branch \
+# --branch takes a tag too, and then HEAD lands on it.
+edk2_clone(){ git "${GIT_NET[@]}" clone -q --branch "$EDK2_REF" --single-branch \
                 "$EDK2_URL" "$ED"; }
-edk2_update(){ git "${GIT_NET[@]}" -C "$ED" fetch -q --force "$EDK2_URL" \
-                 "+refs/heads/$EDK2_BRANCH:refs/remotes/origin/$EDK2_BRANCH"; }
+edk2_update(){ git "${GIT_NET[@]}" -C "$ED" fetch -q --force --tags "$EDK2_URL" \
+                 "$EDK2_REF"; }
 # --jobs, not -j: git 2.39's submodule update rejects the short form.
 edk2_submodules(){ git "${GIT_NET[@]}" -C "$ED" submodule update --init --checkout \
                      --recursive --jobs "$JOBS"; }
@@ -363,22 +381,23 @@ else
   # gigabytes. Dropped only if it is no git tree or points elsewhere.
   if [ "$REFRESH" != "1" ] && [ -d "$ED/.git" ] \
      && [ "$(git -C "$ED" remote get-url origin 2>/dev/null)" = "$EDK2_URL" ]; then
-    log "edk2 tree from an earlier run - fetching $EDK2_BRANCH into it instead of re-cloning"
-    retry_net "edk2 fetch" edk2_update || die "edk2 fetch ($EDK2_BRANCH) failed"
+    log "edk2 tree from an earlier run - fetching $EDK2_REF into it instead of re-cloning"
+    retry_net "edk2 fetch" edk2_update || die "edk2 fetch ($EDK2_REF) failed"
   else
-    log "cloning edk2 branch $EDK2_BRANCH ..."
+    log "cloning edk2 $EDK2_REF ..."
     rm -rf "$SRC/edk2"; mkdir -p "$SRC/edk2"
     retry_net "edk2 clone" edk2_clone \
-      || die "edk2 clone ($EDK2_BRANCH) failed - if the log says 'could not read
+      || die "edk2 clone ($EDK2_REF) failed - if the log says 'could not read
    Username for https://github.com', that is throttling: retry with GIT_JOBS=1."
   fi
   # The resolved commit, not the branch head: the lock names an exact commit,
   # so the tree stays reproducible after the branch moved on.
   if [ -n "${EDK2_COMMIT:-}" ]; then
     git -C "$ED" checkout -q --detach "$EDK2_COMMIT" \
-      || die "edk2: pinned commit $EDK2_COMMIT not on branch $EDK2_BRANCH (history rewritten?)"
+      || die "edk2: pinned commit $EDK2_COMMIT not reachable from $EDK2_REF (history rewritten?)"
   else
-    git -C "$ED" checkout -q --detach "origin/$EDK2_BRANCH"
+    git -C "$ED" checkout -q --detach FETCH_HEAD 2>/dev/null \
+      || git -C "$ED" checkout -q --detach "$EDK2_REF"
   fi
   retry_net "edk2 submodules" edk2_submodules || die "edk2 submodules failed"
   touch "$SRC/edk2/.stamp-fetch"

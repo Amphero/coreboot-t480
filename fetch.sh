@@ -17,7 +17,7 @@
 # its own component on the next run without --refresh.
 #
 # Optional per-component overrides for --latest only (env):
-#   COREBOOT_REF=<commit|tag>  EDK2_BRANCH=uefipayload_JJMM  LBMK_REF=<tag|commit>
+#   COREBOOT_REF=<commit|tag>  EDK2_REF=<tag|branch>  LBMK_REF=<tag|commit>
 #   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/..._t480_vfsp_16mb.tar.xz
 #
 # --check-updates writes nothing: it prints the newest upstream versions next
@@ -132,7 +132,7 @@ podman run --rm \
   -e GIT_JOBS="${GIT_JOBS:-}" \
   -e LIBREBOOT_TARBALL_PROVIDED="$PROVIDED" \
   -e COREBOOT_REF="${COREBOOT_REF:-}" \
-  -e EDK2_BRANCH="${EDK2_BRANCH:-}" \
+  -e EDK2_REF="${EDK2_REF:-}" \
   -e LIBREBOOT_VERSION="${LIBREBOOT_VERSION:-}" \
   -e LBMK_REF="${LBMK_REF:-}" \
   -v "$SRC":/sources:z \

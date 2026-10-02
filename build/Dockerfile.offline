@@ -143,11 +143,12 @@ RUN [ -f /opt/coreboot/splash.bmp ] || \
 RUN cp defconfig .config && make olddefconfig
 
 # Pin coreboot's EDK2 revision to what PHASE 1 placed in workspace/mrchromebox:
-# the commit from versions.lock, the branch name as fallback. coreboot's Kconfig
-# default may name another branch - 26.06 defaults to uefipayload_2603.
-ARG EDK2_BRANCH
+# the commit from versions.lock, the ref name as fallback. coreboot's own default
+# names something else - 26.06 wanted uefipayload_2603, 26.09 wants the tag
+# 26.09.1.
+ARG EDK2_REF
 ARG EDK2_COMMIT
-RUN REV="$EDK2_COMMIT"; [ -n "$REV" ] || REV="${EDK2_BRANCH:+origin/$EDK2_BRANCH}"; \
+RUN REV="$EDK2_COMMIT"; [ -n "$REV" ] || REV="$EDK2_REF"; \
     if [ -n "$REV" ]; then \
       if grep -q '^CONFIG_EDK2_TAG_OR_REV=' .config; then \
         sed -i 's|^\(CONFIG_EDK2_TAG_OR_REV=\).*|\1"'"$REV"'"|' .config; \
