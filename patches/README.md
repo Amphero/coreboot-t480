@@ -29,7 +29,7 @@ longer matches). After changing anything here, rebuild with `--rebuild-base`;
 
 Generate a new patch against the tree with the earlier ones already applied,
 not against pristine coreboot. Several of these touch the same files (0033
-and 0036 both edit `ec/lenovo/h8/cfr.h` a few lines apart), and a patch cut
+and 0034 both edit `ec/lenovo/h8/cfr.c` a few lines apart), and a patch cut
 from the untouched tree carries context that no longer exists by the time it
 runs. `git worktree add` on `sources/coreboot`, apply everything up to the
 new patch, edit there, diff.
@@ -401,19 +401,12 @@ The kernel calls `\BLTH`/`\WGSV` nowhere else. Only from
 reuse them (checked in the 7.1 tree). That also gives a way to test
 without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
 
-## base/0036-h8-keyboard-backlight-three-states.patch
+## base/0036-h8-keyboard-backlight-optional.patch
 
-**Files:** `src/ec/lenovo/h8/h8.h`, `src/ec/lenovo/h8/cfr.h`,
-`src/ec/lenovo/h8/ssdt.c`, `src/ec/lenovo/h8/h8.c`
+**Files:** `src/ec/lenovo/h8/Kconfig`, `src/ec/lenovo/h8/cfr.c`,
+`src/ec/lenovo/h8/ssdt.c`, `src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
 
-Turns the Keyboard Backlight setup option from a bool into three states
-and gates `HKBL` on the third.
-
-```
-Disabled        dark at boot, the OS can still switch it on
-Enabled         on at boot
-Not installed   not published to the OS at all
-```
+Adds a `kb_backlight_installed` option and gates `HKBL` on it.
 
 `thinkpad_acpi` asks `MLCG` for the capability. That returns bit `0x200`
 whenever `HKBL` is set, `ssdt.c` writes `HKBL` from
@@ -422,15 +415,14 @@ shared baseboard with no variant override. So the kernel creates
 `tpacpi::kbd_backlight` on every machine and GNOME draws a brightness
 slider for hardware that may not be there. Issue #12.
 
-This started as a second, separate option for presence. Two booleans side
-by side, both reading "Disabled" and meaning different things, is a menu
-nobody can parse, and the obvious reading of "Keyboard Backlight:
-Disabled" is that the thing is gone, which it was not. One option with
-three states says what it means.
-
-`KBL_ABSENT` is ours and never reaches the EC; `h8.c` maps it back to
-`KBL_OFF` before touching `H8_CONFIG1`. `KBL_OFF` and `KBL_ON` keep the
-values the bool had, so settings already in SMMSTORE survive.
+Up to coreboot 26.06 this was a third value, "Not installed", on the
+Keyboard Backlight bool, because two booleans side by side both reading
+"Disabled" was a menu nobody could parse. 26.09 made that option upstream's
+"Illumination Control": an enum that picks between ThinkLight and keyboard
+backlight and swaps its value list per machine. A presence state has no
+place in that list, and overriding the whole definition would collide on
+every release. So presence is its own option again, named for what it is,
+and the patch leaves upstream's definition alone.
 
 The T480 ships with and without a backlit keyboard, so this cannot live
 in the devicetree. It has to be per machine, which is why it is a setup
@@ -532,27 +524,6 @@ Maintenance note: the symbol has to appear in **both** variable lists in
 `payloads/external/Makefile.mk`: `EDK2_CAPSULE_ARGS` and the
 `UEFIPAYLOAD.fd` recipe. Miss one and the payload is quietly built the
 upstream way; nothing warns.
-
-## base/0045-capsule-trust-anchor-without-generate.patch
-
-**File:** `src/drivers/efi/Kconfig`
-
-Moves the "Capsule signing certificates" menu and
-`DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` from
-`DRIVERS_EFI_GENERATE_CAPSULE` to `DRIVERS_EFI_UPDATE_CAPSULES`.
-
-Upstream ties the trust anchor to generating a capsule in-tree, but the
-two are independent. The certificate is what the firmware's FmpDxe
-verifies incoming capsules against, so it has to be configurable
-wherever capsules can be *applied*. This build generates its capsules
-with `scripts/make-capsule.py`, outside the tree, so without this patch
-the option is not visible at all and the default stands, and that
-default is `BaseTools/Source/Python/Pkcs7Sign/TestRoot.pub.pem`, EDK2's
-published test certificate, whose private half ships with EDK2. Anyone
-could sign a capsule for this machine.
-
-`CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT` in `config/defconfig`
-is what fills it; the keys come from `scripts/gen-capsule-certs.sh`.
 
 ## base/0046-init-crtm-before-vboot-extends-the-pcrs.patch
 
