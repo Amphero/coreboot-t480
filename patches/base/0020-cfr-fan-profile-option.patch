@@ -1,5 +1,5 @@
 diff --git a/src/ec/lenovo/h8/acpi/thermal.asl b/src/ec/lenovo/h8/acpi/thermal.asl
-index 11687f8..d5bc07d 100644
+index 11687f81..d5bc07d3 100644
 --- a/src/ec/lenovo/h8/acpi/thermal.asl
 +++ b/src/ec/lenovo/h8/acpi/thermal.asl
 @@ -96,6 +96,12 @@ External (\PPKG, MethodObj)
@@ -92,10 +92,10 @@ index 11687f8..d5bc07d 100644
  		Name (_AL1, Package () { FAN1 })
  		Name (_AL2, Package () { FAN2 })
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
-index a522cbf..0b7e1af 100644
+index 5b07bd22..e9a33ca0 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/cfr.c
-@@ -27,6 +27,26 @@ static const struct sm_object dgpu = SM_DECLARE_ENUM({
+@@ -25,10 +25,33 @@ static const struct sm_object dgpu = SM_DECLARE_ENUM({
  	.default_value	= false,
  }, WITH_CALLBACK(update_dgpu));
  
@@ -122,18 +122,15 @@ index a522cbf..0b7e1af 100644
  static struct sm_obj_form system = {
  	.ui_name = "System",
  	.obj_list = (const struct sm_object *[]) {
-@@ -60,6 +80,9 @@ static struct sm_obj_form ec = {
- 		&wwan,
- 		&pm_beeps,
- 		&battery_beep,
+ 		&dgpu,
 +#if CONFIG(H8_FAN_STEPPED)
 +		&fan_profile,
 +#endif
- 		&fn_ctrl_swap,
- 		&sticky_fn,
- 		&f1_to_f12_as_primary,
+ 		&hyper_threading,
+ 		&igd_dvmt,
+ 		&igd_aperture,
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
-index db1b18a..247153e 100644
+index 2f3198c5..2c16cfeb 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/ramstage.c
 @@ -1,5 +1,7 @@
@@ -144,21 +141,16 @@ index db1b18a..247153e 100644
  #include <soc/ramstage.h>
  #include "variant.h"
  
-@@ -9,13 +11,30 @@ void mainboard_silicon_init_params(FSP_SIL_UPD *params)
+@@ -9,10 +11,26 @@ void mainboard_silicon_init_params(FSP_SIL_UPD *params)
  	variant_config_gpios();
  }
  
 +/*
-+ * One SSDT hook for everything the board adds: the dGPU description (when
-+ * present) and the fan profile from the setup menu, published as \FPRO for
-+ * ec/lenovo/h8/acpi/thermal.asl. Keep it chained - assigning ssdt_add_dgpu
-+ * directly would drop the fan profile, a fan-only hook the dGPU.
++ * Publishes the fan profile from the setup menu as \FPRO, which
++ * ec/lenovo/h8/acpi/thermal.asl reads.
 + */
 +static void mainboard_fill_ssdt(const struct device *dev)
 +{
-+	if (CONFIG(VARIANT_HAS_DGPU))
-+		ssdt_add_dgpu(dev);
-+
 +	if (CONFIG(H8_FAN_STEPPED)) {
 +		unsigned int prof = get_uint_option("fan_profile", 1);
 +		if (prof > 3)
@@ -166,23 +158,21 @@ index db1b18a..247153e 100644
 +		acpigen_write_name_integer("\\FPRO", prof);
 +	}
 +}
- 
++
  static void mainboard_enable(struct device *dev)
  {
--	if (CONFIG(VARIANT_HAS_DGPU)) {
-+	if (CONFIG(VARIANT_HAS_DGPU))
+ 	if (CONFIG(VARIANT_HAS_DGPU))
  		dgpu_detect();
--		dev->ops->acpi_fill_ssdt = ssdt_add_dgpu;
--	}
++
 +	dev->ops->acpi_fill_ssdt = mainboard_fill_ssdt;
  }
  
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-index 10c9f2f..81f529d 100644
+index e0c081cf..48856084 100644
 --- a/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
 +++ b/src/mainboard/lenovo/sklkbl_thinkpad/variants/t480/include/variant/thermal.h
-@@ -34,4 +34,22 @@
+@@ -33,4 +33,22 @@
  #define FAN3_THRESHOLD_ON	54
  #define FAN3_THRESHOLD_OFF	46
  
