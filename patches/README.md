@@ -596,6 +596,25 @@ setup menu. It is not a proven fix. The board this repo is built on runs
 the upstream table without any whine. It is the A/B half that makes the
 class-D theory testable.
 
+## base/0048-edk2-capsule-pcd-after-clean.patch
+
+**File:** `payloads/external/edk2/Makefile`
+
+Orders the `capsule_keys` target behind `clean`.
+
+26.09 moved the generation of `Conf/CapsuleFmpPkcs7Pcd.inc` out of the
+`prep` recipe into a `capsule_keys` target and hung it on `prep`. That
+line sits above the one listing `clean`, so make runs the generation
+first and `clean` deletes the file right after, before the DSC can
+`!include` it. The build then stops at
+
+```
+Conf/CapsuleFmpPkcs7Pcd.inc is not found in packages path
+```
+
+An order-only prerequisite on `clean` is enough. Upstream bug, worth
+sending back.
+
 ## base/0060-t480-acoustic-noise-mitigation.patch
 
 **Files:** `src/mainboard/lenovo/sklkbl_thinkpad/devicetree.cb`
