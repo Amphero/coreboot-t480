@@ -401,36 +401,6 @@ The kernel calls `\BLTH`/`\WGSV` nowhere else. Only from
 reuse them (checked in the 7.1 tree). That also gives a way to test
 without rebooting: `modprobe -r thinkpad_acpi` runs the same code.
 
-## base/0036-h8-keyboard-backlight-optional.patch
-
-**Files:** `src/ec/lenovo/h8/Kconfig`, `src/ec/lenovo/h8/cfr.c`,
-`src/ec/lenovo/h8/ssdt.c`, `src/mainboard/lenovo/sklkbl_thinkpad/Kconfig`
-
-Adds a `kb_backlight_installed` option and gates `HKBL` on it.
-
-`thinkpad_acpi` asks `MLCG` for the capability. That returns bit `0x200`
-whenever `HKBL` is set, `ssdt.c` writes `HKBL` from
-`has_keyboard_backlight`, and the T480 devicetree sets that to 1 in the
-shared baseboard with no variant override. So the kernel creates
-`tpacpi::kbd_backlight` on every machine and GNOME draws a brightness
-slider for hardware that may not be there. Issue #12.
-
-Up to coreboot 26.06 this was a third value, "Not installed", on the
-Keyboard Backlight bool, because two booleans side by side both reading
-"Disabled" was a menu nobody could parse. 26.09 made that option upstream's
-"Illumination Control": an enum that picks between ThinkLight and keyboard
-backlight and swaps its value list per machine. A presence state has no
-place in that list, and overriding the whole definition would collide on
-every release. So presence is its own option again, named for what it is,
-and the patch leaves upstream's definition alone.
-
-The T480 ships with and without a backlit keyboard, so this cannot live
-in the devicetree. It has to be per machine, which is why it is a setup
-option and not a Kconfig.
-
-Takes effect after a reboot: the option lives in SMMSTORE and the SSDT is
-generated at boot.
-
 ## base/0040-t480-vboot-fmd.patch
 
 **Files:** `src/mainboard/lenovo/sklkbl_thinkpad/vboot.fmd` (new)
