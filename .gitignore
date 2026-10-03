@@ -16,3 +16,4 @@ __pycache__/
 
 # saved build images (see Cleaning up in the README)
 *.tar.zst
+docs/deployed.local.md

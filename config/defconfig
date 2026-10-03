@@ -38,8 +38,8 @@ CONFIG_VBOOT_KEYBLOCK_VERSION=5
 # vboot skip the rollback comparison - 2firmware.c:189 logs "Ignoring FW
 # rollback due to GBB flag" and boots anyway. The roll-forward twenty lines
 # below has no such condition, so the counter advances and enforces nothing.
-# Measured: a version-2 slot booted with the counter at 3. The flag sits in the
-# GBB inside WP_RO, so changing it needs the external programmer.
+# The flag sits in the GBB inside WP_RO, so changing it needs the external
+# programmer.
 # CONFIG_GBB_FLAG_FORCE_DEV_BOOT_USB is left at its default: it only feeds
 # vb2_fill_dev_boot_flags(), which nothing outside the kernel phase calls.
 # CONFIG_GBB_FLAG_DISABLE_FW_ROLLBACK_CHECK is not set
