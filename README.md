@@ -131,6 +131,10 @@ All documented in [GUIDE.md](GUIDE.md); the design notes and hardware
 measurements behind them are in [docs/](docs/) and
 [patches/README.md](patches/README.md).
 
+Power management on the host is TLP's job: there is no DYTC, so
+power-profiles-daemon has nothing to attach to.
+[GUIDE.md: Power management](GUIDE.md#power-management).
+
 ## License
 
 [GPL-3.0](LICENSE) for the build system, scripts and documentation, inherited

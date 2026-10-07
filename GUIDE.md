@@ -868,6 +868,20 @@ points move just below the CPU's throttle point, so the EC curve, or your
 tool, rules alone, with one ACPI escalation left as the last net. Curve
 details and tuning: [patches/README.md](patches/README.md).
 
+### Power management
+
+No DYTC in this port, so the kernel exposes no `platform_profile` and
+power-profiles-daemon has nothing to attach to. TLP does the job instead.
+
+What a generic TLP config gets wrong here: the board is capped at PL1 15 W and
+PL2 18.75 W, so turbo headroom shows up only in the power-saver profile, and
+both battery bays need their own charge thresholds. `PCIE_ASPM` is pointless
+too, the firmware already sets L1 plus substates on wifi and nvme and nothing
+reaches the Thunderbolt chain.
+
+Config and the measurements behind it:
+[TLP on a coreboot ThinkPad T480](https://github.com/Amphero/guides/blob/main/thinkpad-t480-tlp.md).
+
 ### Bluetooth and WWAN
 
 **Embedded Controller > Bluetooth** has three settings:
