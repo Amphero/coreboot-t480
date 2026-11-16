@@ -56,7 +56,9 @@ RUN set -e; \
     echo "== lbmk inject (offline) $(basename "$TB") setmac $MAC_ADDRESS =="; \
     XBMK_THREADS="$(nproc)" ./mk inject "$LTB" setmac "$MAC_ADDRESS"; \
     tar -xf "$LTB"; \
-    ROM="$(ls bin/*/seagrub_*_libgfxinit_corebootfb_usqwerty.rom 2>/dev/null | head -1)"; \
+    # Any payload: 26.01rev1 shipped seagrub, 26.11 ships uefi_edk2, and the
+    # name carries a DO_NOT_FLASH_YET prefix. The tarball holds one ROM.
+    ROM="$(ls bin/*/*.rom 2>/dev/null | head -1)"; \
     test -n "$ROM" || { echo "ERROR: injected ROM not found"; ls -R bin || true; exit 1; }; \
     cp "$ROM" /opt/lbmk/injected.rom; \
     echo "== injected ROM: $ROM =="

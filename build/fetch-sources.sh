@@ -451,9 +451,12 @@ else
   ok=0
   for base in "${LR_MIRRORS[@]}"; do
     url="$base/stable/$LIBREBOOT_VERSION/roms/$LIBREBOOT_TARBALL"
-    if curl -fLo "$TB" "$url" \
-       && curl -fLo "$TB.sha512" "$url.sha512" \
-       && curl -fLo "$TB.sig"    "$url.sig"; then ok=1; break; fi
+    # The checksum sidecar switched from .sha512 to .sha256 with 26.10; the
+    # signature is required either way.
+    if curl -fLo "$TB" "$url" && curl -fLo "$TB.sig" "$url.sig" \
+       && { curl -fLo "$TB.sha512" "$url.sha512" \
+            || curl -fLo "$TB.sha256" "$url.sha256" \
+            || true; }; then ok=1; break; fi
     log "  mirror $base failed, trying next ..."
   done
   [ "$ok" = "1" ] || die "no libreboot mirror served $LIBREBOOT_TARBALL (use LIBREBOOT_TARBALL=...)"
@@ -469,6 +472,10 @@ elif [ -f "$TB.sha512" ]; then
   ( cd "$LRDIR" && sha512sum -c "$(basename "$TB").sha512" ) \
     || die "libreboot tarball SHA512 mismatch - corrupt!"
   log "libreboot SHA512 ok (mirror-served - same origin as the tarball, integrity only)"
+elif [ -f "$TB.sha256" ]; then
+  ( cd "$LRDIR" && sha256sum -c "$(basename "$TB").sha256" ) \
+    || die "libreboot tarball SHA256 mismatch - corrupt!"
+  log "libreboot SHA256 ok (mirror-served - same origin as the tarball, integrity only)"
 else
   log "WARNING: no SHA512 available for $LIBREBOOT_TARBALL - integrity unverified"
 fi
