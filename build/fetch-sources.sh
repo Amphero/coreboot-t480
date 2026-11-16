@@ -62,6 +62,9 @@ LR_MIRRORS=(
   "https://rsync.libreboot.org"
 )
 LEAH_KEY="8BB1F7D28CF7696DBF4F71925C654067D383B1FF"
+# The T480 image was renamed: <ver>_t480_vfsp_16mb up to 26.01rev1,
+# <ver>_lenovo_thinkpad_t480_16mb from 26.10 on. Newest naming first.
+LR_TARBALL_NAMES="lenovo_thinkpad_t480_16mb t480_vfsp_16mb"
 
 # Only the submodules the T480 EDK2 build consumes (coreboot's Makefile.mk:
 # the blanket init plus the update=none ones). PHASE 2's blanket init tries the
@@ -82,6 +85,21 @@ PREV_EDK2="$(lock_field "$LOCK" EDK2_COMMIT)"
 PREV_LBMK="$(lock_field "$LOCK" LBMK_COMMIT)"
 
 sortver(){ sort -V; }
+# $1 version -> the T480 tarball name that exists for it, local copy first.
+libreboot_tarball(){
+  local v="$1" n f base
+  for n in $LR_TARBALL_NAMES; do
+    f="libreboot-${v}_${n}.tar.xz"
+    [ -f "$SRC/libreboot/$f" ] && { printf '%s' "$f"; return 0; }
+  done
+  for base in "${LR_MIRRORS[@]}"; do
+    for n in $LR_TARBALL_NAMES; do
+      f="libreboot-${v}_${n}.tar.xz"
+      curl -fsI "$base/stable/$v/roms/$f" >/dev/null 2>&1 && { printf '%s' "$f"; return 0; }
+    done
+  done
+  return 1
+}
 lsref(){ git ls-remote "$1" "$2" 2>/dev/null | awk 'NR==1{print $1}'; }
 # $1 remote  $2 tag -> commit. Annotated tags need the ^{} peel, lightweight
 # ones answer under the plain ref.
@@ -136,10 +154,10 @@ resolve_latest(){
       | sortver | tail -1)" || true
     [ -n "$LBMK_REF" ] || die "could not resolve an lbmk release tag (network?)"
   fi
-  # libreboot: newest stable that ships the t480_vfsp_16mb tarball. Listings
-  # look like href="./26.01rev1/", so strip ./ and the trailing slash.
+  # libreboot: newest stable that ships a T480 image, under either name.
+  # Listings look like href="./26.01rev1/", so strip ./ and the trailing slash.
   if [ -z "${LIBREBOOT_VERSION:-}" ]; then
-    log "resolving newest libreboot stable with t480_vfsp_16mb ..."
+    log "resolving newest libreboot stable with a T480 image ..."
     local base idx vers v
     for base in "${LR_MIRRORS[@]}"; do
       idx="$(curl -fsL "$base/stable/" 2>/dev/null || true)"
@@ -147,12 +165,13 @@ resolve_latest(){
         | sed -E 's#href="\.?/?([^"]+)/"#\1#' \
         | grep -E '^[0-9][0-9]\.[0-9][0-9][a-z0-9]*$' | sort -Vr | uniq)"
       for v in $vers; do
-        if curl -fsI "$base/stable/$v/roms/libreboot-${v}_t480_vfsp_16mb.tar.xz" >/dev/null 2>&1; then
+        if libreboot_tarball "$v" >/dev/null; then
           LIBREBOOT_VERSION="$v"; break 2
         fi
       done
     done
-    [ -n "${LIBREBOOT_VERSION:-}" ] || die "could not find a libreboot stable with t480_vfsp_16mb"
+    [ -n "${LIBREBOOT_VERSION:-}" ] || die "no libreboot stable ships a T480 image
+   under any name this script knows: $LR_TARBALL_NAMES"
   fi
 }
 
@@ -245,7 +264,8 @@ fi
 # Tarball name + exact commits, so versions.lock is complete. Never re-resolve
 # a value that is already set: an earlier version overwrote EDK2_COMMIT with the
 # branch head and the lock then named a commit the tree did not contain.
-LIBREBOOT_TARBALL="libreboot-${LIBREBOOT_VERSION}_t480_vfsp_16mb.tar.xz"
+[ -n "${LIBREBOOT_TARBALL:-}" ] || LIBREBOOT_TARBALL="$(libreboot_tarball "$LIBREBOOT_VERSION")" \
+  || die "no T480 tarball for libreboot $LIBREBOOT_VERSION under $LR_TARBALL_NAMES"
 [ -n "${EDK2_COMMIT:-}" ] || EDK2_COMMIT="$(edk2_commit "$EDK2_REF")"
 [ -n "${LBMK_COMMIT:-}" ] || LBMK_COMMIT="$(tagcommit "$LBMK_URL" "$LBMK_REF")"
 # coreboot: a commit is already exact; a tag needs dereferencing

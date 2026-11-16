@@ -18,7 +18,7 @@
 #
 # Optional per-component overrides for --latest only (env):
 #   COREBOOT_REF=<commit|tag>  EDK2_REF=<tag|branch>  LBMK_REF=<tag|commit>
-#   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/..._t480_vfsp_16mb.tar.xz
+#   LIBREBOOT_VERSION=<ver>    LIBREBOOT_TARBALL=/path/to/libreboot-..._t480_16mb.tar.xz
 #
 # --check-updates writes nothing: it prints the newest upstream versions next
 # to the lock and exits 0 (current) or 10 (something moved).
@@ -96,6 +96,8 @@ if [ -n "${LIBREBOOT_TARBALL:-}" ]; then
   [ -f "$LIBREBOOT_TARBALL" ] || die "LIBREBOOT_TARBALL='$LIBREBOOT_TARBALL' does not exist"
   bn="$(basename "$LIBREBOOT_TARBALL")"
   case "$bn" in
+    libreboot-*_lenovo_thinkpad_t480_16mb.tar.xz)
+      : "${LIBREBOOT_VERSION:=$(printf '%s' "$bn" | sed 's/^libreboot-\(.*\)_lenovo_thinkpad_t480_16mb\.tar\.xz$/\1/')}" ;;
     libreboot-*_t480_vfsp_16mb.tar.xz)
       : "${LIBREBOOT_VERSION:=$(printf '%s' "$bn" | sed 's/^libreboot-\(.*\)_t480_vfsp_16mb\.tar\.xz$/\1/')}" ;;
     *) [ -n "${LIBREBOOT_VERSION:-}" ] || die "unexpected tarball name; please set LIBREBOOT_VERSION=..." ;;
